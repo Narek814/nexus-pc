@@ -7,7 +7,8 @@
 | `Nexus.Core`, `Nexus.Agent` (сеть, сопряжение, вход, команды), DevClient | `dotnet test windows/Nexus.slnx` | Любая ОС с .NET 10 SDK; CI — `ubuntu-latest` и `windows-latest` |
 | Согласованность схем и примеров (запросы и ответы) | `python3 -I tools/check_fixtures.py` | Любая ОС с Python 3 и пакетом `jsonschema` 4.x; CI |
 | Реальное выключение/сон Windows, служба, брандмауэр | ручной план ниже | Только ваш Windows-ПК |
-| Nexus.Tray | — | P1c |
+| Nexus.Tray: логика команд, хранилище, канал | `dotnet test` (`TrayIntegrationTests`, `SessionTests`) | Любая ОС; окна и вызовы Windows — ручной план T1–T12 |
+| QR-кодировщик | `python3 -I tools/check_qr.py` (декодирует все 40 версий через zxing-cpp) | Любая ОС с Python, `zxing-cpp`, `pillow`; CI |
 | iOS (`NexusKit`, приложение) | — | Пока нет (P2): `swift test` / `xcodebuild` на macOS-раннере GitHub Actions |
 
 ## Правила
@@ -46,3 +47,20 @@
 | W12 | С другого устройства в той же Wi-Fi: `--host <IP ПК>` | соединение работает (сеть «частная») |
 | W13 | `send power.sleep` (после повторного сопряжения) | ПК уходит в сон через ~1 с |
 | W14 | `send power.restart --confirm` (без задержки) | ответ `delaySeconds: 30`, уведомление Windows; отменить `send power.cancel` |
+
+## Ручная проверка Nexus.Tray (P1c)
+
+| # | Действие | Ожидается |
+|---|----------|-----------|
+| T1 | Запуск трея через `explorer.exe` (SETUP §7) | цветной значок «N», в меню «Служба подключена» |
+| T2 | Запуск трея из окна администратора напрямую | предупреждение о правах администратора, трей не запускается |
+| T3 | «Приложения и профили» → «Из меню Пуск…» → добавить 2 программы | появились в списке |
+| T4 | `send apps.list` | названия и id, **без путей** к файлам |
+| T5 | `send apps.launch --app <id>` | программа открылась, у значка всплыло «Started …» |
+| T6 | Профиль: «Создать стандартные» → Gaming, отметить программы → «Сохранить»; `send profiles.run --profile gaming` | все программы профиля открылись, в ответе `started` |
+| T7 | `send apps.launch --app powershell` (если не в списке) | `apps.notFound` |
+| T8 | `send power.lock` | экран заблокирован |
+| T9 | `send power.shutdown --delay 600 --confirm` при запущенном трее | ответ `"via": "userSession"`, уведомление Windows; затем `send power.cancel` |
+| T10 | «Подключить iPhone…» | QR-код, код, отсчёт; «Копировать ссылку» копирует |
+| T11 | Сопряжение DevClient по ссылке из окна трея | в окне трея имя устройства и код проверки, «Подключить» → «Устройство подключено» |
+| T12 | Выйти из трея, `send apps.list` | `session.unavailable`; `pc.status` → `userSession: unavailable` |

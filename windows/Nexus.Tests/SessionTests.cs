@@ -128,6 +128,41 @@ public class JsonLineChannelTests
     }
 
     [Fact]
+    public async Task Dispose_during_traffic_does_not_throw()
+    {
+        // Regression (windows-latest): disposing while replies were being written threw
+        // "The stream is currently in use by a previous operation".
+        for (var round = 0; round < 20; round++)
+        {
+            var (s, c) = await PipePair.CreateAsync();
+            var a = new JsonLineChannel(s);
+            await using var b = new JsonLineChannel(c);
+            _ = b.RunAsync((_, _, _) => Task.FromResult(RpcResult.Success()), CancellationToken.None);
+            var run = a.RunAsync((_, args, _) => Task.FromResult(RpcResult.Success(args)), CancellationToken.None);
+            var calls = Enumerable.Range(0, 50).Select(_ => b.CallAsync("x", new JsonObject { ["pad"] = new string('x', 2000) }, Timeout, CancellationToken.None)).ToList();
+            await a.DisposeAsync();
+            await a.DisposeAsync(); // idempotent
+            foreach (var call in calls)
+            {
+                try
+                {
+                    await call;
+                }
+                catch (Exception ex) when (ex is IOException or TimeoutException or ObjectDisposedException)
+                {
+                }
+            }
+            try
+            {
+                await run;
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+            {
+            }
+        }
+    }
+
+    [Fact]
     public async Task Call_times_out()
     {
         var (s, c) = await PipePair.CreateAsync();

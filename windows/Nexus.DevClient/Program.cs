@@ -12,7 +12,8 @@ internal static class Program
         Nexus.DevClient — test client for Nexus.Agent (stands in for the iPhone app until P2)
 
           Nexus.DevClient pair "<nexuspc://pair?... link>" [--name NAME] [--host IP]
-          Nexus.DevClient send <type> [payload-json] [--confirm] [--delay SECONDS] [--force] [--host IP]
+          Nexus.DevClient send <type> [payload-json] [--confirm] [--delay SECONDS] [--force]
+                                    [--app APP_ID] [--profile PROFILE_ID] [--host IP]
           Nexus.DevClient hello [--host IP]
 
         Options: --identity PATH (default ~/.nexus-dev/device.json)
@@ -20,6 +21,8 @@ internal static class Program
           Nexus.DevClient send pc.status
           Nexus.DevClient send power.shutdown --delay 600 --confirm
           Nexus.DevClient send power.cancel
+          Nexus.DevClient send apps.launch --app steam
+          Nexus.DevClient send profiles.run --profile gaming
         WARNING: the identity file holds an unencrypted private key. Testing only.
         """;
 
@@ -111,6 +114,16 @@ internal static class Program
             payload ??= [];
             payload["force"] = true;
         }
+        if (options.App is { } app)
+        {
+            payload ??= [];
+            payload["appId"] = app;
+        }
+        if (options.ProfileId is { } profile)
+        {
+            payload ??= [];
+            payload["profileId"] = profile;
+        }
         var response = await client.RequestAsync(type, payload, options.Confirm).ConfigureAwait(false);
         Console.WriteLine(response.ToJsonString(Pretty));
         return response["ok"]?.GetValue<bool>() == true ? 0 : 1;
@@ -163,12 +176,12 @@ internal static class Program
         return 0;
     }
 
-    private sealed record Options(string[] Positional, string? Name, string? Host, bool Confirm, string IdentityPath, int? Delay, bool Force)
+    private sealed record Options(string[] Positional, string? Name, string? Host, bool Confirm, string IdentityPath, int? Delay, bool Force, string? App, string? ProfileId)
     {
         public static Options Parse(string[] args)
         {
             var positional = new List<string>();
-            string? name = null, host = null, identity = null;
+            string? name = null, host = null, identity = null, app = null, profile = null;
             var confirm = false;
             var force = false;
             int? delay = null;
@@ -179,6 +192,8 @@ internal static class Program
                     case "--name" when i + 1 < args.Length: name = args[++i]; break;
                     case "--host" when i + 1 < args.Length: host = args[++i]; break;
                     case "--identity" when i + 1 < args.Length: identity = args[++i]; break;
+                    case "--app" when i + 1 < args.Length: app = args[++i]; break;
+                    case "--profile" when i + 1 < args.Length: profile = args[++i]; break;
                     case "--confirm": confirm = true; break;
                     case "--force": force = true; break;
                     case "--delay" when i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds):
@@ -188,7 +203,7 @@ internal static class Program
                     default: positional.Add(args[i]); break;
                 }
             }
-            return new Options([.. positional], name, host, confirm, identity ?? DeviceIdentityFile.DefaultPath, delay, force);
+            return new Options([.. positional], name, host, confirm, identity ?? DeviceIdentityFile.DefaultPath, delay, force, app, profile);
         }
     }
 }

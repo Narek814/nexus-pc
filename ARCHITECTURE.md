@@ -85,6 +85,7 @@
 | `Nexus.Automation` | библиотека (в Agent) | Движок «Триггер → Условие → Действие», планировщик. |
 | `Nexus.Sync` | библиотека | Передача файлов (чанки, докачка, SHA-256), песочница папок; буфер обмена (через Tray). |
 | `Nexus.Notifications` | библиотека | Шина событий, дедупликация/троттлинг Smart Alerts, доставка (WS → iPhone; позже через Gateway → APNs). |
+| `Nexus.Windows` | библиотека (Windows interop) | Питание (`WindowsPowerController`), проверка процесса на другом конце канала, сеансы. Общая для Agent и Tray. |
 | `Nexus.DevClient` | консоль (кроссплатформенно) | Тестовый клиент вместо iPhone до P2: сопряжение, вход, отправка команд. Эталон поведения для `NexusKit`. |
 | `Nexus.Tests` | xUnit | Юнит, контракт-тесты по фикстурам `shared/`, интеграционные тесты Agent ↔ DevClient. |
 
@@ -94,10 +95,12 @@
 - `Admin/` — `AdminService` (логика) и `AdminPipeServer`/`AdminClient` (локальный канал). Команды `Nexus.Agent pair|devices|status` — тот же exe в роли клиента канала.
 - `Storage/` — `config.json` (`pcId`, порт, отпечаток), `devices.json`, `audit.log`; запись через временный файл и переименование.
 
-### 4.1 IPC Agent ↔ Tray
-- Named Pipe `\\.\pipe\NexusPC.<SID>`; ACL: `SYSTEM` + конкретный SID интерактивного пользователя. Агент проверяет клиента через `GetNamedPipeClientProcessId` → путь и подпись исполняемого файла Tray.
-- Сообщения — те же JSON-конверты, что во внешнем протоколе (подмножество `ipc.*`).
-- Если Tray не запущен (никто не вошёл в систему), команды, требующие сеанса, возвращают `error.sessionUnavailable` — честно, без попытки запустить GUI из службы.
+### 4.1 IPC Agent ↔ Tray (реализовано в P1c)
+- Именованный канал `NexusPC.Session`; ACL: SYSTEM, создатель, INTERACTIVE и Administrators — чтение/запись, NETWORK — запрет. Один трей на сеанс Windows; команды идут трею сеанса физической консоли (`WTSGetActiveConsoleSessionId`).
+- Взаимная проверка по пути исполняемого файла (`GetNamedPipeClientProcessId` / `GetNamedPipeServerProcessId` → `QueryFullProcessImageName`). Проверка цифровой подписи — когда появятся подписанные сборки (P11).
+- Протокол канала — `JsonLineChannel` (Nexus.Core): запросы и ответы в обе стороны, одна JSON-строка на сообщение; операции — `SessionOps`. Служба уже проверила телефон, разрешения и схему; трей повторно сверяет id со своим списком.
+- Если трей не запущен, команды сеанса отвечают `session.unavailable` — без попытки запустить GUI из службы.
+- Логика трея (`UserAppStore`, `TrayCommandHandler` за интерфейсом `IDesktop`) лежит в Nexus.Core и тестируется на любой ОС; в `Nexus.Tray` — только окна WinForms и вызовы Windows.
 
 ## 5. Протокол (кратко; подробно — `shared/protocol/`, `docs/API.md`)
 
@@ -154,12 +157,14 @@ ios/NexusPC/
 | Microsoft.Extensions.Hosting.WindowsServices | 10.0.15 | Agent | MIT | Работа как служба Windows |
 | xunit, xunit.runner.visualstudio, Microsoft.NET.Test.Sdk | 2.9.3 / 3.1.4 / 17.14.1 | Tests | Apache-2.0 / MIT | Тесты |
 
+Только для проверки (не попадают в приложение): `zxing-cpp` и `pillow` (Python, Apache-2.0 / MIT-CMU) — независимый декодер QR в `tools/check_qr.py` и CI. QR-кодировщик написан свой (`Nexus.Core.Pairing.QrCode`), без зависимостей — по решению владельца.
+
 Кандидаты (не добавлены, требуют проверки и одобрения):
 
 | Зависимость | Где | Лицензия | Этап |
 |-------------|-----|----------|------|
 | Microsoft.Data.Sqlite | Agent | MIT | P6 (история; на P1b хватило JSON-файлов) |
-| QR-кодировщик (своя реализация или QRCoder, MIT) | Tray | MIT | P1c |
+
 | LibreHardwareMonitorLib | Monitoring | MPL-2.0 | P4 |
 | NVML (через P/Invoke, без пакета) | Monitoring | NVIDIA EULA (DLL с драйвером) | P4 |
 | SIPSorcery / libwebrtc | Remote | BSD-3 / BSD | P5 (спайк) |

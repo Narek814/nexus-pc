@@ -2,7 +2,7 @@
 
 Экосистема управления Windows-компьютерами с iPhone: питание, профили приложений, Siri, мониторинг, тачпад, удалённый экран, файлы, автоматизации, AI-помощник, RGB.
 
-**Статус:** P0, P1a выполнены; P1b (служба Windows `Nexus.Agent`: сопряжение, вход, питание) написан и проверен тестами, ждёт проверки на реальном ПК. Приложения для iPhone пока нет — см. [FEATURES.md](FEATURES.md).
+**Статус:** P0, P1a, P1b выполнены (служба проверена на реальном ПК). P1c (`Nexus.Tray`: QR-сопряжение, программы, профили, блокировка) написан и проверен тестами, ждёт проверки на ПК. Приложения для iPhone пока нет — см. [FEATURES.md](FEATURES.md).
 
 Бюджет проекта — ноль: только бесплатные инструменты и сервисы (ARCHITECTURE.md, D11–D12).
 
@@ -21,7 +21,9 @@
 shared/schemas/          JSON Schema протокола (источник правды)
 shared/protocol/fixtures контрольные примеры для C# и Swift
 windows/Nexus.Core       модели, каталог команд, разрешения, проверка, сопряжение (кроссплатформенно)
-windows/Nexus.Agent      служба Windows: WSS, вход, питание, канал администратора
+windows/Nexus.Agent      служба Windows: WSS, вход, питание, каналы администратора и трея
+windows/Nexus.Tray       приложение в трее (WinForms): QR, программы, профили, блокировка
+windows/Nexus.Windows    общие вызовы Windows
 windows/Nexus.DevClient  тестовый клиент вместо iPhone
 windows/Nexus.Tests      xUnit: юнит, контракт и интеграционные тесты
 .github/workflows        CI: тесты на Windows и Linux, проверка схем
@@ -36,4 +38,8 @@ dotnet test windows/Nexus.slnx
 
 ```bash
 python3 -I tools/check_fixtures.py
+```
+
+```bash
+python3 -I tools/check_qr.py
 ```

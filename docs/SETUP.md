@@ -1,8 +1,8 @@
-# Nexus PC — Установка на Windows (этап P1b)
+# Nexus PC — Установка на Windows (этапы P1b–P1c)
 
-> **Статус:** эти шаги ещё не выполнялись на реальном Windows-ПК. Код агента собран и проверен
-> тестами на Linux, а Windows-ветки проверяет CI на `windows-latest`. Если какой-то шаг не
-> сработает, пришлите вывод команды целиком — исправим.
+> **Статус:** шаги 1–6 (служба) проверены на реальном ПК. Шаг 7 (Nexus.Tray) ещё не выполнялся на
+> реальном ПК: приложение собрано, его логика проверена тестами, Windows-ветки — CI на `windows-latest`.
+> Если какой-то шаг не сработает, пришлите вывод команды целиком — исправим.
 
 Всё бесплатно. Нужны Windows 10 22H2+ или Windows 11 и права администратора.
 
@@ -128,6 +128,53 @@ dotnet run --project $env:USERPROFILE\nexus-pc\windows\Nexus.DevClient -- send p
 & "C:\Program Files\NexusPC\Agent\Nexus.Agent.exe" devices revoke <deviceId>
 ```
 
+## 7. Nexus.Tray — приложение в трее (P1c)
+
+Трей работает от вашего имени (не от администратора): запускает программы, блокирует экран, показывает QR-код для сопряжения. Служба и трей проверяют друг друга по пути установки, поэтому пути ниже менять нельзя.
+
+Сборка (окно администратора):
+
+```powershell
+dotnet publish $env:USERPROFILE\nexus-pc\windows\Nexus.Tray -c Release -o "C:\Program Files\NexusPC\Tray"
+```
+
+Запуск **без** прав администратора (через Проводник — так он стартует с обычными правами, даже из окна администратора):
+
+```powershell
+explorer.exe "C:\Program Files\NexusPC\Tray\Nexus.Tray.exe"
+```
+
+Справа внизу, у часов, появится круглый значок «N» (возможно, под стрелкой «^»). Цветной — служба подключена, серый — нет связи.
+
+Правой кнопкой по значку:
+- **Запускать при входе в Windows** — включите, чтобы не запускать вручную.
+- **Приложения и профили…** — добавьте программы (из меню «Пуск» или `.exe`), затем профили. Кнопка «Создать стандартные» добавит Gaming, Developer, Creator, Night — отметьте в каждом нужные программы и нажмите «Сохранить».
+- **Подключить iPhone…** — QR-код и кнопка «Копировать ссылку». Пока iPhone-приложения нет, ссылку используйте с DevClient (как в шаге 6); подтверждение с кодом проверки появится в этом окне.
+
+Проверка с DevClient (обычный PowerShell, после сопряжения):
+
+```powershell
+$nx = "$env:USERPROFILE\nexus-pc\windows\Nexus.DevClient\bin\Debug\net10.0\Nexus.DevClient.exe"
+```
+
+```powershell
+& $nx send apps.list --host 127.0.0.1
+```
+
+Запуск программы по её `id` из `apps.list` (например, `steam`):
+
+```powershell
+& $nx send apps.launch --app steam --host 127.0.0.1
+```
+
+```powershell
+& $nx send profiles.run --profile gaming --host 127.0.0.1
+```
+
+```powershell
+& $nx send power.lock --host 127.0.0.1
+```
+
 ## Обновление
 
 ```powershell
@@ -146,6 +193,16 @@ dotnet publish $env:USERPROFILE\nexus-pc\windows\Nexus.Agent -c Release -o "C:\P
 sc.exe start NexusPCAgent
 ```
 
+Трей: выйдите из него (правая кнопка → «Выход»), затем
+
+```powershell
+dotnet publish $env:USERPROFILE\nexus-pc\windows\Nexus.Tray -c Release -o "C:\Program Files\NexusPC\Tray"
+```
+
+```powershell
+explorer.exe "C:\Program Files\NexusPC\Tray\Nexus.Tray.exe"
+```
+
 ## Удаление
 
 ```powershell
@@ -160,10 +217,11 @@ sc.exe delete NexusPCAgent
 Remove-NetFirewallRule -DisplayName "Nexus PC Agent"
 ```
 
-Затем удалите `C:\Program Files\NexusPC`, `C:\ProgramData\NexusPC` и сертификат `Nexus PC Agent …` в `certlm.msc` → Личное → Сертификаты.
+Выйдите из трея и отключите «Запускать при входе». Затем удалите `C:\Program Files\NexusPC`, `C:\ProgramData\NexusPC`, `%LOCALAPPDATA%\NexusPC` (ваш список программ и профили) и сертификат `Nexus PC Agent …` в `certlm.msc` → Личное → Сертификаты.
 
-## Известные ограничения P1b
+## Известные ограничения
 
 - Адреса для прослушивания выбираются при запуске службы. Если IP компьютера сменился (DHCP), перезапустите службу: `sc.exe stop NexusPCAgent`, затем `sc.exe start NexusPCAgent`. Совет: закрепите IP за ПК в настройках роутера.
-- QR-кода пока нет (появится с Nexus.Tray), поиска ПК в сети (Bonjour) тоже нет (P2).
-- Блокировка, запуск приложений и профили отвечают `command.notImplemented` (P1c).
+- Поиска ПК в сети (Bonjour) пока нет (P2).
+- Без запущенного трея блокировка, приложения и профили отвечают `session.unavailable`, а обычное выключение идёт через службу с отсчётом 30 секунд.
+- Приложения из Microsoft Store пока не добавляются (только ярлыки «Пуск» и `.exe`).

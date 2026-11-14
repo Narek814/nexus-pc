@@ -33,6 +33,7 @@ public sealed class JsonLineChannel : IAsyncDisposable
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<long, TaskCompletionSource<RpcResult>> _pending = new();
     private long _nextId;
+    private int _disposed;
 
     public JsonLineChannel(Stream stream)
     {
@@ -165,11 +166,27 @@ public sealed class JsonLineChannel : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Safe to call while a read or a reply is still in flight (found by windows-latest CI): the stream
+    /// is closed first, which aborts pending I/O; then reader and writer are released, ignoring
+    /// errors from the aborted operations. The write lock is not disposed, as an in-flight write may
+    /// still release it.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
-        _reader.Dispose();
-        await _writer.DisposeAsync().ConfigureAwait(false);
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
         await _stream.DisposeAsync().ConfigureAwait(false);
-        _writeLock.Dispose();
+        try
+        {
+            _reader.Dispose();
+            await _writer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+        {
+            // The pending operation was aborted by closing the stream.
+        }
     }
 }
