@@ -56,6 +56,33 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Non_forced_shutdown_always_gets_a_visible_countdown()
+    {
+        var (client, _, key) = await _host.PairedClientAsync();
+        await using var _ = client;
+        using var __ = key;
+
+        var response = await client.RequestAsync("power.restart", new JsonObject { ["delaySeconds"] = 0 }, confirmed: true);
+        Assert.True(response.IsOk(), response.ToJsonString());
+        Assert.Equal(Nexus.Agent.Server.CommandDispatcher.MinGraceSeconds, response["payload"]!["delaySeconds"]!.GetValue<int>());
+        Assert.True(_host.Power!.Calls.TryDequeue(out var call));
+        Assert.StartsWith($"Restart:{Nexus.Agent.Server.CommandDispatcher.MinGraceSeconds}:False:", call, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Forced_immediate_shutdown_answers_first_then_acts()
+    {
+        var (client, _, key) = await _host.PairedClientAsync();
+        await using var _ = client;
+        using var __ = key;
+
+        var response = await client.RequestAsync("power.shutdown", new JsonObject { ["force"] = true }, confirmed: true);
+        Assert.True(response.IsOk(), response.ToJsonString());
+        Assert.Equal(0, response["payload"]!["delaySeconds"]!.GetValue<int>());
+        await WaitUntil(() => _host.Power!.Calls.Any(c => c.StartsWith("Shutdown:0:True:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Immediate_actions_answer_first_then_act()
     {
         var (client, _, key) = await _host.PairedClientAsync();

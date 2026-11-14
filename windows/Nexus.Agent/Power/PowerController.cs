@@ -54,7 +54,9 @@ internal sealed partial class WindowsPowerController : IPowerController
     private const uint ShutdownRestart = 0x4;
     private const uint ShutdownPowerOff = 0x8;
     private const uint ReasonFlagPlanned = 0x80000000; // SHTDN_REASON_MAJOR_OTHER | MINOR_OTHER | FLAG_PLANNED
+    private const int ErrorShutdownInProgress = 1115;
     private const int ErrorNoShutdownInProgress = 1116;
+    private const int ErrorShutdownIsScheduled = 1190;
     private const int ErrorNotAllAssigned = 1300;
 
     public PowerOutcome CheckAvailable() => EnableShutdownPrivilege() ?? PowerOutcome.Success;
@@ -66,13 +68,23 @@ internal sealed partial class WindowsPowerController : IPowerController
             return privilegeError;
         }
         // No SHUTDOWN_HYBRID: a full shutdown keeps Wake-on-LAN working on more hardware than Fast Startup.
-        var flags = action == PowerAction.Restart ? ShutdownRestart : ShutdownPowerOff;
+        // SHUTDOWN_FORCE_OTHERS is required, not optional: the service runs as SYSTEM in session 0, so the
+        // signed-in person counts as "another user" and Windows refuses with ERROR_SHUTDOWN_USERS_LOGGED_ON
+        // (found on a real PC). shutdown.exe /t N does the same. Unsaved work is protected by the minimum
+        // grace period the dispatcher enforces for non-forced requests (Windows shows its countdown).
+        var flags = (action == PowerAction.Restart ? ShutdownRestart : ShutdownPowerOff) | ShutdownForceOthers;
         if (force)
         {
-            flags |= ShutdownForceOthers | ShutdownForceSelf;
+            flags |= ShutdownForceSelf;
         }
-        var result = InitiateShutdownW(null, reason, (uint)delay.TotalSeconds, flags, ReasonFlagPlanned);
-        return result == 0 ? PowerOutcome.Success : Win32Failure("InitiateShutdown", (int)result);
+        var result = (int)InitiateShutdownW(null, reason, (uint)delay.TotalSeconds, flags, ReasonFlagPlanned);
+        return result switch
+        {
+            0 => PowerOutcome.Success,
+            ErrorShutdownIsScheduled or ErrorShutdownInProgress =>
+                new PowerOutcome(false, ErrorCodes.PowerFailed, "A shutdown or restart is already pending. Cancel it first (power.cancel)."),
+            _ => Win32Failure("InitiateShutdown", result),
+        };
     }
 
     public PowerOutcome Sleep()

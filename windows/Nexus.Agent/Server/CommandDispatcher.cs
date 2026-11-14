@@ -32,6 +32,13 @@ internal sealed class CommandDispatcher(AgentServices services)
         ["metrics.snapshot"] = "Metrics arrive in P1d.",
     };
 
+    /// <summary>
+    /// Minimum countdown for a shutdown/restart without force. The service has to force-close other
+    /// sessions (see WindowsPowerController), so this warning is what protects unsaved work until P1c
+    /// routes non-forced requests through Nexus.Tray in the user's session.
+    /// </summary>
+    public const int MinGraceSeconds = 30;
+
     // Lets a sleep/immediate shutdown response reach the phone before the PC goes down.
     private static readonly TimeSpan AfterResponseDelay = TimeSpan.FromSeconds(1);
 
@@ -181,6 +188,8 @@ internal sealed class CommandDispatcher(AgentServices services)
     private HandlerResult Power(Guid id, ValidatedCommand command, ConnectionSession session)
     {
         var payload = (PowerPayload)command.Payload;
+        // Without force, the person at the PC always gets a visible countdown to save or cancel.
+        var delaySeconds = payload.Force ? payload.DelaySeconds : Math.Max(payload.DelaySeconds, MinGraceSeconds);
         var action = command.Spec.Type == "power.restart" ? PowerAction.Restart : PowerAction.Shutdown;
         var verb = action == PowerAction.Restart ? "restart" : "shutdown";
         var device = session.AuthenticatedDevice is { } deviceId ? services.Devices.Find(deviceId) : null;
@@ -188,14 +197,15 @@ internal sealed class CommandDispatcher(AgentServices services)
         var response = new JsonObject
         {
             ["action"] = verb,
-            ["scheduledAt"] = services.Time.GetUtcNow().AddSeconds(payload.DelaySeconds).ToString("O"),
+            ["scheduledAt"] = services.Time.GetUtcNow().AddSeconds(delaySeconds).ToString("O"),
+            ["delaySeconds"] = delaySeconds,
         };
 
-        if (payload.DelaySeconds > 0)
+        if (delaySeconds > 0)
         {
-            return FromOutcome(id, services.Power.Schedule(action, TimeSpan.FromSeconds(payload.DelaySeconds), payload.Force, reason), response);
+            return FromOutcome(id, services.Power.Schedule(action, TimeSpan.FromSeconds(delaySeconds), payload.Force, reason), response);
         }
-        // Immediate: respond first, because the PC may stop answering a moment later.
+        // Immediate (force only): respond first, because the PC may stop answering a moment later.
         return Deferred(id, response, session, command.Spec.Type, () => services.Power.Schedule(action, TimeSpan.Zero, payload.Force, reason));
     }
 

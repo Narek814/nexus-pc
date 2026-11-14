@@ -36,10 +36,11 @@
 | W4 | `Nexus.Agent.exe status` от администратора | JSON с `pcId`, `endpoints`, `fingerprint` |
 | W5 | Сопряжение (SETUP §6), коды проверки совпадают | `Paired. Device id: …` |
 | W6 | `send pc.status` | `ok: true`, `os` — Windows |
-| W7 | `send power.shutdown --delay 600 --confirm` | уведомление Windows о выключении через 10 мин с именем устройства |
+| W7 | `send power.shutdown --delay 600 --confirm` | уведомление Windows о выключении через 10 мин с именем устройства (первая попытка дала ошибку 1191 — исправлено) |
 | W8 | `send power.cancel` | уведомление пропало, выключения нет |
 | W9 | `send power.cancel` ещё раз | `power.nothingToCancel` |
 | W10 | `send power.shutdown --delay 600` без `--confirm` | `confirm.required`, уведомления нет |
 | W11 | `devices revoke <id>`, затем `send pc.status` | `auth.failed` |
 | W12 | С другого устройства в той же Wi-Fi: `--host <IP ПК>` | соединение работает (сеть «частная») |
 | W13 | `send power.sleep` (после повторного сопряжения) | ПК уходит в сон через ~1 с |
+| W14 | `send power.restart --confirm` (без задержки) | ответ `delaySeconds: 30`, уведомление Windows; отменить `send power.cancel` |
