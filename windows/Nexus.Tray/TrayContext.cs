@@ -28,10 +28,19 @@ internal sealed class TrayContext : ApplicationContext
         handler.ActionPerformed += (_, text) => _ui.Post(_ => Notify(text), null);
 
         var agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Agent", "Nexus.Agent.exe"));
-        _agent = new AgentConnection(handler, agentPath);
-        _agent.ConnectedChanged += (_, connected) => _ui.Post(_ => UpdateStatus(connected), null);
-
         _status = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
+        var logPath = Path.Combine(dataDir, "tray.log");
+        var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(logPath, message));
+        _agent = agent;
+        agent.ConnectedChanged += (_, connected) => _ui.Post(_ => UpdateStatus(connected), null);
+        agent.StatusChanged += (_, status) => _ui.Post(_ =>
+        {
+            if (!agent.IsConnected)
+            {
+                _status.Text = status.Length > 90 ? status[..90] + "…" : status;
+            }
+        }, null);
+
         _autostart = new ToolStripMenuItem("Запускать при входе в Windows", null, (_, _) => ToggleAutostart()) { Checked = IsAutostartEnabled() };
         var menu = new ContextMenuStrip();
         menu.Items.Add(_status);
@@ -105,5 +114,31 @@ internal sealed class TrayContext : ApplicationContext
         _currentIcon.Dispose();
         _agent.Dispose();
         base.ExitThreadCore();
+    }
+}
+
+/// <summary>Small local log (%LOCALAPPDATA%\NexusPC\tray.log) to explain connection problems. No phone data.</summary>
+internal static class TrayLog
+{
+    private static readonly Lock Gate = new();
+
+    public static void Write(string path, string message)
+    {
+        lock (Gate)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Exists && info.Length > 512 * 1024)
+                {
+                    File.Move(path, path + ".1", overwrite: true);
+                }
+                File.AppendAllText(path, $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} {message}{Environment.NewLine}");
+            }
+            catch (IOException)
+            {
+                // Logging must never break the tray.
+            }
+        }
     }
 }
