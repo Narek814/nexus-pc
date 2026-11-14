@@ -181,15 +181,28 @@ internal sealed class FakeTray : IAsyncDisposable
     public Task<Nexus.Core.Session.RpcResult> CallAgentAsync(string op, JsonObject? args = null) =>
         Channel.CallAsync(op, args, TimeSpan.FromSeconds(10), CancellationToken.None);
 
+    private bool _disposed;
+
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
         await _stop.CancelAsync();
-        await Channel.DisposeAsync();
+        try
+        {
+            await Channel.DisposeAsync(); // flushing may fail if the agent already dropped us
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+        }
         try
         {
             await _run;
         }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException or InvalidDataException)
         {
         }
         _stop.Dispose();

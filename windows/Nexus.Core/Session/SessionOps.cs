@@ -19,6 +19,7 @@ public static class SessionOps
     public const string PairStart = "pair.start";
     public const string PairWait = "pair.wait";
     public const string PairDecide = "pair.decide";
+    public const string PairCancel = "pair.cancel";
     public const string DevicesList = "devices.list";
     public const string DevicesRevoke = "devices.revoke";
 
@@ -28,6 +29,6 @@ public static class SessionOps
     /// </summary>
     public static readonly IReadOnlySet<string> AllowedFromTray = new HashSet<string>(StringComparer.Ordinal)
     {
-        Status, PairStart, PairWait, PairDecide, DevicesList, DevicesRevoke,
+        Status, PairStart, PairWait, PairDecide, PairCancel, DevicesList, DevicesRevoke,
     };
 }

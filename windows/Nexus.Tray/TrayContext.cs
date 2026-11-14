@@ -1,0 +1,109 @@
+using Microsoft.Win32;
+using Nexus.Core.Apps;
+
+namespace Nexus.Tray;
+
+/// <summary>The tray icon and its menu. Everything else opens from here.</summary>
+internal sealed class TrayContext : ApplicationContext
+{
+    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValue = "NexusPC.Tray";
+
+    private readonly NotifyIcon _icon;
+    private readonly ToolStripMenuItem _status;
+    private readonly ToolStripMenuItem _autostart;
+    private readonly UserAppStore _store;
+    private readonly AgentConnection _agent;
+    private readonly SynchronizationContext _ui;
+    private Icon _currentIcon;
+    private Form? _openForm;
+
+    public TrayContext()
+    {
+        _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusPC");
+        _store = new UserAppStore(dataDir);
+
+        var handler = new TrayCommandHandler(_store, new WindowsDesktop());
+        handler.ActionPerformed += (_, text) => _ui.Post(_ => Notify(text), null);
+
+        var agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Agent", "Nexus.Agent.exe"));
+        _agent = new AgentConnection(handler, agentPath);
+        _agent.ConnectedChanged += (_, connected) => _ui.Post(_ => UpdateStatus(connected), null);
+
+        _status = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
+        _autostart = new ToolStripMenuItem("Запускать при входе в Windows", null, (_, _) => ToggleAutostart()) { Checked = IsAutostartEnabled() };
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(_status);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
+        menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_autostart);
+        menu.Items.Add("Выход", null, (_, _) => ExitThread());
+
+        _currentIcon = Theme.CreateIcon(connected: false);
+        _icon = new NotifyIcon
+        {
+            Icon = _currentIcon,
+            Text = "Nexus PC — нет связи со службой",
+            ContextMenuStrip = menu,
+            Visible = true,
+        };
+        _icon.DoubleClick += (_, _) => Show(() => new AppsForm(_store));
+        _agent.Start();
+    }
+
+    private void UpdateStatus(bool connected)
+    {
+        _status.Text = connected ? "Служба подключена" : "Нет связи со службой";
+        _icon.Text = connected ? "Nexus PC — готов" : "Nexus PC — нет связи со службой";
+        var old = _currentIcon;
+        _currentIcon = Theme.CreateIcon(connected);
+        _icon.Icon = _currentIcon;
+        old.Dispose();
+    }
+
+    /// <summary>Visible notice whenever a phone did something on this PC.</summary>
+    private void Notify(string text) => _icon.ShowBalloonTip(3000, "Nexus PC", text, ToolTipIcon.Info);
+
+    private void Show(Func<Form> create)
+    {
+        if (_openForm is { IsDisposed: false })
+        {
+            _openForm.Activate();
+            return;
+        }
+        _openForm = create();
+        _openForm.Show();
+    }
+
+    private static bool IsAutostartEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+        return key?.GetValue(RunValue) is string;
+    }
+
+    private void ToggleAutostart()
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+        if (IsAutostartEnabled())
+        {
+            key.DeleteValue(RunValue, throwOnMissingValue: false);
+        }
+        else
+        {
+            key.SetValue(RunValue, $"\"{Environment.ProcessPath}\"");
+        }
+        _autostart.Checked = IsAutostartEnabled();
+    }
+
+    protected override void ExitThreadCore()
+    {
+        _icon.Visible = false;
+        _icon.Dispose();
+        _currentIcon.Dispose();
+        _agent.Dispose();
+        base.ExitThreadCore();
+    }
+}

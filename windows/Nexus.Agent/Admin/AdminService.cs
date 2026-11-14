@@ -32,6 +32,7 @@ internal sealed class AdminService(AgentServices services)
                 "pair.start" => PairStart(state),
                 "pair.wait" => await PairWaitAsync(state, cancellationToken).ConfigureAwait(false),
                 "pair.decide" => PairDecide(request, state),
+                "pair.cancel" => PairCancel(state),
                 "devices.list" => DevicesList(),
                 "devices.revoke" => DevicesRevoke(request),
                 "devices.permissions" => DevicesPermissions(request),
@@ -112,6 +113,16 @@ internal sealed class AdminService(AgentServices services)
         state.PairingSessionId = null;
         var added = services.Devices.All.FirstOrDefault(d => !before.Contains(d.DeviceId));
         return Ok(new JsonObject { ["approved"] = approve && added is not null, ["deviceId"] = added?.DeviceId.ToString("D") });
+    }
+
+    private JsonObject PairCancel(AdminConnectionState state)
+    {
+        if (state.PairingSessionId is { } id)
+        {
+            services.Pairing.Cancel(id);
+            state.PairingSessionId = null;
+        }
+        return Ok([]);
     }
 
     private JsonObject DevicesList() => Ok(new JsonObject

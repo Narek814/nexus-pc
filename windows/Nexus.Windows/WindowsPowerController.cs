@@ -11,7 +11,11 @@ namespace Nexus.Windows;
 /// Requires SeShutdownPrivilege, which the service enables on its own token.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed partial class WindowsPowerController : IPowerController
+/// <param name="forceOtherSessions">
+/// True in the service (session 0, where the signed-in person is "another user"). False in Nexus.Tray,
+/// which runs in that person's session, so Windows lets apps ask to save before shutting down.
+/// </param>
+public sealed partial class WindowsPowerController(bool forceOtherSessions = true) : IPowerController
 {
     private const uint ShutdownForceOthers = 0x1;
     private const uint ShutdownForceSelf = 0x2;
@@ -36,7 +40,7 @@ public sealed partial class WindowsPowerController : IPowerController
         // signed-in person counts as "another user" and Windows refuses with ERROR_SHUTDOWN_USERS_LOGGED_ON
         // (found on a real PC). shutdown.exe /t N does the same. Unsaved work is protected by the minimum
         // grace period the dispatcher enforces for non-forced requests (Windows shows its countdown).
-        var flags = (action == PowerAction.Restart ? ShutdownRestart : ShutdownPowerOff) | ShutdownForceOthers;
+        var flags = (action == PowerAction.Restart ? ShutdownRestart : ShutdownPowerOff) | (forceOtherSessions ? ShutdownForceOthers : 0);
         if (force)
         {
             flags |= ShutdownForceSelf;

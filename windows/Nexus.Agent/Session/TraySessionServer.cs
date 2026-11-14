@@ -34,8 +34,10 @@ internal sealed partial class TraySessionServer(
                 pipe = Create(pipeName, first);
                 first = false;
             }
-            catch (IOException) when (!first)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                // Never let a pipe problem stop the whole agent (a BackgroundService exception stops the host).
+                LogCreateFailed(logger, ex);
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
                 continue;
             }
@@ -141,12 +143,22 @@ internal sealed partial class TraySessionServer(
         var security = new PipeSecurity();
         security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.NetworkSid, null), PipeAccessRights.FullControl, AccessControlType.Deny));
         security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
+        // The creating account needs CreateNewInstance for every instance after the first. It is SYSTEM
+        // in production; without this, any other account (e.g. an administrator running tests) fails
+        // on the second connection. Found by CI on windows-latest.
+        if (WindowsIdentity.GetCurrent().User is { } self)
+        {
+            security.AddAccessRule(new PipeAccessRule(self, PipeAccessRights.FullControl, AccessControlType.Allow));
+        }
         security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.InteractiveSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
         // Elevated administrators may connect too (they control the PC anyway); the executable check still applies.
         security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
         var options = PipeOptions.Asynchronous | (first ? PipeOptions.FirstPipeInstance : PipeOptions.None);
         return NamedPipeServerStreamAcl.Create(name, PipeDirection.InOut, MaxInstances, PipeTransmissionMode.Byte, options, 0, 0, security);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not create a pipe instance; retrying")]
+    private static partial void LogCreateFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Nexus.Tray connected from session {SessionId}")]
     private static partial void LogTrayConnected(ILogger logger, int sessionId);
