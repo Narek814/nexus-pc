@@ -46,8 +46,16 @@ dotnet publish nexus-pc\windows\Nexus.Agent -c Release -o "C:\Program Files\Nexu
 
 ## 4. Служба Windows
 
+Проверка, что сборка на месте (должно быть `True`):
+
 ```powershell
-sc.exe create NexusPCAgent binPath= "\"C:\Program Files\NexusPC\Agent\Nexus.Agent.exe\"" start= auto DisplayName= "Nexus PC Agent"
+Test-Path "C:\Program Files\NexusPC\Agent\Nexus.Agent.exe"
+```
+
+Создание службы. Используется `New-Service`, а не `sc.exe create`: в PowerShell кавычки внутри аргументов `sc.exe` искажаются, и путь с пробелом ломается (ошибка 1060 на следующих шагах).
+
+```powershell
+New-Service -Name NexusPCAgent -BinaryPathName '"C:\Program Files\NexusPC\Agent\Nexus.Agent.exe"' -DisplayName "Nexus PC Agent" -StartupType Automatic
 ```
 
 Перезапуск при сбое:
@@ -60,7 +68,11 @@ sc.exe failure NexusPCAgent reset= 86400 actions= restart/5000/restart/5000/rest
 sc.exe start NexusPCAgent
 ```
 
-Служба работает от `LocalSystem` (см. SECURITY.md §4). Данные: `C:\ProgramData\NexusPC` (доступ только у SYSTEM и администраторов). Сертификат: хранилище «Локальный компьютер → Личное», имя `Nexus PC Agent <pcId>`.
+```powershell
+sc.exe query NexusPCAgent
+```
+
+Ожидается `STATE : 4 RUNNING`. Служба работает от `LocalSystem` (см. SECURITY.md §4). Данные: `C:\ProgramData\NexusPC` (доступ только у SYSTEM и администраторов). Сертификат: хранилище «Локальный компьютер → Личное», имя `Nexus PC Agent <pcId>`.
 
 ## 5. Брандмауэр — только частная сеть
 
