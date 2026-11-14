@@ -1,4 +1,5 @@
-using Nexus.Agent.Power;
+using Nexus.Core.Power;
+using Nexus.Agent.Session;
 using Nexus.Agent.Storage;
 using Nexus.Core.Pairing;
 using Nexus.Core.Protocol;
@@ -20,6 +21,7 @@ internal sealed class AgentServices
         HandshakeTimeout = handshakeTimeout ?? ConnectionSession.DefaultHandshakeTimeout;
         Pairing = new PairingManager(devices, time);
         Validator = CommandValidator.CreateDefault(time);
+        Trays = new TrayRegistry();
         Dispatcher = new CommandDispatcher(this);
     }
 
@@ -33,4 +35,5 @@ internal sealed class AgentServices
     public PairingManager Pairing { get; }
     public CommandValidator Validator { get; }
     public CommandDispatcher Dispatcher { get; }
+    public TrayRegistry Trays { get; }
 }

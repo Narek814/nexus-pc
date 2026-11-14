@@ -71,6 +71,34 @@ internal static class Program
         return 1;
     }
 
+    private static bool TryCopyToClipboard(string text)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+        try
+        {
+            using var clip = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("clip.exe")
+            {
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            if (clip is null)
+            {
+                return false;
+            }
+            clip.StandardInput.Write(text);
+            clip.StandardInput.Close();
+            return clip.WaitForExit(3000) && clip.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
     private static async Task<int> PrintAsync(JsonObject request)
     {
         await using var client = await AdminClient.ConnectAsync(AdminPipeServer.DefaultPipeName, CancellationToken.None).ConfigureAwait(false);
@@ -94,7 +122,10 @@ internal static class Program
         Console.WriteLine($"  Code: {started["code"]}");
         Console.WriteLine($"  Link: {started["link"]}");
         Console.WriteLine();
-        Console.WriteLine("(A QR code for the iPhone app comes with Nexus.Tray. For now, use the link with Nexus.DevClient.)");
+        if (TryCopyToClipboard(started["link"]!.GetValue<string>()))
+        {
+            Console.WriteLine("The link is copied to the clipboard. (Nexus.Tray shows the same as a QR code.)");
+        }
         Console.WriteLine("Waiting for a device...");
 
         var pending = await client.SendAsync(new JsonObject { ["op"] = "pair.wait" }, CancellationToken.None).ConfigureAwait(false);

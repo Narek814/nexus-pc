@@ -36,3 +36,18 @@ jobs:
           python-version: '3.12'
       - run: pip install "jsonschema>=4.18,<5"
       - run: python -I tools/check_fixtures.py
+
+  qr:
+    name: QR decoder check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Independent decoder, used only to verify our encoder; never shipped.
+      - run: pip install "zxing-cpp>=2.2,<3" "pillow>=10"
+      - run: python -I tools/check_qr.py

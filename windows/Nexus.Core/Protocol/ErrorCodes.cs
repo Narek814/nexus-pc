@@ -26,6 +26,13 @@ public static class ErrorCodes
     public const string PowerFailed = "power.failed";
     public const string PowerNothingToCancel = "power.nothingToCancel";
     public const string PowerUnsupported = "power.unsupported";
+    public const string AppNotFound = "apps.notFound";
+    public const string AppLaunchFailed = "apps.launchFailed";
+    public const string AppCloseNotAllowed = "apps.closeNotAllowed";
+    public const string ProfileNotFound = "profiles.notFound";
+    public const string ProfileInvalid = "profiles.invalid";
+    public const string ProfileLimit = "profiles.limit";
+    public const string LockFailed = "power.lockFailed";
     public const string Internal = "internal";
 }
 

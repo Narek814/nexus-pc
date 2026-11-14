@@ -10,6 +10,8 @@ internal sealed record AgentConfig
     public required Guid PcId { get; init; }
     public int Port { get; init; } = DefaultPort;
     public string? CertificateThumbprint { get; init; }
+    /// <summary>The only executable allowed on the session pipe. Default: ..\Tray\Nexus.Tray.exe next to the agent.</summary>
+    public string? TrayPath { get; init; }
 
     private static readonly JsonSerializerOptions Json = new()
     {

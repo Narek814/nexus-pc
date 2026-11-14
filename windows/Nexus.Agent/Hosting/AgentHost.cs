@@ -10,8 +10,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Nexus.Agent.Admin;
-using Nexus.Agent.Power;
+using Nexus.Core.Power;
+using Nexus.Windows;
 using Nexus.Agent.Server;
+using Nexus.Agent.Session;
 using Nexus.Agent.Storage;
 
 namespace Nexus.Agent.Hosting;
@@ -27,6 +29,10 @@ internal sealed record AgentHostOptions
     public TimeProvider Time { get; init; } = TimeProvider.System;
     public string AdminPipeName { get; init; } = AdminPipeServer.DefaultPipeName;
     public bool EnableAdminPipe { get; init; } = true;
+    public string SessionPipeName { get; init; } = TraySessionServer.DefaultPipeName;
+    public bool EnableSessionPipe { get; init; } = true;
+    /// <summary>Overrides the executable allowed on the session pipe (tests).</summary>
+    public string? TrayPath { get; init; }
     public TimeSpan? PairingLifetime { get; init; }
     public TimeSpan? HandshakeTimeout { get; init; }
 }
@@ -75,6 +81,11 @@ internal static class AgentHost
 
         builder.Services.AddSingleton(services);
         builder.Services.AddSingleton<AdminService>();
+        if (options.EnableSessionPipe)
+        {
+            var trayPath = options.TrayPath ?? config.TrayPath ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Tray", "Nexus.Tray.exe"));
+            builder.Services.AddHostedService(sp => new TraySessionServer(services.Trays, sp.GetRequiredService<AdminService>(), options.SessionPipeName, trayPath, sp.GetRequiredService<ILogger<TraySessionServer>>()));
+        }
         if (options.EnableAdminPipe)
         {
             builder.Services.AddHostedService(sp => new AdminPipeServer(sp.GetRequiredService<AdminService>(), options.AdminPipeName, sp.GetRequiredService<ILogger<AdminPipeServer>>()));

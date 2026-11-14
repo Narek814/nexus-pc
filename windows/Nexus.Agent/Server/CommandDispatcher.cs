@@ -2,8 +2,10 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Nexus.Agent.Power;
+using Nexus.Core.Power;
+using Nexus.Windows;
 using Nexus.Core.Pairing;
+using Nexus.Core.Session;
 using Nexus.Core.Protocol;
 using Nexus.Core.Security;
 
@@ -12,30 +14,29 @@ namespace Nexus.Agent.Server;
 /// <summary>Validates every request through <see cref="CommandValidator"/>, then runs its handler.</summary>
 internal sealed class CommandDispatcher(AgentServices services)
 {
-    /// <summary>Commands with a working handler in this build; system.hello reports exactly these.</summary>
+    /// <summary>Commands the agent handles itself.</summary>
     public static readonly IReadOnlyList<string> Implemented =
     [
         "system.hello", "pair.request", "auth.begin", "auth.prove", "pc.status",
         "power.shutdown", "power.restart", "power.sleep", "power.cancel",
     ];
 
+    /// <summary>Commands that need Nexus.Tray in the signed-in session; available only while it is connected.</summary>
+    public static readonly IReadOnlyList<string> ViaTray =
+    [
+        "power.lock", "apps.list", "apps.launch", "apps.close",
+        "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete",
+    ];
+
     private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal)
     {
-        ["power.lock"] = "Locking needs Nexus.Tray in the user session (P1c).",
-        ["apps.list"] = "App launcher arrives with Nexus.Tray (P1c).",
-        ["apps.launch"] = "App launcher arrives with Nexus.Tray (P1c).",
-        ["apps.close"] = "App launcher arrives with Nexus.Tray (P1c).",
-        ["profiles.list"] = "Profiles arrive with Nexus.Tray (P1c).",
-        ["profiles.run"] = "Profiles arrive with Nexus.Tray (P1c).",
-        ["profiles.upsert"] = "Profiles arrive with Nexus.Tray (P1c).",
-        ["profiles.delete"] = "Profiles arrive with Nexus.Tray (P1c).",
         ["metrics.snapshot"] = "Metrics arrive in P1d.",
     };
 
     /// <summary>
-    /// Minimum countdown for a shutdown/restart without force. The service has to force-close other
-    /// sessions (see WindowsPowerController), so this warning is what protects unsaved work until P1c
-    /// routes non-forced requests through Nexus.Tray in the user's session.
+    /// Minimum countdown for a shutdown/restart without force when it has to go through the service,
+    /// which must force-close other sessions (see WindowsPowerController). With Nexus.Tray connected,
+    /// non-forced requests run in the user's session instead and apps can ask to save.
     /// </summary>
     public const int MinGraceSeconds = 30;
 
@@ -81,6 +82,11 @@ internal sealed class CommandDispatcher(AgentServices services)
             return Fail(id, ErrorCodes.NotImplemented, reason);
         }
 
+        if (ViaTray.Contains(command.Spec.Type))
+        {
+            return await ForwardToTrayAsync(id, command, cancellationToken).ConfigureAwait(false);
+        }
+
         switch (command.Payload)
         {
             case PairRequestPayload pair:
@@ -95,7 +101,7 @@ internal sealed class CommandDispatcher(AgentServices services)
         {
             "system.hello" => Ok(id, Hello(session)),
             "pc.status" => Ok(id, Status()),
-            "power.shutdown" or "power.restart" => Power(id, command, session),
+            "power.shutdown" or "power.restart" => await PowerAsync(id, command, session, cancellationToken).ConfigureAwait(false),
             "power.sleep" => Sleep(id, session),
             "power.cancel" => FromOutcome(id, services.Power.Cancel(), new JsonObject { ["cancelled"] = true }),
             _ => Fail(id, ErrorCodes.NotImplemented, $"'{command.Spec.Type}' has no handler."),
@@ -109,7 +115,8 @@ internal sealed class CommandDispatcher(AgentServices services)
         ["pcName"] = services.Identity.PcName,
         ["agentVersion"] = services.Identity.Version,
         ["authenticated"] = session.CurrentClient().IsAuthenticated,
-        ["capabilities"] = new JsonArray([.. Implemented.Select(t => (JsonNode)t)]),
+        // Exactly what works right now: desktop commands only while Nexus.Tray is connected.
+        ["capabilities"] = new JsonArray([.. Implemented.Concat(services.Trays.IsAvailable ? ViaTray : []).Select(t => (JsonNode)t)]),
     };
 
     private JsonObject Status() => new()
@@ -119,8 +126,8 @@ internal sealed class CommandDispatcher(AgentServices services)
         ["os"] = RuntimeInformation.OSDescription,
         ["uptimeSeconds"] = Environment.TickCount64 / 1000,
         ["agentVersion"] = services.Identity.Version,
-        // Honest: there is no user-session companion yet, so desktop actions are unavailable.
-        ["userSession"] = "unavailable",
+        // Whether Nexus.Tray runs in the signed-in session (needed for apps, profiles, lock).
+        ["userSession"] = services.Trays.IsAvailable ? "available" : "unavailable",
     };
 
     private async Task<HandlerResult> PairAsync(Guid id, PairRequestPayload pair, ConnectionSession session, CancellationToken cancellationToken)
@@ -185,22 +192,44 @@ internal sealed class CommandDispatcher(AgentServices services)
         });
     }
 
-    private HandlerResult Power(Guid id, ValidatedCommand command, ConnectionSession session)
+    private async Task<HandlerResult> ForwardToTrayAsync(Guid id, ValidatedCommand command, CancellationToken cancellationToken)
+    {
+        // The payload was validated against the schema; the Tray re-checks ids against its own list.
+        var args = JsonNode.Parse(command.Envelope.Payload.GetRawText()) as JsonObject ?? [];
+        var result = await services.Trays.CallAsync(command.Spec.Type, args, cancellationToken).ConfigureAwait(false);
+        return result.Ok
+            ? Ok(id, result.Result ?? [])
+            : Fail(id, result.ErrorCode ?? ErrorCodes.Internal, result.Message ?? "Failed.");
+    }
+
+    private async Task<HandlerResult> PowerAsync(Guid id, ValidatedCommand command, ConnectionSession session, CancellationToken cancellationToken)
     {
         var payload = (PowerPayload)command.Payload;
-        // Without force, the person at the PC always gets a visible countdown to save or cancel.
-        var delaySeconds = payload.Force ? payload.DelaySeconds : Math.Max(payload.DelaySeconds, MinGraceSeconds);
         var action = command.Spec.Type == "power.restart" ? PowerAction.Restart : PowerAction.Shutdown;
         var verb = action == PowerAction.Restart ? "restart" : "shutdown";
         var device = session.AuthenticatedDevice is { } deviceId ? services.Devices.Find(deviceId) : null;
         var reason = $"Nexus PC: {verb} requested from {device?.Name ?? "a paired device"}.";
-        var response = new JsonObject
-        {
-            ["action"] = verb,
-            ["scheduledAt"] = services.Time.GetUtcNow().AddSeconds(delaySeconds).ToString("O"),
-            ["delaySeconds"] = delaySeconds,
-        };
 
+        // Preferred: from the signed-in session via Nexus.Tray, so apps can ask to save first.
+        if (!payload.Force && services.Trays.IsAvailable)
+        {
+            var viaTray = await services.Trays.CallAsync(SessionOps.PowerSchedule, new JsonObject
+            {
+                ["action"] = verb,
+                ["delaySeconds"] = payload.DelaySeconds,
+                ["force"] = false,
+                ["reason"] = reason,
+            }, cancellationToken).ConfigureAwait(false);
+            if (viaTray.Ok)
+            {
+                return Ok(id, PowerResponse(verb, payload.DelaySeconds, "userSession"));
+            }
+            // e.g. several people signed in: fall back to the service path below.
+        }
+
+        // Service path: must force other sessions, so a visible countdown protects unsaved work.
+        var delaySeconds = payload.Force ? payload.DelaySeconds : Math.Max(payload.DelaySeconds, MinGraceSeconds);
+        var response = PowerResponse(verb, delaySeconds, "service");
         if (delaySeconds > 0)
         {
             return FromOutcome(id, services.Power.Schedule(action, TimeSpan.FromSeconds(delaySeconds), payload.Force, reason), response);
@@ -208,6 +237,14 @@ internal sealed class CommandDispatcher(AgentServices services)
         // Immediate (force only): respond first, because the PC may stop answering a moment later.
         return Deferred(id, response, session, command.Spec.Type, () => services.Power.Schedule(action, TimeSpan.Zero, payload.Force, reason));
     }
+
+    private JsonObject PowerResponse(string verb, int delaySeconds, string via) => new()
+    {
+        ["action"] = verb,
+        ["scheduledAt"] = services.Time.GetUtcNow().AddSeconds(delaySeconds).ToString("O"),
+        ["delaySeconds"] = delaySeconds,
+        ["via"] = via,
+    };
 
     private HandlerResult Sleep(Guid id, ConnectionSession session) =>
         Deferred(id, new JsonObject { ["action"] = "sleep" }, session, "power.sleep", services.Power.Sleep);

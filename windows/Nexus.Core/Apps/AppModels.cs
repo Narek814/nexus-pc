@@ -8,13 +8,16 @@ public enum AppLaunchKind
     Executable,
     /// <summary>Packaged (Store/MSIX) app by AppUserModelID.</summary>
     PackagedApp,
+    /// <summary>A .lnk or .url from the Start menu (including Steam game shortcuts), opened by the shell.</summary>
+    Shortcut,
 }
 
 /// <summary>
 /// An app the PC owner allowed. Target and arguments are set on the PC only; clients refer
 /// to apps solely by <see cref="Id"/> (SECURITY.md §3.5).
 /// </summary>
-public sealed record AppEntry(string Id, string DisplayName, AppLaunchKind Kind, string Target, bool CloseAllowed);
+/// <param name="ProcessPath">Executable used to find the running app when closing it (null: closing unsupported).</param>
+public sealed record AppEntry(string Id, string DisplayName, AppLaunchKind Kind, string Target, bool CloseAllowed, string? ProcessPath = null);
 
 public sealed record ProfileDefinition(string Id, string Name, IReadOnlyList<string> AppIds);
 
@@ -22,6 +25,7 @@ public static class ProfileRules
 {
     public const int MaxNameLength = 64;
     public const int MaxApps = 32;
+    public const int MaxProfiles = 32;
 
     public static bool IsValidName(string? name) => Identifiers.IsValidDisplayName(name, MaxNameLength);
 

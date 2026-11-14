@@ -1,45 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Nexus.Core.Power;
 using Nexus.Core.Protocol;
 
-namespace Nexus.Agent.Power;
-
-public enum PowerAction
-{
-    Shutdown,
-    Restart,
-}
-
-public sealed record PowerOutcome(bool Ok, string? ErrorCode = null, string? Message = null)
-{
-    public static PowerOutcome Success { get; } = new(true);
-}
-
-public interface IPowerController
-{
-    /// <summary>Whether actions can run at all (platform, privilege), without doing anything.</summary>
-    PowerOutcome CheckAvailable();
-
-    PowerOutcome Schedule(PowerAction action, TimeSpan delay, bool force, string reason);
-
-    PowerOutcome Sleep();
-
-    PowerOutcome Cancel();
-}
-
-/// <summary>Non-Windows hosts (development, tests): refuses honestly instead of pretending.</summary>
-internal sealed class UnsupportedPowerController : IPowerController
-{
-    private static readonly PowerOutcome Unsupported = new(false, ErrorCodes.PowerUnsupported, "Power control is only available on Windows.");
-
-    public PowerOutcome CheckAvailable() => Unsupported;
-
-    public PowerOutcome Schedule(PowerAction action, TimeSpan delay, bool force, string reason) => Unsupported;
-
-    public PowerOutcome Sleep() => Unsupported;
-
-    public PowerOutcome Cancel() => Unsupported;
-}
+namespace Nexus.Windows;
 
 /// <summary>
 /// InitiateShutdownW / AbortSystemShutdownW / SetSuspendState. With a delay, Windows shows its own
@@ -47,7 +11,7 @@ internal sealed class UnsupportedPowerController : IPowerController
 /// Requires SeShutdownPrivilege, which the service enables on its own token.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed partial class WindowsPowerController : IPowerController
+public sealed partial class WindowsPowerController : IPowerController
 {
     private const uint ShutdownForceOthers = 0x1;
     private const uint ShutdownForceSelf = 0x2;

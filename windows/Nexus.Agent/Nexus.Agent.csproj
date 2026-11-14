@@ -17,6 +17,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />
+    <ProjectReference Include="..\Nexus.Windows\Nexus.Windows.csproj" />
     <InternalsVisibleTo Include="Nexus.Tests" />
   </ItemGroup>
 </Project>

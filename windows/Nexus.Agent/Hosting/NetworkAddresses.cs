@@ -10,24 +10,46 @@ namespace Nexus.Agent.Hosting;
 /// </summary>
 internal static class NetworkAddresses
 {
+    /// <summary>
+    /// Private addresses of interfaces that have a default gateway (the real home network), plus
+    /// Tailscale addresses. This leaves out adapters such as the Windows mobile hotspot and the
+    /// WSL/Hyper-V virtual switch, which have no gateway (found on a real PC). If no interface has a
+    /// gateway (an offline LAN), every private address is used.
+    /// </summary>
     public static IReadOnlyList<IPAddress> EligibleLocalAddresses()
     {
-        var result = new List<IPAddress>();
+        var withGateway = new List<IPAddress>();
+        var allPrivate = new List<IPAddress>();
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
             {
                 continue;
             }
-            foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
+            var properties = nic.GetIPProperties();
+            var hasGateway = properties.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any));
+            foreach (var unicast in properties.UnicastAddresses)
             {
-                if (IsEligible(unicast.Address) && !result.Contains(unicast.Address))
+                var address = unicast.Address;
+                if (!IsEligible(address) || allPrivate.Contains(address))
                 {
-                    result.Add(unicast.Address);
+                    continue;
+                }
+                allPrivate.Add(address);
+                if (hasGateway || IsTailscale(address))
+                {
+                    withGateway.Add(address);
                 }
             }
         }
-        return result;
+        return withGateway.Count > 0 ? withGateway : allPrivate;
+    }
+
+    public static bool IsTailscale(IPAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        var b = address.GetAddressBytes();
+        return address.AddressFamily == AddressFamily.InterNetwork && b[0] == 100 && b[1] is >= 64 and <= 127;
     }
 
     /// <summary>RFC 1918 private ranges and 100.64.0.0/10 (Tailscale). IPv4 only for now.</summary>

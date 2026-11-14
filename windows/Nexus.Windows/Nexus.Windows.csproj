@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows interop shared by Nexus.Agent (service) and Nexus.Tray (user session).
+       Targets net10.0 so it builds everywhere; every type is [SupportedOSPlatform("windows")]. -->
+  <PropertyGroup>
+    <RootNamespace>Nexus.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />
+  </ItemGroup>
+</Project>

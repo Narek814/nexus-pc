@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Nexus.Agent.Admin;
 using Nexus.Agent.Hosting;
-using Nexus.Agent.Power;
+using Nexus.Core.Power;
 using Nexus.Agent.Server;
 using Nexus.DevClient;
 
@@ -43,8 +43,9 @@ internal sealed class AgentTestHost : IAsyncDisposable
 {
     private readonly WebApplication _app;
 
-    private AgentTestHost(WebApplication app, string dataDirectory, IPowerController? power)
+    private AgentTestHost(WebApplication app, string dataDirectory, IPowerController? power, string sessionPipe)
     {
+        SessionPipe = sessionPipe;
         _app = app;
         DataDirectory = dataDirectory;
         Power = power as FakePowerController;
@@ -53,6 +54,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
     }
 
     public string DataDirectory { get; }
+    public string SessionPipe { get; }
     public FakePowerController? Power { get; }
     public AgentServices Services { get; }
     public AdminService Admin { get; }
@@ -62,10 +64,11 @@ internal sealed class AgentTestHost : IAsyncDisposable
 
     public static async Task<AgentTestHost> StartAsync(
         string? dataDirectory = null, IPowerController? power = null, bool fakePower = true,
-        string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null)
+        string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         power ??= fakePower ? new FakePowerController() : null;
+        var sessionPipe = "nexus-session-" + Guid.NewGuid().ToString("N");
         var app = AgentHost.Build([], new AgentHostOptions
         {
             DataDirectory = dataDirectory,
@@ -76,9 +79,12 @@ internal sealed class AgentTestHost : IAsyncDisposable
             AdminPipeName = adminPipe ?? AdminPipeServer.DefaultPipeName,
             PairingLifetime = pairingLifetime,
             HandshakeTimeout = handshakeTimeout,
+            SessionPipeName = sessionPipe,
+            // On Windows the agent only accepts the installed Nexus.Tray.exe; the fake tray lives in this test process.
+            TrayPath = trayPath ?? Environment.ProcessPath,
         });
         await app.StartAsync();
-        return new AgentTestHost(app, dataDirectory, power);
+        return new AgentTestHost(app, dataDirectory, power, sessionPipe);
     }
 
     public Task<NexusClient> ConnectAsync(string? fingerprint = null, Action<System.Net.WebSockets.ClientWebSocketOptions>? configure = null) =>
@@ -111,6 +117,26 @@ internal sealed class AgentTestHost : IAsyncDisposable
         return (client, deviceId, key);
     }
 
+    /// <summary>Connects a Tray (real pipe, real channel, real handler; fake desktop) and waits until the agent sees it.</summary>
+    public async Task<FakeTray> ConnectTrayAsync()
+    {
+        var pipe = new System.IO.Pipes.NamedPipeClientStream(".", SessionPipe, System.IO.Pipes.PipeDirection.InOut,
+            System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+        await pipe.ConnectAsync(5000);
+        var tray = new FakeTray(pipe);
+        await AgentIntegrationTests.WaitUntil(() => Services.Trays.IsAvailable);
+        return tray;
+    }
+
+    /// <summary>Connects without waiting for acceptance (for the rejection test).</summary>
+    public async Task<FakeTray> ConnectTrayUncheckedAsync()
+    {
+        var pipe = new System.IO.Pipes.NamedPipeClientStream(".", SessionPipe, System.IO.Pipes.PipeDirection.InOut,
+            System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+        await pipe.ConnectAsync(5000);
+        return new FakeTray(pipe);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();
@@ -131,4 +157,45 @@ internal static class Json
     public static bool IsOk(this JsonObject response) => response["ok"]?.GetValue<bool>() == true;
 
     public static string? ErrorCode(this JsonObject response) => response["error"]?["code"]?.GetValue<string>();
+}
+
+internal sealed class FakeTray : IAsyncDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "nexus-faketray-" + Guid.NewGuid().ToString("N"));
+    private readonly CancellationTokenSource _stop = new();
+    private readonly Task _run;
+
+    public FakeTray(Stream pipe)
+    {
+        Store = new Nexus.Core.Apps.UserAppStore(_dir);
+        Channel = new Nexus.Core.Session.JsonLineChannel(pipe);
+        Handler = new Nexus.Core.Apps.TrayCommandHandler(Store, Desktop);
+        _run = Channel.RunAsync(Handler.HandleAsync, _stop.Token);
+    }
+
+    public Nexus.Core.Apps.UserAppStore Store { get; }
+    public FakeDesktop Desktop { get; } = new();
+    public Nexus.Core.Apps.TrayCommandHandler Handler { get; }
+    public Nexus.Core.Session.JsonLineChannel Channel { get; }
+
+    public Task<Nexus.Core.Session.RpcResult> CallAgentAsync(string op, JsonObject? args = null) =>
+        Channel.CallAsync(op, args, TimeSpan.FromSeconds(10), CancellationToken.None);
+
+    public async ValueTask DisposeAsync()
+    {
+        await _stop.CancelAsync();
+        await Channel.DisposeAsync();
+        try
+        {
+            await _run;
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
+        {
+        }
+        _stop.Dispose();
+        if (Directory.Exists(_dir))
+        {
+            Directory.Delete(_dir, recursive: true);
+        }
+    }
 }

@@ -208,15 +208,16 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Not_yet_implemented_commands_say_so()
+    public async Task Desktop_commands_without_a_tray_say_the_session_is_unavailable()
     {
         var (client, _, key) = await _host.PairedClientAsync();
         await using var _ = client;
         using var __ = key;
 
-        var launch = await client.RequestAsync("apps.launch", new JsonObject { ["appId"] = "steam" });
-        Assert.Equal(ErrorCodes.NotImplemented, launch.ErrorCode());
-        Assert.Contains("P1c", launch["error"]!["message"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal(ErrorCodes.SessionUnavailable, (await client.RequestAsync("apps.launch", new JsonObject { ["appId"] = "steam" })).ErrorCode());
+        Assert.Equal(ErrorCodes.SessionUnavailable, (await client.RequestAsync("power.lock")).ErrorCode());
+        Assert.Equal(ErrorCodes.NotImplemented, (await client.RequestAsync("metrics.snapshot")).ErrorCode());
+        Assert.Equal("unavailable", (await client.RequestAsync("pc.status"))["payload"]!["userSession"]!.GetValue<string>());
     }
 
     [Fact]
@@ -298,6 +299,7 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
             await client.RequestAsync("pc.status"),
             await client.RequestAsync("power.shutdown"),
             await client.RequestAsync("apps.launch", new JsonObject { ["appId"] = "steam" }),
+            await client.RequestAsync("metrics.snapshot"),
             await client.SendRawAsync("[]"),
         };
         foreach (var r in responses)

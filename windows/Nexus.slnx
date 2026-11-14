@@ -3,4 +3,5 @@
   <Project Path="Nexus.Core/Nexus.Core.csproj" />
   <Project Path="Nexus.DevClient/Nexus.DevClient.csproj" />
   <Project Path="Nexus.Tests/Nexus.Tests.csproj" />
+  <Project Path="Nexus.Windows/Nexus.Windows.csproj" />
 </Solution>
