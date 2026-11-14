@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Cross-platform on purpose: no Windows APIs here, so it builds and tests on any OS (ARCHITECTURE.md §4). -->
+  <PropertyGroup>
+    <RootNamespace>Nexus.Core</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

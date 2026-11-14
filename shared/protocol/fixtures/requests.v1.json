@@ -1,0 +1,1348 @@
+{
+  "description": "Shared contract fixtures for protocol v1 requests. Each case: validate `message` under `context` and expect `expect`. `schemaValid` states whether `message` alone satisfies shared/schemas/request.v1.schema.json. Error precedence: protocol.* > command.unknown > auth.required > auth.permissionDenied > auth.clockSkew > auth.replay > confirm.required > command.invalidPayload.",
+  "version": 1,
+  "cases": [
+    {
+      "name": "hello without auth",
+      "context": {
+        "authenticated": false,
+        "permissions": [],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000001",
+        "kind": "request",
+        "type": "system.hello",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "pc.status",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000002",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "metrics.snapshot",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000003",
+        "kind": "request",
+        "type": "metrics.snapshot",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "shutdown confirmed",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000004",
+        "kind": "request",
+        "type": "power.shutdown",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "delaySeconds": 60
+        },
+        "confirmed": true
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "restart confirmed, force",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000005",
+        "kind": "request",
+        "type": "power.restart",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "force": true
+        },
+        "confirmed": true
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "sleep",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000006",
+        "kind": "request",
+        "type": "power.sleep",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "lock",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000007",
+        "kind": "request",
+        "type": "power.lock",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "cancel pending shutdown",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000008",
+        "kind": "request",
+        "type": "power.cancel",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "apps.list",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000009",
+        "kind": "request",
+        "type": "apps.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "launch app",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000010",
+        "kind": "request",
+        "type": "apps.launch",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "appId": "steam"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "close app",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000011",
+        "kind": "request",
+        "type": "apps.close",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "appId": "discord"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "profiles.list",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000012",
+        "kind": "request",
+        "type": "profiles.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "run profile",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000013",
+        "kind": "request",
+        "type": "profiles.run",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profileId": "gaming"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "upsert profile",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000014",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "developer",
+            "name": "Developer Mode",
+            "appIds": [
+              "vscode",
+              "chrome",
+              "claude-code"
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "upsert profile with cyrillic name",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000015",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "night",
+            "name": "Ночной режим",
+            "appIds": []
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "delete profile",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000016",
+        "kind": "request",
+        "type": "profiles.delete",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profileId": "night"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "pcId optional",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000017",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "ts within skew window",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000018",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:04:59Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "unsupported version",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 2,
+        "id": "00000000-0000-4000-8000-000000000019",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.unsupportedVersion"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "kind must be request",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000020",
+        "kind": "event",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "missing id",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "id not uuid",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "abc",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "unknown top-level field",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000023",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {},
+        "shell": "cmd.exe"
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "ts not a date",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000024",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "yesterday",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "payload not object",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000025",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": []
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "confirmed not boolean",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000026",
+        "kind": "request",
+        "type": "power.shutdown",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {},
+        "confirmed": "yes"
+      },
+      "expect": {
+        "ok": false,
+        "error": "protocol.malformed"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "unknown command",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000027",
+        "kind": "request",
+        "type": "system.exec",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "command": "powershell -c whoami"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.unknown"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "arbitrary path launch rejected",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000028",
+        "kind": "request",
+        "type": "apps.launch",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "appId": "C:\\Windows\\System32\\cmd.exe"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "app id path traversal",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000029",
+        "kind": "request",
+        "type": "apps.launch",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "appId": "../steam"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "extra payload field",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000030",
+        "kind": "request",
+        "type": "apps.launch",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "appId": "steam",
+          "args": "--evil"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "missing appId",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000031",
+        "kind": "request",
+        "type": "apps.launch",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "delay too large",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000032",
+        "kind": "request",
+        "type": "power.shutdown",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "delaySeconds": 86401
+        },
+        "confirmed": true
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "delay negative",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000033",
+        "kind": "request",
+        "type": "power.shutdown",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "delaySeconds": -1
+        },
+        "confirmed": true
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "delay not integer",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000034",
+        "kind": "request",
+        "type": "power.shutdown",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "delaySeconds": 1.5
+        },
+        "confirmed": true
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "payload on empty command",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000035",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "x": 1
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "profile name empty",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000036",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "x",
+            "name": "",
+            "appIds": []
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "profile name whitespace",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000037",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "x",
+            "name": "   ",
+            "appIds": []
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "profile name too long",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000038",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "x",
+            "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "appIds": []
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "profile duplicate apps",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000039",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "x",
+            "name": "X",
+            "appIds": [
+              "a",
+              "a"
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "profile too many apps",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000040",
+        "kind": "request",
+        "type": "profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "x",
+            "name": "X",
+            "appIds": [
+              "app-0",
+              "app-1",
+              "app-2",
+              "app-3",
+              "app-4",
+              "app-5",
+              "app-6",
+              "app-7",
+              "app-8",
+              "app-9",
+              "app-10",
+              "app-11",
+              "app-12",
+              "app-13",
+              "app-14",
+              "app-15",
+              "app-16",
+              "app-17",
+              "app-18",
+              "app-19",
+              "app-20",
+              "app-21",
+              "app-22",
+              "app-23",
+              "app-24",
+              "app-25",
+              "app-26",
+              "app-27",
+              "app-28",
+              "app-29",
+              "app-30",
+              "app-31",
+              "app-32"
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "profile id uppercase",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000041",
+        "kind": "request",
+        "type": "profiles.run",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profileId": "Gaming"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "not authenticated",
+      "context": {
+        "authenticated": false,
+        "permissions": [],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000042",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.required"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "missing power permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000043",
+        "kind": "request",
+        "type": "power.sleep",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "missing apps permission for profiles",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000044",
+        "kind": "request",
+        "type": "profiles.run",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profileId": "gaming"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "critical without confirmation",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000045",
+        "kind": "request",
+        "type": "power.shutdown",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "confirm.required"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "critical confirmed=false",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000046",
+        "kind": "request",
+        "type": "power.restart",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {},
+        "confirmed": false
+      },
+      "expect": {
+        "ok": false,
+        "error": "confirm.required"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "ts too old",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000047",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T09:54:59Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.clockSkew"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "ts in future",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000048",
+        "kind": "request",
+        "type": "pc.status",
+        "ts": "2026-11-14T10:05:01Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.clockSkew"
+      },
+      "schemaValid": true
+    }
+  ]
+}

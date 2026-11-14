@@ -1,12 +1,12 @@
 # Nexus PC — Детальный план ближайших этапов
 
-## P0 (текущий) — завершение
-1. Создать репозиторий, закоммитить документы.
-2. `shared/schemas/envelope.schema.json`, `hello`, `pair`, `auth`, `power.*`, `apps.*`, `profiles.*`, `metrics.snapshot`.
+## P0 — выполнено
+1. Документы: ARCHITECTURE, SECURITY, FEATURES, ROADMAP (с решениями D11 «нулевой бюджет» и D12 «без Mac»).
+2. `shared/schemas/request.v1.schema.json`: `system.hello`, `pc.status`, `power.*`, `apps.*`, `profiles.*`, `metrics.snapshot`. Сообщения сопряжения и авторизации (`pair.*`, `auth.*`) — на P1b вместе с их реализацией.
 3. `shared/protocol/fixtures/*.json` — валидные и невалидные примеры (контракт-тесты для C# и Swift).
 4. `docs/API.md` — описание каждого сообщения, кодов ошибок, классов риска.
 
-## P1a — Nexus.Core (тестируется в облачном контейнере)
+## P1a — Nexus.Core — выполнено (97 тестов)
 - `Envelope`, `CommandType`, `RiskClass`, `Permission`, `PcId`, `DeviceId`.
 - `CommandCatalog` — единственный список допустимых команд и их требований.
 - `CommandValidator` — схема + разрешения + риск + replay-окно.
@@ -35,7 +35,7 @@
 ## Как проверяем
 | Что | Где |
 |-----|-----|
-| `Nexus.Core`, схемы, фикстуры | Облачный контейнер (после установки .NET SDK) + CI |
+| `Nexus.Core`, схемы, фикстуры | Облачный контейнер (.NET 10 SDK установлен) + CI |
 | Agent/Tray | Ваш Windows-ПК (я даю команды сборки и сценарий ручной проверки) |
-| iOS | Ваш Mac с Xcode + iPhone |
-| CI (предложение) | GitHub Actions: `windows-latest` для .NET, `macos-latest` для `xcodebuild test` |
+| iOS | macOS-раннер GitHub Actions (сборка и `swift test`) → установка на iPhone через Sideloadly с Windows |
+| CI (предложение) | GitHub Actions: `windows-latest` для .NET, `macos-latest` для `swift test` и `xcodebuild` без подписи |
