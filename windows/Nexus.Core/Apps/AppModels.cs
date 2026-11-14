@@ -23,24 +23,7 @@ public static class ProfileRules
     public const int MaxNameLength = 64;
     public const int MaxApps = 32;
 
-    /// <summary>1..64 Unicode code points (same unit as JSON Schema), not blank, no control characters.</summary>
-    public static bool IsValidName(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return false;
-        }
-        var count = 0;
-        foreach (var rune in name.EnumerateRunes())
-        {
-            if (rune.Value <= 0x1F || rune.Value == 0x7F)
-            {
-                return false;
-            }
-            count++;
-        }
-        return count <= MaxNameLength;
-    }
+    public static bool IsValidName(string? name) => Identifiers.IsValidDisplayName(name, MaxNameLength);
 
     /// <summary>App ids in the profile that are not in the PC's registry.</summary>
     public static IReadOnlyList<string> FindUnknownApps(ProfileDefinition profile, AppRegistry registry)

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Targets plain net10.0 so the network/session layer runs (and is tested) on any OS.
+    Windows-only parts are marked [SupportedOSPlatform("windows")] and guarded at runtime;
+    the CA1416 analyzer enforces the guards. Production is Windows only.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Nexus.Agent</RootNamespace>
+    <AssemblyName>Nexus.Agent</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />
+    <InternalsVisibleTo Include="Nexus.Tests" />
+  </ItemGroup>
+</Project>

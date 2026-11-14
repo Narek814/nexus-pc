@@ -77,8 +77,10 @@ public class SharedFixtureTests
     }
 
     [Fact]
-    public void Only_hello_is_available_without_authentication()
+    public void Only_handshake_commands_are_available_without_authentication()
     {
-        Assert.Equal(["system.hello"], CommandCatalog.V1.All.Where(c => !c.RequiresAuth).Select(c => c.Type));
+        var open = CommandCatalog.V1.All.Where(c => !c.RequiresAuth).Select(c => c.Type).Order(StringComparer.Ordinal);
+        Assert.Equal(["auth.begin", "auth.prove", "pair.request", "system.hello"], open);
+        Assert.All(CommandCatalog.V1.All.Where(c => !c.RequiresAuth), c => Assert.Equal(Permission.None, c.RequiredPermission));
     }
 }

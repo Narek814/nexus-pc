@@ -30,6 +30,9 @@ public sealed class CommandCatalog
     public static CommandCatalog V1 { get; } = new(
     [
         new("system.hello", Permission.None, RiskClass.Read, RequiresAuth: false, PayloadParsers.Empty),
+        new("pair.request", Permission.None, RiskClass.Normal, RequiresAuth: false, PayloadParsers.PairRequest),
+        new("auth.begin", Permission.None, RiskClass.Read, RequiresAuth: false, PayloadParsers.AuthBegin),
+        new("auth.prove", Permission.None, RiskClass.Read, RequiresAuth: false, PayloadParsers.AuthProve),
         new("pc.status", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.Empty),
         new("metrics.snapshot", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.Empty),
         new("power.shutdown", Permission.Power, RiskClass.Critical, true, PayloadParsers.Power),

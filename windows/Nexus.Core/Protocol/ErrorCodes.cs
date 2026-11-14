@@ -14,6 +14,19 @@ public static class ErrorCodes
     public const string Replay = "auth.replay";
     public const string RateLimited = "rate.limited";
     public const string ConfirmationRequired = "confirm.required";
+    public const string AuthFailed = "auth.failed";
+    public const string NotImplemented = "command.notImplemented";
+    public const string SessionUnavailable = "session.unavailable";
+    public const string PairNoActiveSession = "pair.noActiveSession";
+    public const string PairInvalidCode = "pair.invalidCode";
+    public const string PairBusy = "pair.busy";
+    public const string PairRejected = "pair.rejected";
+    public const string PairExpired = "pair.expired";
+    public const string PairDeviceLimit = "pair.deviceLimit";
+    public const string PowerFailed = "power.failed";
+    public const string PowerNothingToCancel = "power.nothingToCancel";
+    public const string PowerUnsupported = "power.unsupported";
+    public const string Internal = "internal";
 }
 
 public sealed record ProtocolError(string Code, string Message);

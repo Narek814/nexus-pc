@@ -5,59 +5,370 @@
   "description": "Request sent by a client (iPhone) to Nexus.Agent. Source of truth for Nexus.Core (C#) and NexusKit (Swift). Must stay in sync with windows/Nexus.Core/Protocol/CommandCatalog.cs.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["v", "id", "kind", "type", "ts", "payload"],
+  "required": [
+    "v",
+    "id",
+    "kind",
+    "type",
+    "ts",
+    "payload"
+  ],
   "properties": {
-    "v": { "const": 1 },
-    "id": { "$ref": "#/$defs/uuid" },
-    "kind": { "const": "request" },
-    "type": { "type": "string" },
-    "ts": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,7})?(Z|[+-][0-9]{2}:[0-9]{2})$" },
-    "pcId": { "$ref": "#/$defs/uuid" },
-    "confirmed": { "type": "boolean", "description": "User confirmed a critical action on the client. UX safeguard, not a security boundary (SECURITY.md §3.12)." },
-    "payload": { "type": "object" }
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/uuid"
+    },
+    "kind": {
+      "const": "request"
+    },
+    "type": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,7})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "pcId": {
+      "$ref": "#/$defs/uuid"
+    },
+    "confirmed": {
+      "type": "boolean",
+      "description": "User confirmed a critical action on the client. UX safeguard, not a security boundary (SECURITY.md §3.12)."
+    },
+    "payload": {
+      "type": "object"
+    }
   },
   "allOf": [
-    { "if": { "properties": { "type": { "enum": ["system.hello", "pc.status", "power.lock", "power.sleep", "power.cancel", "apps.list", "profiles.list", "metrics.snapshot"] } } },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/empty" } } } },
-    { "if": { "properties": { "type": { "enum": ["power.shutdown", "power.restart"] } } },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/powerPayload" } } } },
-    { "if": { "properties": { "type": { "enum": ["apps.launch", "apps.close"] } } },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/appRef" } } } },
-    { "if": { "properties": { "type": { "enum": ["profiles.run", "profiles.delete"] } } },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/profileRef" } } } },
-    { "if": { "properties": { "type": { "const": "profiles.upsert" } } },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/profileUpsert" } } } },
-    { "properties": { "type": { "enum": ["system.hello", "pc.status", "power.shutdown", "power.restart", "power.sleep", "power.lock", "power.cancel", "apps.list", "apps.launch", "apps.close", "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete", "metrics.snapshot"] } } }
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "system.hello",
+              "pc.status",
+              "power.lock",
+              "power.sleep",
+              "power.cancel",
+              "apps.list",
+              "profiles.list",
+              "metrics.snapshot"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/empty"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "power.shutdown",
+              "power.restart"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/powerPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "apps.launch",
+              "apps.close"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/appRef"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "profiles.run",
+              "profiles.delete"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/profileRef"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "profiles.upsert"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/profileUpsert"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "pair.request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/pairRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "auth.begin"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/authBegin"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "auth.prove"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/authProve"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "enum": [
+            "system.hello",
+            "auth.prove",
+            "auth.begin",
+            "pair.request",
+            "pc.status",
+            "power.shutdown",
+            "power.restart",
+            "power.sleep",
+            "power.lock",
+            "power.cancel",
+            "apps.list",
+            "apps.launch",
+            "apps.close",
+            "profiles.list",
+            "profiles.run",
+            "profiles.upsert",
+            "profiles.delete",
+            "metrics.snapshot"
+          ]
+        }
+      }
+    }
   ],
   "$defs": {
-    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
-    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
-    "empty": { "type": "object", "additionalProperties": false },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "empty": {
+      "type": "object",
+      "additionalProperties": false
+    },
     "powerPayload": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
-        "force": { "type": "boolean" }
+        "delaySeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "force": {
+          "type": "boolean"
+        }
       }
     },
     "appRef": {
-      "type": "object", "additionalProperties": false, "required": ["appId"],
-      "properties": { "appId": { "$ref": "#/$defs/slug" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appId"
+      ],
+      "properties": {
+        "appId": {
+          "$ref": "#/$defs/slug"
+        }
+      }
     },
     "profileRef": {
-      "type": "object", "additionalProperties": false, "required": ["profileId"],
-      "properties": { "profileId": { "$ref": "#/$defs/slug" } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId"
+      ],
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/slug"
+        }
+      }
     },
     "profileUpsert": {
-      "type": "object", "additionalProperties": false, "required": ["profile"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile"
+      ],
       "properties": {
         "profile": {
-          "type": "object", "additionalProperties": false, "required": ["id", "name", "appIds"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name",
+            "appIds"
+          ],
           "properties": {
-            "id": { "$ref": "#/$defs/slug" },
-            "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(?=.*\\S)[^\\x00-\\x1f\\x7f]+$" },
-            "appIds": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/slug" } }
+            "id": {
+              "$ref": "#/$defs/slug"
+            },
+            "name": {
+              "$ref": "#/$defs/displayName"
+            },
+            "appIds": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/slug"
+              }
+            }
           }
+        }
+      }
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?=.*\\S)[^\\x00-\\x1f\\x7f]+$"
+    },
+    "base64": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+    },
+    "pairRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "deviceName",
+        "publicKey"
+      ],
+      "description": "publicKey: base64 DER SubjectPublicKeyInfo of a P-256 key (curve is checked by implementations, not by this schema).",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9]{8}$"
+        },
+        "deviceName": {
+          "$ref": "#/$defs/displayName"
+        },
+        "publicKey": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/base64"
+            },
+            {
+              "maxLength": 268
+            }
+          ]
+        }
+      }
+    },
+    "authBegin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deviceId"
+      ],
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/uuid"
+        }
+      }
+    },
+    "authProve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signature"
+      ],
+      "description": "signature: base64 DER (X9.62) ECDSA P-256 SHA-256 over the auth transcript (docs/API.md).",
+      "properties": {
+        "signature": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/base64"
+            },
+            {
+              "maxLength": 172
+            }
+          ]
         }
       }
     }

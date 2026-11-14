@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Nexus.Core.Apps;
+using Nexus.Core.Pairing;
+using Nexus.Core.Security;
 
 namespace Nexus.Core.Protocol;
 
@@ -18,6 +20,12 @@ public sealed record AppRefPayload(string AppId);
 public sealed record ProfileRefPayload(string ProfileId);
 
 public sealed record ProfileUpsertPayload(ProfileDefinition Profile);
+
+public sealed record PairRequestPayload(string Code, string DeviceName, byte[] PublicKeySpki);
+
+public sealed record AuthBeginPayload(Guid DeviceId);
+
+public sealed record AuthProvePayload(byte[] Signature);
 
 public sealed record PayloadResult(object? Value, string? Error)
 {
@@ -119,6 +127,76 @@ public static class PayloadParsers
         }
 
         return PayloadResult.Ok(new ProfileUpsertPayload(new ProfileDefinition(id, nameElement.GetString()!, appIds)));
+    }
+
+    public static PayloadResult PairRequest(JsonElement payload)
+    {
+        if (HasOnly(payload, "code", "deviceName", "publicKey") is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        if (!TryGetString(payload, "code", out var code) || !PairingLink.IsValidCode(code))
+        {
+            return PayloadResult.Invalid("'code' must be 8 digits.");
+        }
+        if (!TryGetString(payload, "deviceName", out var name) || !Identifiers.IsValidDisplayName(name))
+        {
+            return PayloadResult.Invalid("'deviceName' must be 1..64 visible characters.");
+        }
+        if (!TryGetBase64(payload, "publicKey", DeviceCrypto.MaxSpkiBytes, out var key) || !DeviceCrypto.IsValidP256PublicKey(key))
+        {
+            return PayloadResult.Invalid("'publicKey' must be a base64 P-256 SubjectPublicKeyInfo.");
+        }
+        return PayloadResult.Ok(new PairRequestPayload(code, name, key));
+    }
+
+    public static PayloadResult AuthBegin(JsonElement payload)
+    {
+        if (HasOnly(payload, "deviceId") is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        return TryGetString(payload, "deviceId", out var text) && Guid.TryParseExact(text, "D", out var id)
+            ? PayloadResult.Ok(new AuthBeginPayload(id))
+            : PayloadResult.Invalid("'deviceId' must be a UUID.");
+    }
+
+    public static PayloadResult AuthProve(JsonElement payload)
+    {
+        if (HasOnly(payload, "signature") is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        return TryGetBase64(payload, "signature", DeviceCrypto.MaxSignatureBytes, out var signature)
+            ? PayloadResult.Ok(new AuthProvePayload(signature))
+            : PayloadResult.Invalid("'signature' must be base64, at most 128 bytes.");
+    }
+
+    private static bool TryGetString(JsonElement obj, string name, out string value)
+    {
+        value = string.Empty;
+        if (obj.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String)
+        {
+            value = element.GetString()!;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryGetBase64(JsonElement obj, string name, int maxBytes, out byte[] value)
+    {
+        value = [];
+        if (!TryGetString(obj, name, out var text) || text.Length == 0 || text.Length > (maxBytes + 2) / 3 * 4)
+        {
+            return false;
+        }
+        var buffer = new byte[maxBytes];
+        if (!Convert.TryFromBase64String(text, buffer, out var written) || written == 0)
+        {
+            return false;
+        }
+        value = buffer[..written];
+        return true;
     }
 
     private static string? HasOnly(JsonElement obj, params string[] allowed)

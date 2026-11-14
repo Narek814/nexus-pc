@@ -1,0 +1,108 @@
+{
+  "description": "Example responses, checked against shared/schemas/response.v1.schema.json by tools/check_fixtures.py. Taken from real agent output.",
+  "cases": [
+    {
+      "name": "pair.request approved",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "1d472110-1670-4623-b355-171356e54392",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "deviceId": "c68bae5e-bec2-4f81-9b17-a8e5fb325015",
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "permissions": [
+            "power",
+            "apps",
+            "monitoring"
+          ]
+        }
+      }
+    },
+    {
+      "name": "auth.begin",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "4f0c7a8e-2b1d-4e5f-9a3c-1d2e3f4a5b6c",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "nonce": "q83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq80="
+        }
+      }
+    },
+    {
+      "name": "pc.status",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "os": "Microsoft Windows 10.0.26100",
+          "uptimeSeconds": 3039,
+          "agentVersion": "0.1.0",
+          "userSession": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "error",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "confirm.required",
+          "message": "'power.shutdown' requires confirmation."
+        }
+      }
+    },
+    {
+      "name": "unparseable request",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": null,
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "protocol.malformed",
+          "message": "Message is not valid JSON."
+        }
+      }
+    },
+    {
+      "name": "ok without payload is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": null,
+        "kind": "response",
+        "ok": true
+      }
+    },
+    {
+      "name": "error and payload together is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": null,
+        "kind": "response",
+        "ok": false,
+        "payload": {},
+        "error": {
+          "code": "internal",
+          "message": "x"
+        }
+      }
+    }
+  ]
+}

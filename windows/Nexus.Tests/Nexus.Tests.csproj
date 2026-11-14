@@ -13,6 +13,8 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />
+    <ProjectReference Include="..\Nexus.Agent\Nexus.Agent.csproj" />
+    <ProjectReference Include="..\Nexus.DevClient\Nexus.DevClient.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\shared\protocol\fixtures\**\*.json" Link="shared\fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

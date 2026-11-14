@@ -27,5 +27,16 @@ for case in fixtures["cases"]:
         failures += 1
         errors = [e.message for e in validator.iter_errors(case["message"])]
         print(f"FAIL {case['name']}: schemaValid={case['schemaValid']} but schema says {actual}; {errors[:2]}")
-print(f"{len(fixtures['cases']) - failures}/{len(fixtures['cases'])} fixtures agree with schema")
-sys.exit(1 if failures else 0)
+print(f"{len(fixtures['cases']) - failures}/{len(fixtures['cases'])} request fixtures agree with schema")
+
+response_schema = json.loads((root / "shared/schemas/response.v1.schema.json").read_text(encoding="utf-8"))
+Draft202012Validator.check_schema(response_schema)
+response_validator = Draft202012Validator(response_schema)
+responses = json.loads((root / "shared/protocol/fixtures/responses.v1.json").read_text(encoding="utf-8"))
+response_failures = 0
+for case in responses["cases"]:
+    if response_validator.is_valid(case["message"]) != case["valid"]:
+        response_failures += 1
+        print(f"FAIL response {case['name']}: expected valid={case['valid']}")
+print(f"{len(responses['cases']) - response_failures}/{len(responses['cases'])} response fixtures agree with schema")
+sys.exit(1 if failures or response_failures else 0)

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "nexuspc:protocol/response/v1",
+  "title": "Nexus PC response envelope v1",
+  "description": "Response from Nexus.Agent to a request. `id` echoes the request id, or is null when the request could not be parsed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "kind", "ok"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }] },
+    "kind": { "const": "response" },
+    "ok": { "type": "boolean" },
+    "payload": { "type": "object" },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z]+\\.[A-Za-z]+$|^internal$" },
+        "message": { "type": "string" }
+      }
+    }
+  },
+  "if": { "properties": { "ok": { "const": true } } },
+  "then": { "required": ["payload"], "not": { "required": ["error"] } },
+  "else": { "required": ["error"], "not": { "required": ["payload"] } }
+}

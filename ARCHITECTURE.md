@@ -85,7 +85,14 @@
 | `Nexus.Automation` | библиотека (в Agent) | Движок «Триггер → Условие → Действие», планировщик. |
 | `Nexus.Sync` | библиотека | Передача файлов (чанки, докачка, SHA-256), песочница папок; буфер обмена (через Tray). |
 | `Nexus.Notifications` | библиотека | Шина событий, дедупликация/троттлинг Smart Alerts, доставка (WS → iPhone; позже через Gateway → APNs). |
-| `Nexus.Tests` | xUnit | Юнит + контракт-тесты по фикстурам `shared/`. |
+| `Nexus.DevClient` | консоль (кроссплатформенно) | Тестовый клиент вместо iPhone до P2: сопряжение, вход, отправка команд. Эталон поведения для `NexusKit`. |
+| `Nexus.Tests` | xUnit | Юнит, контракт-тесты по фикстурам `shared/`, интеграционные тесты Agent ↔ DevClient. |
+
+### 4.0 Как устроен Nexus.Agent (P1b)
+- Цель сборки — `net10.0`: сетевой слой, сопряжение и проверка команд работают и тестируются на любой ОС. Windows-части (`WindowsPowerController`, хранилище сертификатов, ACL папки и канала) помечены `[SupportedOSPlatform("windows")]`, анализатор CA1416 следит за проверками. На других ОС питание честно отвечает `power.unsupported`. Рабочая платформа — только Windows.
+- `Server/` — `ConnectionSession` (одно WebSocket-соединение, вход, лимиты), `CommandDispatcher` (проверка через `CommandValidator` → обработчик → аудит).
+- `Admin/` — `AdminService` (логика) и `AdminPipeServer`/`AdminClient` (локальный канал). Команды `Nexus.Agent pair|devices|status` — тот же exe в роли клиента канала.
+- `Storage/` — `config.json` (`pcId`, порт, отпечаток), `devices.json`, `audit.log`; запись через временный файл и переименование.
 
 ### 4.1 IPC Agent ↔ Tray
 - Named Pipe `\\.\pipe\NexusPC.<SID>`; ACL: `SYSTEM` + конкретный SID интерактивного пользователя. Агент проверяет клиента через `GetNamedPipeClientProcessId` → путь и подпись исполняемого файла Tray.
@@ -135,15 +142,24 @@ ios/NexusPC/
 8. **Среда разработки.** Облачный контейнер (Linux, .NET 10 SDK установлен) собирает и тестирует `Nexus.Core`, протокол и схемы. Windows-специфичный код здесь только компилируется (`net10.0-windows`), запускается — на ПК владельца. iOS собирается только в GitHub Actions (D12).
 9. **Бесплатный Apple ID (D11).** Нет: APNs, App Groups, multicast entitlement, TestFlight. Лимиты: приложение живёт 7 дней, 3 приложения на устройство, 10 App ID в неделю (основное приложение + расширения виджета считаются отдельно). Виджет без App Groups сам запрашивает данные у ПК. Возможности, требующие платного аккаунта, проектируются как отключаемые.
 10. **GitHub Actions.** Для публичного репозитория минуты бесплатны без ограничений; для приватного — 2000 мин/мес, минута macOS считается за 10 (≈ 200 мин macOS ≈ 20–30 сборок).
+11. **Сопряжение без QR и без поиска в сети (P1b).** Ссылка печатается в консоли; QR — с Nexus.Tray (P1c), Bonjour-анонс `_nexuspc._tcp` — к P2 (через `DnsServiceRegister` Windows, без библиотек).
+12. **Смена IP.** Адреса прослушивания выбираются при старте службы; при смене IP нужен перезапуск службы.
 
 ## 9. Реестр внешних зависимостей
-Пока пуст. Кандидаты (не добавлены, требуют проверки и одобрения):
+Добавлены:
+
+| Зависимость | Версия | Где | Лицензия | Зачем |
+|-------------|--------|-----|----------|-------|
+| Microsoft.AspNetCore.App (часть .NET, не пакет) | 10.0 | Agent | MIT | Kestrel, WebSocket |
+| Microsoft.Extensions.Hosting.WindowsServices | 10.0.15 | Agent | MIT | Работа как служба Windows |
+| xunit, xunit.runner.visualstudio, Microsoft.NET.Test.Sdk | 2.9.3 / 3.1.4 / 17.14.1 | Tests | Apache-2.0 / MIT | Тесты |
+
+Кандидаты (не добавлены, требуют проверки и одобрения):
 
 | Зависимость | Где | Лицензия | Этап |
 |-------------|-----|----------|------|
-| Microsoft.Extensions.Hosting.WindowsServices | Agent | MIT | P1 |
-| Microsoft.Data.Sqlite | Agent | MIT | P1 |
-| xUnit | Tests | Apache-2.0 | P1 |
+| Microsoft.Data.Sqlite | Agent | MIT | P6 (история; на P1b хватило JSON-файлов) |
+| QR-кодировщик (своя реализация или QRCoder, MIT) | Tray | MIT | P1c |
 | LibreHardwareMonitorLib | Monitoring | MPL-2.0 | P4 |
 | NVML (через P/Invoke, без пакета) | Monitoring | NVIDIA EULA (DLL с драйвером) | P4 |
 | SIPSorcery / libwebrtc | Remote | BSD-3 / BSD | P5 (спайк) |

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    name: .NET tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-latest exercises the Windows-only code paths: machine certificate store,
+        # data directory ACLs and the admin pipe ACL.
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test
+        run: dotnet test windows/Nexus.slnx --configuration Release
+
+  schemas:
+    name: Schema fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install "jsonschema>=4.18,<5"
+      - run: python -I tools/check_fixtures.py
