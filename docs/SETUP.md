@@ -193,7 +193,11 @@ dotnet publish $env:USERPROFILE\nexus-pc\windows\Nexus.Agent -c Release -o "C:\P
 sc.exe start NexusPCAgent
 ```
 
-Трей: выйдите из него (правая кнопка → «Выход»), затем
+Трей: сначала закройте его (иначе сборка не сможет заменить файлы — «блокирует этот файл»):
+
+```powershell
+Stop-Process -Name Nexus.Tray -ErrorAction SilentlyContinue
+```
 
 ```powershell
 dotnet publish $env:USERPROFILE\nexus-pc\windows\Nexus.Tray -c Release -o "C:\Program Files\NexusPC\Tray"
