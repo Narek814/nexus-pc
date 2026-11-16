@@ -19,7 +19,7 @@ internal sealed class CommandDispatcher(AgentServices services)
     [
         "system.hello", "pair.request", "auth.begin", "auth.prove", "pc.status",
         "power.shutdown", "power.restart", "power.sleep", "power.cancel",
-        "metrics.snapshot", "metrics.history",
+        "metrics.snapshot", "metrics.history", "alerts.get", "alerts.set", "alerts.test",
     ];
 
     /// <summary>Commands that need Nexus.Tray in the signed-in session; available only while it is connected.</summary>
@@ -93,6 +93,10 @@ internal sealed class CommandDispatcher(AgentServices services)
                 return AuthBegin(id, begin, session);
             case AuthProvePayload prove:
                 return AuthProve(id, prove, session);
+            case AlertsSetPayload change when services.Alerts is { } alerts:
+                return alerts.Apply(change) is { } problem
+                    ? Fail(id, ErrorCodes.InvalidPayload, problem)
+                    : Ok(id, alerts.ToJson());
             case MetricsHistoryPayload history:
                 var (resolution, points) = services.Metrics.History(history.Range);
                 return Ok(id, MetricsJson.History(history.Range, resolution, points));
@@ -102,6 +106,12 @@ internal sealed class CommandDispatcher(AgentServices services)
         {
             "system.hello" => Ok(id, Hello(session)),
             "pc.status" => Ok(id, Status()),
+            "alerts.get" when services.Alerts is { } alerts => Ok(id, alerts.ToJson()),
+            "alerts.test" when services.Alerts is { } alerts => Ok(id, new JsonObject
+            {
+                ["delivered"] = await alerts.SendTestAsync(cancellationToken).ConfigureAwait(false),
+                ["ntfyEnabled"] = alerts.Settings.NtfyEnabled,
+            }),
             "metrics.snapshot" => Ok(id, MetricsJson.Snapshot(services.Metrics.Latest ?? services.Metrics.SampleNow())),
             "power.shutdown" or "power.restart" => await PowerAsync(id, command, session, cancellationToken).ConfigureAwait(false),
             "power.sleep" => Sleep(id, session),

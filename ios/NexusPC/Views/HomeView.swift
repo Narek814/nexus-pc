@@ -34,6 +34,21 @@ struct HomeView: View {
                         if controller.can("metrics.snapshot") {
                             monitoringLink
                         }
+                        if controller.can("alerts.get") {
+                            NavigationLink {
+                                AlertsView(controller: controller)
+                            } label: {
+                                GlassCard {
+                                    HStack {
+                                        Label("Уведомления и предупреждения", systemImage: "bell.badge.fill")
+                                            .foregroundStyle(Theme.textPrimary)
+                                        Spacer()
+                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                         powerGrid
                         if let pending = controller.pendingPower {
                             GlassCard {

@@ -78,6 +78,9 @@
 | `auth.prove` | — (без авторизации) | read | `{ signature }` |
 | `pc.status` | monitoring | read | `{}` → `{ pcId, pcName, os, uptimeSeconds, agentVersion, userSession }` |
 | `metrics.snapshot` | monitoring | read | `{}` → снимок, см. «Мониторинг» |
+| `alerts.get` | monitoring | read | `{}` → пороги, `ntfy { enabled, server, topic }`, `recent` |
+| `alerts.set` | monitoring | normal | любые из: `gpuTemperatureEnabled`, `gpuTemperatureC` (50–110), `cpuUsageEnabled`, `cpuUsagePercent` (50–100), `memoryUsageEnabled`, `memoryUsagePercent` (50–100), `diskFreeEnabled`, `diskFreePercent` (1–50), `powerEventsEnabled`, `cooldownMinutes` (5–1440), `ntfyEnabled`, `ntfyServer` (https), `regenerateTopic` |
+| `alerts.test` | monitoring | normal | `{}` → `{ delivered, ntfyEnabled }` |
 | `metrics.history` | monitoring | read | `{ range: "10m" \| "1h" \| "24h" }` |
 | `power.shutdown` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
 | `power.restart` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
@@ -163,3 +166,11 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 Источники (без дополнительных пакетов): `GetSystemTimes` (загрузка CPU), `GlobalMemoryStatusEx` (память), NVML из драйвера NVIDIA (`nvml.dll`: загрузка, температура, видеопамять, частоты GPU), `DriveInfo` (диски), счётчики сетевых интерфейсов (скорость сети). Температура и реальная частота процессора требуют драйвера датчиков — отдаются как недоступные с причиной. Видеокарты AMD/Intel — позже.
 
 `metrics.history { range }` → `{ range, intervalSeconds, points: [{ t, cpu, memory, gpu, gpuTemperature, rx, tx }] }`. `10m` — точки каждые 2 с; `1h`, `24h` — средние за минуту. История хранится в памяти службы и начинается заново после её перезапуска (постоянная история — P6).
+
+## Предупреждения и уведомления (P4b)
+
+Правила (на ПК, `Nexus.Notifications.AlertEngine`): видеокарта ≥ порога **30 с**; CPU и память ≥ порога **5 мин**; свободное место на диске < порога — сразу. Повторно то же предупреждение — только после явного спада (на 5 единиц ниже порога) **и** не раньше, чем через `cooldownMinutes`. Недоступные значения ничего не включают и не сбрасывают.
+
+События питания: «ПК включился» (старт службы), «ПК выключается» (остановка службы, лучшая попытка), «ПК был выключен неожиданно» — если при старте остался файл-метка прошлого запуска (обновляется раз в минуту, удаляется при чистой остановке).
+
+Доставка: **ntfy** (`POST https://ntfy.sh/<канал>`, заголовки Title, Priority, Tags). Выключено по умолчанию; при включении создаётся случайный канал `nexuspc-<32 hex>`. Текст — только имя ПК, событие и числа.

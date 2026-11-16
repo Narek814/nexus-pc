@@ -29,6 +29,9 @@ public sealed record AuthProvePayload(byte[] Signature);
 
 public sealed record MetricsHistoryPayload(string Range);
 
+/// <summary>Any subset of alert settings; ranges are checked by the agent.</summary>
+public sealed record AlertsSetPayload(IReadOnlyDictionary<string, bool> Flags, IReadOnlyDictionary<string, int> Numbers, string? NtfyServer);
+
 public sealed record PayloadResult(object? Value, string? Error)
 {
     public static PayloadResult Ok(object value) => new(value, null);
@@ -183,6 +186,50 @@ public static class PayloadParsers
         return TryGetString(payload, "range", out var range) && range is "10m" or "1h" or "24h"
             ? PayloadResult.Ok(new MetricsHistoryPayload(range))
             : PayloadResult.Invalid("'range' must be 10m, 1h or 24h.");
+    }
+
+    private static readonly string[] AlertFlags = ["gpuTemperatureEnabled", "cpuUsageEnabled", "memoryUsageEnabled", "diskFreeEnabled", "powerEventsEnabled", "ntfyEnabled", "regenerateTopic"];
+    private static readonly string[] AlertNumbers = ["gpuTemperatureC", "cpuUsagePercent", "memoryUsagePercent", "diskFreePercent", "cooldownMinutes"];
+
+    public static PayloadResult AlertsSet(JsonElement payload)
+    {
+        if (HasOnly(payload, [.. AlertFlags, .. AlertNumbers, "ntfyServer"]) is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        var flags = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var numbers = new Dictionary<string, int>(StringComparer.Ordinal);
+        string? server = null;
+        foreach (var property in payload.EnumerateObject())
+        {
+            if (Array.IndexOf(AlertFlags, property.Name) >= 0)
+            {
+                if (property.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    return PayloadResult.Invalid($"'{property.Name}' must be a boolean.");
+                }
+                flags[property.Name] = property.Value.GetBoolean();
+            }
+            else if (Array.IndexOf(AlertNumbers, property.Name) >= 0)
+            {
+                if (property.Value.ValueKind != JsonValueKind.Number || !property.Value.TryGetInt32(out var number))
+                {
+                    return PayloadResult.Invalid($"'{property.Name}' must be an integer.");
+                }
+                numbers[property.Name] = number;
+            }
+            else
+            {
+                server = property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : null;
+                if (server is null || server.Length > 200 || !server.StartsWith("https://", StringComparison.Ordinal))
+                {
+                    return PayloadResult.Invalid("'ntfyServer' must be an https:// address.");
+                }
+            }
+        }
+        return flags.Count + numbers.Count + (server is null ? 0 : 1) == 0
+            ? PayloadResult.Invalid("Nothing to change.")
+            : PayloadResult.Ok(new AlertsSetPayload(flags, numbers, server));
     }
 
     private static bool TryGetString(JsonElement obj, string name, out string value)

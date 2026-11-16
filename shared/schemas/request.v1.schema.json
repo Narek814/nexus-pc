@@ -55,7 +55,9 @@
               "power.cancel",
               "apps.list",
               "profiles.list",
-              "metrics.snapshot"
+              "metrics.snapshot",
+              "alerts.get",
+              "alerts.test"
             ]
           }
         }
@@ -206,6 +208,22 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "alerts.set"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/alertsSet"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -227,7 +245,10 @@
             "profiles.upsert",
             "profiles.delete",
             "metrics.snapshot",
-            "metrics.history"
+            "metrics.history",
+            "alerts.get",
+            "alerts.set",
+            "alerts.test"
           ]
         }
       }
@@ -402,6 +423,55 @@
             "1h",
             "24h"
           ]
+        }
+      }
+    },
+    "alertsSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "Any subset. Ranges are checked by the agent (gpuTemperatureC 50..110, *Percent 50..100, diskFreePercent 1..50, cooldownMinutes 5..1440).",
+      "properties": {
+        "gpuTemperatureEnabled": {
+          "type": "boolean"
+        },
+        "gpuTemperatureC": {
+          "type": "integer"
+        },
+        "cpuUsageEnabled": {
+          "type": "boolean"
+        },
+        "cpuUsagePercent": {
+          "type": "integer"
+        },
+        "memoryUsageEnabled": {
+          "type": "boolean"
+        },
+        "memoryUsagePercent": {
+          "type": "integer"
+        },
+        "diskFreeEnabled": {
+          "type": "boolean"
+        },
+        "diskFreePercent": {
+          "type": "integer"
+        },
+        "powerEventsEnabled": {
+          "type": "boolean"
+        },
+        "cooldownMinutes": {
+          "type": "integer"
+        },
+        "ntfyEnabled": {
+          "type": "boolean"
+        },
+        "ntfyServer": {
+          "type": "string",
+          "pattern": "^https://[^/?#\\s]+/?$",
+          "maxLength": 200
+        },
+        "regenerateTopic": {
+          "type": "boolean"
         }
       }
     }

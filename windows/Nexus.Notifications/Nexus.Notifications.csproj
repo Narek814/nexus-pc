@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Smart Alerts and delivery (ARCHITECTURE.md §4, SECURITY.md §3.11). Cross-platform, no packages. -->
+  <PropertyGroup>
+    <RootNamespace>Nexus.Notifications</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Monitoring\Nexus.Monitoring.csproj" />
+    <InternalsVisibleTo Include="Nexus.Tests" />
+  </ItemGroup>
+</Project>

@@ -3,6 +3,7 @@
   <Project Path="Nexus.Core/Nexus.Core.csproj" />
   <Project Path="Nexus.DevClient/Nexus.DevClient.csproj" />
   <Project Path="Nexus.Monitoring/Nexus.Monitoring.csproj" />
+  <Project Path="Nexus.Notifications/Nexus.Notifications.csproj" />
   <Project Path="Nexus.Tests/Nexus.Tests.csproj" />
   <Project Path="Nexus.Tray/Nexus.Tray.csproj" />
   <Project Path="Nexus.Windows/Nexus.Windows.csproj" />

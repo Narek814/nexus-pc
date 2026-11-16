@@ -39,4 +39,6 @@ internal sealed class AgentServices
     public CommandDispatcher Dispatcher { get; }
     public TrayRegistry Trays { get; }
     public MetricsSampler Metrics { get; }
+    /// <summary>Set once by AgentHost after the host is built.</summary>
+    public AlertService? Alerts { get; set; }
 }

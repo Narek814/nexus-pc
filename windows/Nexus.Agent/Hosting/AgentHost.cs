@@ -16,6 +16,7 @@ using Nexus.Agent.Server;
 using Nexus.Agent.Session;
 using Nexus.Agent.Storage;
 using Nexus.Monitoring;
+using Nexus.Notifications;
 
 namespace Nexus.Agent.Hosting;
 
@@ -34,6 +35,8 @@ internal sealed record AgentHostOptions
     public bool EnableSessionPipe { get; init; } = true;
     /// <summary>Overrides the telemetry source (tests). Default: Windows sources on Windows, portable elsewhere.</summary>
     public IMetricsSource? MetricsSource { get; init; }
+    /// <summary>Overrides notification delivery (tests). Default: ntfy over HTTPS.</summary>
+    public INotifier? Notifier { get; init; }
     /// <summary>Overrides the executable allowed on the session pipe (tests).</summary>
     public string? TrayPath { get; init; }
     public TimeSpan? PairingLifetime { get; init; }
@@ -101,6 +104,9 @@ internal static class AgentHost
         builder.Services.AddSingleton(services);
         builder.Services.AddSingleton<AdminService>();
         builder.Services.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
+        var notifier = options.Notifier ?? new NtfyNotifier(new HttpClient());
+        builder.Services.AddSingleton(sp => new AlertService(services.Metrics, notifier, options.DataDirectory, identity.PcName, options.Time, sp.GetRequiredService<ILogger<AlertService>>()));
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<AlertService>());
         if (options.EnableSessionPipe)
         {
             var trayPath = options.TrayPath ?? config.TrayPath ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Tray", "Nexus.Tray.exe"));
@@ -112,6 +118,7 @@ internal static class AgentHost
         }
 
         var app = builder.Build();
+        services.Alerts = app.Services.GetRequiredService<AlertService>();
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         app.Map(WebSocketPath, async context =>
