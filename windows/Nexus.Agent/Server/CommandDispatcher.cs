@@ -20,6 +20,7 @@ internal sealed class CommandDispatcher(AgentServices services)
         "system.hello", "pair.request", "auth.begin", "auth.prove", "pc.status",
         "power.shutdown", "power.restart", "power.sleep", "power.cancel",
         "metrics.snapshot", "metrics.history", "alerts.get", "alerts.set", "alerts.test",
+        "rgb.status", "rgb.apply", "rgb.profiles.upsert", "rgb.profiles.delete", "rgb.profiles.apply",
     ];
 
     /// <summary>Commands that need Nexus.Tray in the signed-in session; available only while it is connected.</summary>
@@ -82,7 +83,18 @@ internal sealed class CommandDispatcher(AgentServices services)
 
         if (ViaTray.Contains(command.Spec.Type))
         {
-            return await ForwardToTrayAsync(id, command, cancellationToken).ConfigureAwait(false);
+            var forwarded = await ForwardToTrayAsync(id, command, cancellationToken).ConfigureAwait(false);
+            // Linked lighting only for devices that also hold the rgb permission.
+            if (forwarded.Ok && command.Payload is ProfileRefPayload { } run && command.Spec.Type == "profiles.run"
+                && session.CurrentClient().Permissions.HasFlag(Permission.Rgb))
+            {
+                return await WithLightingAsync(id, forwarded, run.ProfileId, cancellationToken).ConfigureAwait(false);
+            }
+            return forwarded;
+        }
+        if (command.Spec.Type.StartsWith("rgb.", StringComparison.Ordinal) && services.Rgb is { } rgb)
+        {
+            return await RgbAsync(id, command, rgb, cancellationToken).ConfigureAwait(false);
         }
 
         switch (command.Payload)
@@ -212,6 +224,61 @@ internal sealed class CommandDispatcher(AgentServices services)
             ["permissions"] = new JsonArray([.. Permissions.ToWireNames(device.Permissions).Select(p => (JsonNode)p)]),
             ["expiresAt"] = (session.AuthenticatedAt + ConnectionSession.AuthLifetime).ToString("O"),
         });
+    }
+
+    private static async Task<HandlerResult> RgbAsync(Guid id, ValidatedCommand command, RgbService rgb, CancellationToken cancellationToken)
+    {
+        try
+        {
+            switch (command.Payload)
+            {
+                case RgbApplyPayload apply:
+                    return Ok(id, await rgb.ApplyAsync(apply.Look, apply.Devices, cancellationToken).ConfigureAwait(false));
+                case RgbProfileUpsertPayload upsert:
+                    rgb.Upsert(upsert.Profile);
+                    return Ok(id, new JsonObject { ["profiles"] = rgb.ProfilesJson() });
+                case ProfileRefPayload profile when command.Spec.Type == "rgb.profiles.delete":
+                    return rgb.Delete(profile.ProfileId)
+                        ? Ok(id, new JsonObject { ["profiles"] = rgb.ProfilesJson() })
+                        : Fail(id, ErrorCodes.ProfileNotFound, "Такого профиля подсветки нет.");
+                case ProfileRefPayload profile:
+                    return rgb.Find(profile.ProfileId) is { } found
+                        ? Ok(id, await rgb.ApplyAsync(found.Look, null, cancellationToken).ConfigureAwait(false))
+                        : Fail(id, ErrorCodes.ProfileNotFound, "Такого профиля подсветки нет.");
+                default:
+                    return Ok(id, await rgb.StatusAsync(cancellationToken).ConfigureAwait(false));
+            }
+        }
+        catch (RgbService.RgbUnavailableException ex)
+        {
+            return Fail(id, ErrorCodes.RgbUnavailable, ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Fail(id, ErrorCodes.ProfileLimit, ex.Message);
+        }
+    }
+
+    /// <summary>After an app profile runs, applies the lighting profile with the same id, if any. Never fails the run.</summary>
+    private async Task<HandlerResult> WithLightingAsync(Guid id, HandlerResult forwarded, string profileId, CancellationToken cancellationToken)
+    {
+        if (services.Rgb?.Find(profileId) is not { } lighting)
+        {
+            return forwarded;
+        }
+        string status;
+        try
+        {
+            var result = await services.Rgb.ApplyAsync(lighting.Look, null, cancellationToken).ConfigureAwait(false);
+            status = result["applied"]!.GetValue<int>() > 0 ? "applied" : "noDevices";
+        }
+        catch (RgbService.RgbUnavailableException)
+        {
+            status = "unavailable";
+        }
+        var payload = JsonNode.Parse(forwarded.Response)!["payload"]!.AsObject().DeepClone().AsObject();
+        payload["lighting"] = status;
+        return Ok(id, payload);
     }
 
     private async Task<HandlerResult> ForwardToTrayAsync(Guid id, ValidatedCommand command, CancellationToken cancellationToken)

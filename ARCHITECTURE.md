@@ -171,4 +171,4 @@ ios/NexusPC/
 | WebRTC (iOS) | iOS | BSD | P5 (спайк) |
 | ntfy (HTTP API, без пакета) | Notifications | Apache-2.0 / GPL-2 (сервер) | P3 |
 | Ollama (HTTP API на localhost, без пакета) | AI | MIT | P9 |
-| OpenRGB SDK (сетевой протокол, без пакета) | RGB | протокол OpenRGB, GPL-2 у самого OpenRGB (отдельный процесс) | P10 |
+| OpenRGB SDK (сетевой протокол, без пакета) | RGB | своя реализация протокола (версия 0) в `Nexus.RGB`; OpenRGB (GPL-2) — отдельная программа, которую ставит владелец. Пакет openrgb-python скачан только в облачную песочницу как справочник по формату пакетов, в проект не входит | P10 |

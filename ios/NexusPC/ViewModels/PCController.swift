@@ -159,7 +159,13 @@ final class PCController {
     func runProfile(_ profile: RemoteProfile) async {
         await run("profiles.run", payload: ["profileId": profile.id]) { [weak self] result in
             let started = result["started"] as? Int ?? 0
-            self?.banner = "\(profile.name): запущено \(started) из \(profile.appCount)"
+            let lighting = switch result["lighting"] as? String {
+            case "applied": " · подсветка включена"
+            case "unavailable": " · подсветка: OpenRGB не запущен"
+            case "noDevices": " · подсветка: устройства не ответили"
+            default: ""
+            }
+            self?.banner = "\(profile.name): запущено \(started) из \(profile.appCount)\(lighting)"
         }
     }
 

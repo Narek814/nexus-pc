@@ -57,7 +57,8 @@
               "profiles.list",
               "metrics.snapshot",
               "alerts.get",
-              "alerts.test"
+              "alerts.test",
+              "rgb.status"
             ]
           }
         }
@@ -114,7 +115,9 @@
           "type": {
             "enum": [
               "profiles.run",
-              "profiles.delete"
+              "profiles.delete",
+              "rgb.profiles.delete",
+              "rgb.profiles.apply"
             ]
           }
         }
@@ -224,6 +227,38 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "rgb.apply"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/rgbLook"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "rgb.profiles.upsert"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/rgbProfileUpsert"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -248,7 +283,12 @@
             "metrics.history",
             "alerts.get",
             "alerts.set",
-            "alerts.test"
+            "alerts.test",
+            "rgb.status",
+            "rgb.apply",
+            "rgb.profiles.upsert",
+            "rgb.profiles.delete",
+            "rgb.profiles.apply"
           ]
         }
       }
@@ -472,6 +512,84 @@
         },
         "regenerateTopic": {
           "type": "boolean"
+        }
+      }
+    },
+    "rgbLook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "color",
+        "brightness",
+        "effect"
+      ],
+      "properties": {
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "brightness": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "effect": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "\"static\", \"off\" or the name of a device's own mode (e.g. \"Rainbow\")."
+        },
+        "devices": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          }
+        }
+      }
+    },
+    "rgbProfileUpsert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile"
+      ],
+      "properties": {
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name",
+            "color",
+            "brightness",
+            "effect"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/slug"
+            },
+            "name": {
+              "$ref": "#/$defs/displayName"
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "brightness": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "effect": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "\"static\", \"off\" or the name of a device's own mode (e.g. \"Rainbow\")."
+            }
+          }
         }
       }
     }

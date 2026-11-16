@@ -31,7 +31,7 @@ final class LiveAgentTests: XCTestCase {
         XCTAssertEqual(hello["pcId"] as? String, link.pcId.uuidString.lowercased())
         XCTAssertEqual(hello["authenticated"] as? Bool, false)
         let (deviceId, permissions) = try await pairing.pair(code: link.code, deviceName: "NexusKit CI", signer: signer)
-        XCTAssertEqual(Set(permissions), ["power", "apps", "monitoring"])
+        XCTAssertEqual(Set(permissions), ["power", "apps", "monitoring", "rgb"])
         pairing.close()
 
         // A fresh connection, as the app does every time.

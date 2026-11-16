@@ -29,6 +29,14 @@ public sealed record AuthProvePayload(byte[] Signature);
 
 public sealed record MetricsHistoryPayload(string Range);
 
+public sealed record RgbLook(string Color, int Brightness, string Effect);
+
+public sealed record RgbApplyPayload(RgbLook Look, IReadOnlyList<int>? Devices);
+
+public sealed record RgbProfileDefinition(string Id, string Name, RgbLook Look);
+
+public sealed record RgbProfileUpsertPayload(RgbProfileDefinition Profile);
+
 /// <summary>Any subset of alert settings; ranges are checked by the agent.</summary>
 public sealed record AlertsSetPayload(IReadOnlyDictionary<string, bool> Flags, IReadOnlyDictionary<string, int> Numbers, string? NtfyServer);
 
@@ -230,6 +238,64 @@ public static class PayloadParsers
         return flags.Count + numbers.Count + (server is null ? 0 : 1) == 0
             ? PayloadResult.Invalid("Nothing to change.")
             : PayloadResult.Ok(new AlertsSetPayload(flags, numbers, server));
+    }
+
+    public static PayloadResult RgbApply(JsonElement payload)
+    {
+        if (HasOnly(payload, "color", "brightness", "effect", "devices") is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        if (ReadLook(payload) is not { } look)
+        {
+            return PayloadResult.Invalid("'color' must be #RRGGBB, 'brightness' 0..100, 'effect' 1..64 characters.");
+        }
+        List<int>? devices = null;
+        if (payload.TryGetProperty("devices", out var list))
+        {
+            if (list.ValueKind != JsonValueKind.Array || list.GetArrayLength() > 32)
+            {
+                return PayloadResult.Invalid("'devices' must be a list of device indexes.");
+            }
+            devices = [];
+            foreach (var item in list.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var index) || index is < 0 or > 63)
+                {
+                    return PayloadResult.Invalid("'devices' must be a list of device indexes.");
+                }
+                devices.Add(index);
+            }
+        }
+        return PayloadResult.Ok(new RgbApplyPayload(look, devices));
+    }
+
+    public static PayloadResult RgbProfileUpsert(JsonElement payload)
+    {
+        if (HasOnly(payload, "profile") is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        if (!payload.TryGetProperty("profile", out var p) || p.ValueKind != JsonValueKind.Object || HasOnly(p, "id", "name", "color", "brightness", "effect") is not null)
+        {
+            return PayloadResult.Invalid("'profile' must have id, name, color, brightness and effect.");
+        }
+        if (!TryGetSlug(p, "id", out var id) || !TryGetString(p, "name", out var name) || !Identifiers.IsValidDisplayName(name) || ReadLook(p) is not { } look)
+        {
+            return PayloadResult.Invalid("Invalid lighting profile.");
+        }
+        return PayloadResult.Ok(new RgbProfileUpsertPayload(new RgbProfileDefinition(id, name, look)));
+    }
+
+    private static RgbLook? ReadLook(JsonElement obj)
+    {
+        if (!TryGetString(obj, "color", out var color) || color.Length != 7 || color[0] != '#' || !color.Skip(1).All(Uri.IsHexDigit)
+            || !obj.TryGetProperty("brightness", out var b) || b.ValueKind != JsonValueKind.Number || !b.TryGetInt32(out var brightness) || brightness is < 0 or > 100
+            || !TryGetString(obj, "effect", out var effect) || !Identifiers.IsValidDisplayName(effect))
+        {
+            return null;
+        }
+        return new RgbLook(color.ToUpperInvariant(), brightness, effect);
     }
 
     private static bool TryGetString(JsonElement obj, string name, out string value)

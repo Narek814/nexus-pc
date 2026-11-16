@@ -33,6 +33,7 @@ public static class ErrorCodes
     public const string ProfileInvalid = "profiles.invalid";
     public const string ProfileLimit = "profiles.limit";
     public const string LockFailed = "power.lockFailed";
+    public const string RgbUnavailable = "rgb.unavailable";
     public const string Internal = "internal";
 }
 

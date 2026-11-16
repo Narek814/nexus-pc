@@ -94,6 +94,11 @@
 | `profiles.run` | apps | normal | `{ profileId: slug }` |
 | `profiles.upsert` | apps | normal | `{ profile: { id: slug, name: 1..64 символа, appIds: slug[] ≤ 32, без повторов } }` |
 | `profiles.delete` | apps | normal | `{ profileId: slug }` |
+| `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
+| `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
+| `rgb.profiles.upsert` | rgb | normal | `{ profile: { id: slug, name, color, brightness, effect } }` (≤ 32 профилей) |
+| `rgb.profiles.delete` | rgb | normal | `{ profileId: slug }` |
+| `rgb.profiles.apply` | rgb | normal | `{ profileId: slug }` |
 
 `slug` — `^[a-z0-9][a-z0-9-]{0,63}$`. Это **никогда не путь**: путь к программе задаётся только на ПК.
 
@@ -174,3 +179,16 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 События питания: «ПК включился» (старт службы), «ПК выключается» (остановка службы, лучшая попытка), «ПК был выключен неожиданно» — если при старте остался файл-метка прошлого запуска (обновляется раз в минуту, удаляется при чистой остановке).
 
 Доставка: **ntfy** (`POST https://ntfy.sh/<канал>`, заголовки Title, Priority, Tags). Выключено по умолчанию; при включении создаётся случайный канал `nexuspc-<32 hex>`. Текст — только имя ПК, событие и числа.
+
+## Подсветка (P10)
+
+Агент управляет подсветкой через **OpenRGB** (отдельная бесплатная программа на ПК) по его SDK-протоколу на `127.0.0.1:6742` — только локально, наружу ничего не открывается. Короткое соединение на каждую команду. Если OpenRGB не запущен или SDK Server выключен: `rgb.status` → `available: false` с `reason`, остальные `rgb.*` → `rgb.unavailable`.
+
+`effect`: `"static"` — ровный цвет на всех светодиодах (яркость умножается на цвет), `"off"` — чёрный, иначе — **имя режима устройства** из `modes[]` (без учёта регистра; цвет передаётся режиму, если он принимает цвета). Если у устройства такого режима нет — для него `ok: false` с объяснением, остальные применяются.
+
+`rgb.apply` и `rgb.profiles.apply` → `{ applied, results: [{ index, name, ok, error? }] }`. `devices` — индексы из `rgb.status`, без него — все устройства.
+
+**Связь с профилями программ.** Если есть профиль подсветки с тем же `id`, что у профиля программ (например, `gaming`), то после успешного `profiles.run` агент применяет и его и добавляет в ответ `lighting`: `"applied"`, `"noDevices"` (ни одно устройство не приняло) или `"unavailable"` (OpenRGB не запущен). Только для устройств с разрешением `rgb`; без него поле отсутствует и подсветка не меняется.
+
+Профили подсветки хранятся в `C:\ProgramData\NexusPC\rgb.json`.
+

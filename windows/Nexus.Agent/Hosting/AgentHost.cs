@@ -35,6 +35,8 @@ internal sealed record AgentHostOptions
     public bool EnableSessionPipe { get; init; } = true;
     /// <summary>Overrides the telemetry source (tests). Default: Windows sources on Windows, portable elsewhere.</summary>
     public IMetricsSource? MetricsSource { get; init; }
+    /// <summary>OpenRGB SDK server port on this PC (tests point it at a fake server).</summary>
+    public int OpenRgbPort { get; init; } = RgbService.DefaultPort;
     /// <summary>Overrides notification delivery (tests). Default: ntfy over HTTPS.</summary>
     public INotifier? Notifier { get; init; }
     /// <summary>Overrides the executable allowed on the session pipe (tests).</summary>
@@ -119,6 +121,7 @@ internal static class AgentHost
 
         var app = builder.Build();
         services.Alerts = app.Services.GetRequiredService<AlertService>();
+        services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort);
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         app.Map(WebSocketPath, async context =>

@@ -41,4 +41,5 @@ internal sealed class AgentServices
     public MetricsSampler Metrics { get; }
     /// <summary>Set once by AgentHost after the host is built.</summary>
     public AlertService? Alerts { get; set; }
+    public RgbService? Rgb { get; set; }
 }

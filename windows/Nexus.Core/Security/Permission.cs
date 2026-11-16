@@ -22,8 +22,8 @@ public enum Permission
 
 public static class Permissions
 {
-    /// <summary>Granted right after pairing. Everything else must be enabled explicitly.</summary>
-    public const Permission DefaultAfterPairing = Permission.Power | Permission.Apps | Permission.Monitoring;
+    /// <summary>Granted right after pairing. Everything else must be enabled explicitly. Lighting is harmless, so it is included (P10).</summary>
+    public const Permission DefaultAfterPairing = Permission.Power | Permission.Apps | Permission.Monitoring | Permission.Rgb;
 
     private static readonly (string Name, Permission Value)[] WireNames =
     [

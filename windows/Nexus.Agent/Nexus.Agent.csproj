@@ -20,6 +20,7 @@
     <ProjectReference Include="..\Nexus.Windows\Nexus.Windows.csproj" />
     <ProjectReference Include="..\Nexus.Monitoring\Nexus.Monitoring.csproj" />
     <ProjectReference Include="..\Nexus.Notifications\Nexus.Notifications.csproj" />
+    <ProjectReference Include="..\Nexus.RGB\Nexus.RGB.csproj" />
     <InternalsVisibleTo Include="Nexus.Tests" />
   </ItemGroup>
 </Project>

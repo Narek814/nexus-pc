@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Lighting (ARCHITECTURE.md §4, P10). Adapter architecture; first adapter: OpenRGB SDK over local TCP.
+       No packages: the OpenRGB network protocol is implemented here. -->
+  <PropertyGroup>
+    <RootNamespace>Nexus.RGB</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nexus.Tests" />
+  </ItemGroup>
+</Project>

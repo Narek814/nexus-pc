@@ -1826,6 +1826,272 @@
         "error": "command.invalidPayload"
       },
       "schemaValid": false
+    },
+    {
+      "name": "rgb.status",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000401",
+        "kind": "request",
+        "type": "rgb.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "rgb.apply violet",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000402",
+        "kind": "request",
+        "type": "rgb.apply",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "color": "#9B5CFF",
+          "brightness": 80,
+          "effect": "static"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "rgb.apply mode on one device",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000403",
+        "kind": "request",
+        "type": "rgb.apply",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "color": "#FF0000",
+          "brightness": 100,
+          "effect": "Rainbow",
+          "devices": [
+            0
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "rgb.apply bad color",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000404",
+        "kind": "request",
+        "type": "rgb.apply",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "color": "red",
+          "brightness": 80,
+          "effect": "static"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "rgb.apply brightness out of range",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000405",
+        "kind": "request",
+        "type": "rgb.apply",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "color": "#FFFFFF",
+          "brightness": 150,
+          "effect": "static"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "rgb.profiles.upsert",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000406",
+        "kind": "request",
+        "type": "rgb.profiles.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profile": {
+            "id": "gaming",
+            "name": "Gaming",
+            "color": "#FF0000",
+            "brightness": 100,
+            "effect": "Breathing"
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "rgb.profiles.apply",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000407",
+        "kind": "request",
+        "type": "rgb.profiles.apply",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "profileId": "gaming"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "rgb needs rgb permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000408",
+        "kind": "request",
+        "type": "rgb.status",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "rgb.profiles.delete",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000409",
+        "kind": "request",
+        "type": "rgb.profiles.delete",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "profileId": "gaming"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
     }
   ]
 }

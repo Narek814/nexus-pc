@@ -49,6 +49,21 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if controller.can("rgb.status") {
+                            NavigationLink {
+                                RgbView(controller: controller)
+                            } label: {
+                                GlassCard {
+                                    HStack {
+                                        Label("Подсветка", systemImage: "light.max")
+                                            .foregroundStyle(Theme.textPrimary)
+                                        Spacer()
+                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                         powerGrid
                         if let pending = controller.pendingPower {
                             GlassCard {

@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Nexus.Agent\Nexus.Agent.csproj" />
     <ProjectReference Include="..\Nexus.DevClient\Nexus.DevClient.csproj" />
     <ProjectReference Include="..\Nexus.Notifications\Nexus.Notifications.csproj" />
+    <ProjectReference Include="..\Nexus.RGB\Nexus.RGB.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\shared\protocol\fixtures\**\*.json" Link="shared\fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
