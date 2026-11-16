@@ -48,16 +48,21 @@ struct SleepPCIntent: AppIntent {
     }
 }
 
-/// Always with a countdown (at least 1 minute): Windows shows its notice and it can be cancelled.
+/// Asks for confirmation, then shuts down after a countdown (default 5 minutes): Windows shows its
+/// notice and it can be cancelled.
 struct ShutdownPCIntent: AppIntent {
     static var title: LocalizedStringResource = "Shut Down PC"
     static var description = IntentDescription("Shuts down your PC after a countdown. Say “Cancel PC shutdown” to stop it.")
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
-    @Parameter(title: "In minutes", default: 1, inclusiveRange: (1, 1440))
+    // 5 minutes, not 1: on a real PC one minute was too short to cancel after a voice command.
+    @Parameter(title: "In minutes", default: 5, inclusiveRange: (1, 1440))
     var minutes: Int
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        // Siri always asks before scheduling a shutdown.
+        let pcName = PairingStore.load().first?.name ?? "your PC"
+        try await requestConfirmation(result: .result(dialog: "Shut down \(pcName) in \(minutes) min?"))
         let name = try await PCSession.withPC { pc, connection -> String in
             _ = try await connection.request("power.shutdown", payload: ["delaySeconds": minutes * 60], confirmed: true).unwrap()
             return pc.name
@@ -70,10 +75,12 @@ struct RestartPCIntent: AppIntent {
     static var title: LocalizedStringResource = "Restart PC"
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
-    @Parameter(title: "In minutes", default: 1, inclusiveRange: (1, 1440))
+    @Parameter(title: "In minutes", default: 5, inclusiveRange: (1, 1440))
     var minutes: Int
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        let pcName = PairingStore.load().first?.name ?? "your PC"
+        try await requestConfirmation(result: .result(dialog: "Restart \(pcName) in \(minutes) min?"))
         let name = try await PCSession.withPC { pc, connection -> String in
             _ = try await connection.request("power.restart", payload: ["delaySeconds": minutes * 60], confirmed: true).unwrap()
             return pc.name

@@ -62,10 +62,10 @@ Sideloadly подписывает приложение вашим Apple ID и с
 |-------|-----------|
 | “Start Gaming in Nexus PC” / “Run Developer with Nexus PC” | запускает профиль |
 | “Lock my PC with Nexus PC” | блокирует ПК |
-| “Shut down my PC with Nexus PC” | выключение **через 1 минуту** (уведомление Windows, можно отменить) |
+| “Shut down my PC with Nexus PC” | Siri **переспрашивает**, затем выключение **через 5 минут** (уведомление Windows, можно отменить) |
 | “Cancel PC shutdown in Nexus PC” | отменяет выключение |
 | “How is my PC in Nexus PC” | состояние и время работы |
-| “Put my PC to sleep with Nexus PC”, “Restart my PC with Nexus PC” | сон, перезагрузка через 1 минуту |
+| “Put my PC to sleep with Nexus PC”, “Restart my PC with Nexus PC” | сон; перезагрузка — с подтверждением, через 5 минут |
 | “Open Steam on my PC with Nexus PC” | открывает программу из списка ПК |
 
 Блокировка, выключение, перезагрузка, сон, профили и программы с **заблокированного** iPhone требуют Face ID / код. Все эти действия есть и в приложении **«Команды»** (Shortcuts) — их можно собрать в свои сценарии или вынести на экран «Домой».
