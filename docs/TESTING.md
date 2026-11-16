@@ -88,9 +88,9 @@
 
 | # | Действие | Ожидается |
 |---|----------|-----------|
-| S1 | “Lock my PC with Nexus PC” | ПК заблокирован |
-| S2 | “Start Gaming in Nexus PC” | программы профиля открылись |
-| S3 | “How is my PC in Nexus PC” | имя ПК и время работы |
+| S1 | “Lock my PC with Nexus PC” | ПК заблокирован ✅ |
+| S2 | “Start Gaming in Nexus PC” | программы профиля открылись ✅ |
+| S3 | “How is my PC in Nexus PC” | имя ПК и время работы ✅ |
 | S4 | “Shut down my PC with Nexus PC” → Siri переспрашивает → подтвердить; затем “Cancel PC shutdown in Nexus PC” | уведомление Windows (5 мин), затем отмена |
 | S5 | Виджет (средний) → Lock | приложение открылось, ПК заблокирован |
 | S6 | В приложении «Выключить → Через 10 минут», заблокировать iPhone | отсчёт на экране блокировки, Cancel отменяет |
