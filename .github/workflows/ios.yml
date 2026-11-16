@@ -5,7 +5,7 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ['ios/**', 'shared/**', '.github/workflows/ios.yml']
+    paths: ['ios/**', 'shared/**', 'windows/Nexus.Agent/**', 'windows/Nexus.Core/**', '.github/workflows/ios.yml']
   pull_request:
     paths: ['ios/**', 'shared/**', '.github/workflows/ios.yml']
   workflow_dispatch:
@@ -24,8 +24,29 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - name: NexusKit tests (shared fixtures with C#)
-        run: swift test --package-path ios/NexusKit
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build NexusKit tests
+        run: swift build --build-tests --package-path ios/NexusKit
+      - name: Start a real Nexus.Agent and open pairing (answer "y" as the PC owner)
+        run: |
+          dotnet build windows/Nexus.Agent -c Release -o "$RUNNER_TEMP/agent"
+          export NEXUS_DATA_DIR="$RUNNER_TEMP/nexus-data"
+          nohup "$RUNNER_TEMP/agent/Nexus.Agent" > "$RUNNER_TEMP/agent.log" 2>&1 &
+          for i in $(seq 1 60); do nc -z 127.0.0.1 47800 && break; sleep 1; done
+          nc -z 127.0.0.1 47800
+          (echo y | "$RUNNER_TEMP/agent/Nexus.Agent" pair > "$RUNNER_TEMP/pair.txt" 2>&1 &)
+      - name: NexusKit tests (shared fixtures with C#, live agent)
+        env:
+          NEXUS_TEST_PAIR_OUTPUT: ${{ runner.temp }}/pair.txt
+        run: swift test --skip-build --package-path ios/NexusKit
+      - name: Agent output
+        if: always()
+        run: |
+          cat "$RUNNER_TEMP/pair.txt" || true
+          tail -n 50 "$RUNNER_TEMP/agent.log" || true
+          tail -n 20 "$RUNNER_TEMP/nexus-data/audit.log" || true
       - name: Install XcodeGen (CI only)
         run: brew install xcodegen
       - name: Generate Xcode project

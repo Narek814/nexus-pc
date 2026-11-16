@@ -15,9 +15,17 @@ targets:
       - path: NexusPC
         excludes:
           - "**/README.md"
+          - "Info.plist"
     dependencies:
       - package: NexusKit
     scheme: {}
+    info:
+      path: NexusPC/Info.plist
+      properties:
+        NSCameraUsageDescription: "Камера нужна, чтобы отсканировать QR-код сопряжения на экране ПК."
+        NSLocalNetworkUsageDescription: "Nexus PC подключается к вашему компьютеру в домашней сети."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.narek814.nexuspc

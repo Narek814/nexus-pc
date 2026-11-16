@@ -20,3 +20,4 @@ ios/NexusPC.xcodeproj/
 Payload/
 *.ipa
 build/
+ios/NexusPC/Info.plist
