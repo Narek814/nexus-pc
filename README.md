@@ -15,6 +15,7 @@
 - [docs/TESTING.md](docs/TESTING.md) — как запускать тесты и план ручной проверки
 - [docs/SETUP.md](docs/SETUP.md) — установка агента на Windows
 - [docs/IOS.md](docs/IOS.md) — сборка iPhone-приложения без Mac и установка
+- [docs/REMOTE.md](docs/REMOTE.md) — доступ вне дома (Tailscale) и включение ПК (Wake-on-LAN)
 
 ## Структура
 

@@ -10,6 +10,8 @@ public struct PairedPC: Codable, Equatable, Identifiable, Sendable {
     public let fingerprint: String
     public let deviceId: UUID
     public var permissions: [String]
+    /// Wake-on-LAN targets, learned from pc.status (absent for PCs paired before this existed).
+    public var wake: [WakeTarget]?
 
     public init(link: PairingLink, deviceId: UUID, permissions: [String]) {
         pcId = link.pcId

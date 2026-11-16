@@ -21,6 +21,24 @@ struct PCStatusIntent: AppIntent {
     }
 }
 
+struct WakePCIntent: AppIntent {
+    static var title: LocalizedStringResource = "Turn On PC"
+    static var description = IntentDescription("Sends a Wake-on-LAN signal to your PC. Works on the same network as the PC.")
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let pc = PairingStore.load().first else {
+            throw NexusError.connection("Nexus PC is not paired with a PC yet.")
+        }
+        guard pc.wake?.isEmpty == false else {
+            return .result(dialog: "Open Nexus PC once while \(pc.name) is on, so it can learn how to wake it.")
+        }
+        let sent = await WakeService.send(to: pc)
+        return .result(dialog: sent > 0
+            ? "Sent the wake signal to \(pc.name). It usually starts in 30 to 60 seconds."
+            : "Could not send the wake signal. Is your iPhone on the same network as \(pc.name)?")
+    }
+}
+
 struct LockPCIntent: AppIntent {
     static var title: LocalizedStringResource = "Lock PC"
     static var description = IntentDescription("Locks the Windows session on your PC.")
@@ -213,6 +231,11 @@ struct NexusShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Run Profile",
             systemImageName: "gamecontroller.fill")
+        AppShortcut(
+            intent: WakePCIntent(),
+            phrases: ["Turn on my PC with \(.applicationName)", "Wake my PC with \(.applicationName)"],
+            shortTitle: "Turn On PC",
+            systemImageName: "power.circle")
         AppShortcut(
             intent: LockPCIntent(),
             phrases: ["Lock my PC with \(.applicationName)", "Lock PC in \(.applicationName)"],

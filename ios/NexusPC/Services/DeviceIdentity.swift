@@ -46,6 +46,18 @@ enum PairingStore {
         try KeychainStore.save(try JSONEncoder().encode(all), account: listAccount)
     }
 
+    /// Updates what the phone knows about a PC (addresses, wake targets) without touching its key.
+    static func update(_ pc: PairedPC) {
+        var all = load()
+        guard let index = all.firstIndex(where: { $0.pcId == pc.pcId }) else {
+            return
+        }
+        all[index] = pc
+        if let data = try? JSONEncoder().encode(all) {
+            try? KeychainStore.save(data, account: listAccount)
+        }
+    }
+
     static func signer(for pc: PairedPC) throws -> DeviceSigner {
         guard let stored = KeychainStore.load(account: "key-\(pc.pcId.uuidString)") else {
             throw NexusError.connection("Ключ для этого ПК не найден. Подключите ПК заново.")

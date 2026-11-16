@@ -140,6 +140,16 @@ internal sealed class CommandDispatcher(AgentServices services)
         ["agentVersion"] = services.Identity.Version,
         // Whether Nexus.Tray runs in the signed-in session (needed for apps, profiles, lock).
         ["userSession"] = services.Trays.IsAvailable ? "available" : "unavailable",
+        // Current addresses (Wi-Fi may change, Tailscale may be added) and Wake-on-LAN targets, so the
+        // phone can reach and wake the PC later. Only for authenticated devices.
+        ["hosts"] = new JsonArray([.. Hosting.NetworkAddresses.EligibleLocalAddresses().Select(a => (JsonNode)a.ToString())]),
+        ["wake"] = new JsonArray([.. Hosting.NetworkAddresses.WakeTargets().Select(t => (JsonNode)new JsonObject
+        {
+            ["interface"] = t.Interface,
+            ["mac"] = t.Mac,
+            ["broadcast"] = t.Broadcast,
+            ["wireless"] = t.Wireless,
+        })]),
     };
 
     private async Task<HandlerResult> PairAsync(Guid id, PairRequestPayload pair, ConnectionSession session, CancellationToken cancellationToken)

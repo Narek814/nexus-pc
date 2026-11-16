@@ -29,6 +29,8 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
         Assert.True(status.IsOk(), status.ToJsonString());
         Assert.Equal(_host.PcId.ToString("D"), status["payload"]!["pcId"]!.GetValue<string>());
         Assert.Equal("unavailable", status["payload"]!["userSession"]!.GetValue<string>());
+        Assert.NotNull(status["payload"]!["hosts"]!.AsArray());
+        Assert.All(status["payload"]!["wake"]!.AsArray(), w => Assert.Matches("^([0-9A-F]{2}:){5}[0-9A-F]{2}$", w!["mac"]!.GetValue<string>()));
 
         var shutdown = await client.RequestAsync("power.shutdown", new JsonObject { ["delaySeconds"] = 600 }, confirmed: true);
         Assert.True(shutdown.IsOk(), shutdown.ToJsonString());

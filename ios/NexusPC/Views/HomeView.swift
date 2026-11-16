@@ -153,6 +153,12 @@ struct HomeView: View {
                     }
                 } else if case let .offline(reason) = controller.state {
                     Text(reason).font(.footnote).foregroundStyle(Theme.textMuted)
+                    if controller.canWake {
+                        NeonButton(title: "Включить ПК", systemImage: "power.circle") {
+                            Task { await controller.wake() }
+                        }
+                        .padding(.top, 4)
+                    }
                 }
             }
         }

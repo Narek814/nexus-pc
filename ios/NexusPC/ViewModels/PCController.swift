@@ -232,6 +232,7 @@ final class PCController {
             os: s["os"] as? String ?? "",
             uptimeSeconds: s["uptimeSeconds"] as? Int ?? 0,
             userSessionAvailable: s["userSession"] as? String == "available")
+        learnAddresses(from: s)
 
         if capabilities.contains("apps.list"), let list = try? await connection.request("apps.list").unwrap() {
             apps = (list["apps"] as? [[String: Any]] ?? []).compactMap { item in
@@ -254,6 +255,68 @@ final class PCController {
         }
         // Lets Siri match spoken profile and app names ("Start Gaming in Nexus PC").
         NexusShortcuts.updateAppShortcutParameters()
+    }
+
+    /// Remembers the PC's current addresses (new first, e.g. a new DHCP address or Tailscale) and its
+    /// Wake-on-LAN targets, so it can be reached and woken later.
+    private func learnAddresses(from status: [String: Any]) {
+        guard var current = pc else {
+            return
+        }
+        if let hosts = status["hosts"] as? [String], !hosts.isEmpty {
+            var merged: [String] = []
+            for host in hosts + current.hosts where !merged.contains(host) {
+                merged.append(host)
+            }
+            current.hosts = Array(merged.prefix(8))
+        }
+        if let wake = status["wake"] as? [[String: Any]] {
+            let targets = wake.compactMap { item -> WakeTarget? in
+                guard let mac = item["mac"] as? String, let broadcast = item["broadcast"] as? String else { return nil }
+                return WakeTarget(mac: mac, broadcast: broadcast, wireless: item["wireless"] as? Bool ?? false)
+            }
+            if !targets.isEmpty {
+                current.wake = targets
+            }
+        }
+        if current != pc {
+            pc = current
+            PairingStore.update(current)
+        }
+    }
+
+    var canWake: Bool {
+        !(pc?.wake ?? []).isEmpty
+    }
+
+    var wakeIsWireless: Bool {
+        (pc?.wake ?? []).allSatisfy(\.wireless)
+    }
+
+    /// Sends the wake signal, then keeps trying to connect for up to 2 minutes.
+    func wake() async {
+        guard let pc else {
+            return
+        }
+        let sent = await WakeService.send(to: pc)
+        guard sent > 0 else {
+            banner = "Не удалось отправить сигнал. iPhone в той же сети, что и ПК?"
+            return
+        }
+        banner = "Сигнал включения отправлен"
+        state = .offline("Включаю… ПК обычно загружается 30–60 секунд.")
+        for _ in 0..<12 {
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            await refresh()
+            if state == .online {
+                banner = "\(status?.name ?? pc.name) в сети"
+                return
+            }
+            state = .offline("Включаю… ПК обычно загружается 30–60 секунд.")
+        }
+        state = .offline(wakeIsWireless
+            ? "ПК не включился. Он подключён по Wi-Fi — включение по сети обычно работает только по кабелю (docs/REMOTE.md)."
+            : "ПК не включился. Проверьте Wake-on-LAN в BIOS и настройках сетевой карты (docs/REMOTE.md).")
     }
 
     private func drop(_ error: Error) {

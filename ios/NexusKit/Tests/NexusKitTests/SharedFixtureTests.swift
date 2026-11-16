@@ -121,3 +121,25 @@ final class RequestEnvelopeTests: XCTestCase {
         XCTAssertEqual((object["payload"] as? [String: Any])?.isEmpty, true)
     }
 }
+
+final class WakeOnLanTests: XCTestCase {
+    func testMagicPacketLayout() throws {
+        let packet = try XCTUnwrap(WakeOnLan.magicPacket(mac: "AA:BB:CC:DD:EE:0F"))
+        XCTAssertEqual(packet.count, 102)
+        XCTAssertEqual(Array(packet.prefix(6)), [UInt8](repeating: 0xFF, count: 6))
+        XCTAssertEqual(Array(packet[6..<12]), [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0F])
+        XCTAssertEqual(Array(packet.suffix(6)), [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0F])
+        XCTAssertNotNil(WakeOnLan.magicPacket(mac: "aa-bb-cc-dd-ee-0f"))
+    }
+
+    func testInvalidMacIsRejected() {
+        XCTAssertNil(WakeOnLan.magicPacket(mac: "AA:BB:CC"))
+        XCTAssertNil(WakeOnLan.magicPacket(mac: "GG:BB:CC:DD:EE:FF"))
+    }
+
+    func testOldPairingRecordsStillDecode() throws {
+        let json = #"{"pcId":"42FE00F7-98AD-4607-84C0-4580B73D2F0E","name":"PC","hosts":["192.168.0.102"],"port":47800,"fingerprint":"AB","deviceId":"7BD2D25D-78E4-42F5-B261-3AC851D80599","permissions":["power"]}"#
+        let pc = try JSONDecoder().decode(PairedPC.self, from: Data(json.utf8))
+        XCTAssertNil(pc.wake)
+    }
+}

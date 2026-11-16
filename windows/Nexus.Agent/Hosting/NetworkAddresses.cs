@@ -59,6 +59,56 @@ internal static class NetworkAddresses
         return IPAddress.IsLoopback(address) || IsEligible(address);
     }
 
+    /// <summary>
+    /// Where a Wake-on-LAN packet for this PC should go: the MAC and subnet broadcast of each physical
+    /// interface that has a gateway (Tailscale and virtual adapters are skipped: they cannot wake the PC).
+    /// </summary>
+    public static IReadOnlyList<(string Interface, string Mac, string Broadcast, bool Wireless)> WakeTargets()
+    {
+        var targets = new List<(string, string, string, bool)>();
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+            {
+                continue;
+            }
+            var properties = nic.GetIPProperties();
+            if (!properties.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any)))
+            {
+                continue;
+            }
+            var mac = nic.GetPhysicalAddress().GetAddressBytes();
+            if (mac.Length != 6)
+            {
+                continue;
+            }
+            foreach (var unicast in properties.UnicastAddresses)
+            {
+                if (unicast.Address.AddressFamily != AddressFamily.InterNetwork || IsTailscale(unicast.Address) || !IsEligible(unicast.Address))
+                {
+                    continue;
+                }
+                targets.Add((nic.Name, string.Join(':', mac.Select(b => b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture))),
+                    BroadcastOf(unicast.Address, unicast.IPv4Mask).ToString(), nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211));
+            }
+        }
+        return targets;
+    }
+
+    public static IPAddress BroadcastOf(IPAddress address, IPAddress mask)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        ArgumentNullException.ThrowIfNull(mask);
+        var ip = address.GetAddressBytes();
+        var m = mask.GetAddressBytes();
+        var broadcast = new byte[4];
+        for (var i = 0; i < 4; i++)
+        {
+            broadcast[i] = (byte)(ip[i] | ~m[i]);
+        }
+        return new IPAddress(broadcast);
+    }
+
     public static bool IsTailscale(IPAddress address)
     {
         ArgumentNullException.ThrowIfNull(address);

@@ -90,3 +90,15 @@ public class NetworkAddressTests
         Assert.Equal(allowed, Nexus.Agent.Hosting.NetworkAddresses.IsAllowedLocalAddress(System.Net.IPAddress.Parse(address)));
     }
 }
+
+public class WakeTargetTests
+{
+    [Theory]
+    [InlineData("192.168.0.102", "255.255.255.0", "192.168.0.255")]
+    [InlineData("10.1.2.3", "255.255.0.0", "10.1.255.255")]
+    [InlineData("172.16.5.9", "255.255.255.252", "172.16.5.11")]
+    public void Broadcast_address_of_the_subnet(string ip, string mask, string expected)
+    {
+        Assert.Equal(expected, Nexus.Agent.Hosting.NetworkAddresses.BroadcastOf(System.Net.IPAddress.Parse(ip), System.Net.IPAddress.Parse(mask)).ToString());
+    }
+}
