@@ -1,3 +1,4 @@
+import AppIntents
 import Foundation
 import NexusKit
 import Observation
@@ -83,6 +84,7 @@ final class PCController {
         guard pc != nil else {
             return
         }
+        await LiveActivities.endExpired()
         do {
             let connection = try await ensureConnection()
             try await load(using: connection)
@@ -113,6 +115,15 @@ final class PCController {
                 }
                 self.pendingPower = delay > 0 ? "\(verb) через \(Self.duration(delay))" : nil
                 self.banner = delay > 0 ? "\(verb) запланировано: через \(Self.duration(delay))" : "\(verb)…"
+                if delay > 0 {
+                    let action: String
+                    if case .restart = command {
+                        action = "restart"
+                    } else {
+                        action = "shutdown"
+                    }
+                    LiveActivities.startCountdown(pcName: self.status?.name ?? self.pc?.name ?? "PC", action: action, endsAt: Date().addingTimeInterval(TimeInterval(delay)))
+                }
             case .sleep:
                 self.banner = "ПК уходит в сон"
                 self.state = .offline("ПК спит")
@@ -121,6 +132,7 @@ final class PCController {
             case .cancel:
                 self.pendingPower = nil
                 self.banner = "Выключение отменено"
+                Task { await LiveActivities.endAll() }
             }
         }
     }
@@ -128,6 +140,18 @@ final class PCController {
     func launch(_ app: RemoteApp) async {
         await run("apps.launch", payload: ["appId": app.id]) { [weak self] _ in
             self?.banner = "Запущено: \(app.name)"
+        }
+    }
+
+    /// From a widget link: the profile list may not be loaded yet.
+    func runProfile(id: String) async {
+        if profiles.isEmpty {
+            await refresh()
+        }
+        if let profile = profiles.first(where: { $0.id == id }) {
+            await runProfile(profile)
+        } else {
+            banner = "Профиль «\(id)» не найден на ПК"
         }
     }
 
@@ -174,19 +198,9 @@ final class PCController {
             throw NexusError.connection("ПК не подключён.")
         }
         state = .connecting
-        let signer = try PairingStore.signer(for: pc)
-        var lastError: Error = NexusError.connection("Нет адресов ПК.")
-        for host in pc.hosts {
-            do {
-                let (connection, _) = try await NexusConnection.connect(host: host, port: pc.port, fingerprint: pc.fingerprint, timeout: 4)
-                try await connection.authenticate(pcId: pc.pcId, deviceId: pc.deviceId, fingerprint: pc.fingerprint, signer: signer)
-                self.connection = connection
-                return connection
-            } catch {
-                lastError = error
-            }
-        }
-        throw lastError
+        let connection = try await PCSession.connect(pc)
+        self.connection = connection
+        return connection
     }
 
     private func load(using connection: NexusConnection) async throws {
@@ -215,6 +229,8 @@ final class PCController {
         } else {
             profiles = []
         }
+        // Lets Siri match spoken profile and app names ("Start Gaming in Nexus PC").
+        NexusShortcuts.updateAppShortcutParameters()
     }
 
     private func drop(_ error: Error) {

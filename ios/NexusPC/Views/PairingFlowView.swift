@@ -4,7 +4,12 @@ import UIKit
 
 struct PairingFlowView: View {
     let onPaired: (PairedPC) -> Void
-    @State private var model = PairingFlowModel()
+    @State private var model: PairingFlowModel
+
+    init(initialLink: PairingLink? = nil, onPaired: @escaping (PairedPC) -> Void) {
+        self.onPaired = onPaired
+        _model = State(initialValue: PairingFlowModel(initialLink: initialLink))
+    }
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -26,6 +31,12 @@ struct PairingFlowView: View {
     @ViewBuilder
     private var content: some View {
         switch model.step {
+        case let .confirm(link):
+            VStack(spacing: 20) {
+                StatusCard(icon: "link", title: "Подключить \(link.pcName)?", text: "Адреса: \(link.hosts.joined(separator: ", ")). Подключайтесь, только если сами открыли это окно на своём ПК.", busy: false)
+                NeonButton(title: "Подключить", systemImage: "checkmark") { model.confirm(link) }
+                Spacer()
+            }
         case .scanning:
             VStack(spacing: 16) {
                 Text("На ПК: значок Nexus PC у часов → «Подключить iPhone…». Наведите камеру на QR-код.")

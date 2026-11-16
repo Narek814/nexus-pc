@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @State private var controller = PCController()
     @State private var showingPairing = false
+    @State private var pairingLink: PairingLink?
     @State private var confirmPower: PowerAction?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -60,9 +61,10 @@ struct HomeView: View {
             }
         }
         .animation(.easeInOut, value: controller.banner)
-        .sheet(isPresented: $showingPairing) {
-            PairingFlowView { controller.paired($0) }
+        .sheet(isPresented: $showingPairing, onDismiss: { pairingLink = nil }) {
+            PairingFlowView(initialLink: pairingLink) { controller.paired($0) }
         }
+        .onOpenURL { handle($0) }
         .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirmPower != nil }, set: { if !$0 { confirmPower = nil } }), titleVisibility: .visible) {
             powerChoices
         }
@@ -231,6 +233,37 @@ struct HomeView: View {
             EmptyView()
         }
         Button("Отмена", role: .cancel) {}
+    }
+
+    // MARK: - Links from widgets, Live Activities and pairing QR codes
+
+    private func handle(_ url: URL) {
+        guard url.scheme == "nexuspc" else {
+            return
+        }
+        if url.host == "pair" {
+            if let link = PairingLink(url.absoluteString) {
+                pairingLink = link
+                showingPairing = true
+            }
+            return
+        }
+        guard url.host == "action", controller.pc != nil else {
+            return
+        }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        switch parts.first ?? "" {
+        case "lock":
+            Task { await controller.perform(.lock) }
+        case "shutdown":
+            confirmPower = .shutdown // never without confirmation
+        case "cancel":
+            Task { await controller.perform(.cancel) }
+        case "profile" where parts.count > 1:
+            Task { await controller.runProfile(id: parts[1]) }
+        default:
+            break
+        }
     }
 
     // MARK: - Helpers

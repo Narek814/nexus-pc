@@ -16,8 +16,10 @@ targets:
         excludes:
           - "**/README.md"
           - "Info.plist"
+      - path: Shared
     dependencies:
       - package: NexusKit
+      - target: NexusWidgets
     scheme: {}
     info:
       path: NexusPC/Info.plist
@@ -26,6 +28,10 @@ targets:
         NSLocalNetworkUsageDescription: "Nexus PC подключается к вашему компьютеру в домашней сети."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: io.github.narek814.nexuspc
+            CFBundleURLSchemes: [nexuspc]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.narek814.nexuspc
@@ -40,6 +46,33 @@ targets:
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         # Unsigned in CI; Sideloadly signs it with a free Apple ID on the owner's PC.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+  NexusWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NexusWidgets
+        excludes:
+          - "Info.plist"
+      - path: Shared
+    info:
+      path: NexusWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: "Nexus PC"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.narek814.nexuspc.widgets
+        PRODUCT_NAME: NexusWidgets
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""

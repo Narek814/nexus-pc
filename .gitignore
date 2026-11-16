@@ -21,3 +21,4 @@ Payload/
 *.ipa
 build/
 ios/NexusPC/Info.plist
+ios/NexusWidgets/Info.plist

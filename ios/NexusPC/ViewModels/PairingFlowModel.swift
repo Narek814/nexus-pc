@@ -9,6 +9,8 @@ import UIKit
 @Observable
 final class PairingFlowModel {
     enum Step: Equatable {
+        /// Opened from a link (camera app, message): ask before connecting anywhere.
+        case confirm(PairingLink)
         case scanning
         case connecting(PairingLink)
         case waitingForApproval(PairingLink, code: String)
@@ -16,8 +18,21 @@ final class PairingFlowModel {
         case failed(String)
     }
 
-    private(set) var step: Step = .scanning
+    private(set) var step: Step
     private var handled = false
+
+    init(initialLink: PairingLink? = nil) {
+        if let initialLink {
+            step = .confirm(initialLink)
+            handled = true
+        } else {
+            step = .scanning
+        }
+    }
+
+    func confirm(_ link: PairingLink) {
+        Task { await pair(with: link) }
+    }
 
     func handle(scanned text: String) {
         guard !handled else {
