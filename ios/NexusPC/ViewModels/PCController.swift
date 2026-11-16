@@ -48,6 +48,7 @@ final class PCController {
     private(set) var apps: [RemoteApp] = []
     private(set) var profiles: [RemoteProfile] = []
     private(set) var pendingPower: String?
+    private(set) var metrics: MetricsReading?
     var banner: String?
 
     private var connection: NexusConnection?
@@ -162,6 +163,25 @@ final class PCController {
         }
     }
 
+    /// Read-only request for other screens (Monitoring). Reconnects once if authentication expired.
+    func fetch(_ type: String, payload: [String: Any] = [:]) async throws -> [String: Any] {
+        do {
+            var response = try await ensureConnection().request(type, payload: payload)
+            if response.errorCode == "auth.required" {
+                connection?.close()
+                connection = nil
+                response = try await ensureConnection().request(type, payload: payload)
+            }
+            return try response.unwrap()
+        } catch let error as NexusError {
+            if case .server = error {
+                throw error
+            }
+            drop(error)
+            throw error
+        }
+    }
+
     func can(_ command: String) -> Bool {
         capabilities.contains(command)
     }
@@ -228,6 +248,9 @@ final class PCController {
             }
         } else {
             profiles = []
+        }
+        if capabilities.contains("metrics.snapshot"), let snapshot = try? await connection.request("metrics.snapshot").unwrap() {
+            metrics = MetricsReading(snapshot)
         }
         // Lets Siri match spoken profile and app names ("Start Gaming in Nexus PC").
         NexusShortcuts.updateAppShortcutParameters()

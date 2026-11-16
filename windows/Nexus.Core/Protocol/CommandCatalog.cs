@@ -35,6 +35,7 @@ public sealed class CommandCatalog
         new("auth.prove", Permission.None, RiskClass.Read, RequiresAuth: false, PayloadParsers.AuthProve),
         new("pc.status", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.Empty),
         new("metrics.snapshot", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.Empty),
+        new("metrics.history", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.MetricsHistory),
         new("power.shutdown", Permission.Power, RiskClass.Critical, true, PayloadParsers.Power),
         new("power.restart", Permission.Power, RiskClass.Critical, true, PayloadParsers.Power),
         new("power.sleep", Permission.Power, RiskClass.Normal, true, PayloadParsers.Empty),

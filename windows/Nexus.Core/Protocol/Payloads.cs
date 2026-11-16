@@ -27,6 +27,8 @@ public sealed record AuthBeginPayload(Guid DeviceId);
 
 public sealed record AuthProvePayload(byte[] Signature);
 
+public sealed record MetricsHistoryPayload(string Range);
+
 public sealed record PayloadResult(object? Value, string? Error)
 {
     public static PayloadResult Ok(object value) => new(value, null);
@@ -170,6 +172,17 @@ public static class PayloadParsers
         return TryGetBase64(payload, "signature", DeviceCrypto.MaxSignatureBytes, out var signature)
             ? PayloadResult.Ok(new AuthProvePayload(signature))
             : PayloadResult.Invalid("'signature' must be base64, at most 128 bytes.");
+    }
+
+    public static PayloadResult MetricsHistory(JsonElement payload)
+    {
+        if (HasOnly(payload, "range") is { } error)
+        {
+            return PayloadResult.Invalid(error);
+        }
+        return TryGetString(payload, "range", out var range) && range is "10m" or "1h" or "24h"
+            ? PayloadResult.Ok(new MetricsHistoryPayload(range))
+            : PayloadResult.Invalid("'range' must be 10m, 1h or 24h.");
     }
 
     private static bool TryGetString(JsonElement obj, string name, out string value)

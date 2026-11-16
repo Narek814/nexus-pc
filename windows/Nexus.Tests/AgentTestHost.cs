@@ -65,7 +65,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
     public static async Task<AgentTestHost> StartAsync(
         string? dataDirectory = null, IPowerController? power = null, bool fakePower = true,
         string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null,
-        IReadOnlyList<IPAddress>? bindAddresses = null)
+        IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         power ??= fakePower ? new FakePowerController() : null;
@@ -83,6 +83,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
             SessionPipeName = sessionPipe,
             // On Windows the agent only accepts the installed Nexus.Tray.exe; the fake tray lives in this test process.
             TrayPath = trayPath ?? Environment.ProcessPath,
+            MetricsSource = metrics ?? new FakeMetricsSource(),
         });
         await app.StartAsync();
         return new AgentTestHost(app, dataDirectory, power, sessionPipe);
@@ -211,5 +212,26 @@ internal sealed class FakeTray : IAsyncDisposable
         {
             Directory.Delete(_dir, recursive: true);
         }
+    }
+}
+
+/// <summary>Scripted telemetry: cpu rises by 10 each sample; GPU temperature present, CPU temperature not.</summary>
+internal sealed class FakeMetricsSource : Nexus.Monitoring.IMetricsSource
+{
+    private int _n;
+
+    public Nexus.Monitoring.MetricsSnapshot Sample(DateTimeOffset now)
+    {
+        var n = Interlocked.Increment(ref _n);
+        return new Nexus.Monitoring.MetricsSnapshot
+        {
+            Timestamp = now,
+            Cpu = new Nexus.Monitoring.CpuMetrics { Usage = Math.Min(100, n * 10) },
+            Memory = new Nexus.Monitoring.MemoryMetrics { UsedBytes = 8L << 30, TotalBytes = 32L << 30 },
+            Gpus = [new Nexus.Monitoring.GpuMetrics { Name = "Test GPU", Usage = 50, Temperature = 60, MemoryUsedBytes = 2L << 30, MemoryTotalBytes = 12L << 30 }],
+            Disks = [new Nexus.Monitoring.DiskMetrics { Name = "C:\\", TotalBytes = 1000, FreeBytes = 250 }],
+            Network = new Nexus.Monitoring.NetworkMetrics { ReceiveBytesPerSecond = 1000, SendBytesPerSecond = 500 },
+            Unavailable = new Dictionary<string, string> { ["cpu.temperature"] = "no sensor driver" },
+        };
     }
 }

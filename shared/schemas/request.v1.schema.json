@@ -190,6 +190,22 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "metrics.history"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/metricsHistory"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -210,7 +226,8 @@
             "profiles.run",
             "profiles.upsert",
             "profiles.delete",
-            "metrics.snapshot"
+            "metrics.snapshot",
+            "metrics.history"
           ]
         }
       }
@@ -368,6 +385,22 @@
             {
               "maxLength": 172
             }
+          ]
+        }
+      }
+    },
+    "metricsHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range"
+      ],
+      "properties": {
+        "range": {
+          "enum": [
+            "10m",
+            "1h",
+            "24h"
           ]
         }
       }

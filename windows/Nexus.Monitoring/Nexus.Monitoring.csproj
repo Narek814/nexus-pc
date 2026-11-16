@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Hardware telemetry (ARCHITECTURE.md §4). Windows sources are [SupportedOSPlatform("windows")];
+       other OSes get a portable source (disks, network) so the agent runs and is tested anywhere. -->
+  <PropertyGroup>
+    <RootNamespace>Nexus.Monitoring</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nexus.Tests" />
+  </ItemGroup>
+</Project>

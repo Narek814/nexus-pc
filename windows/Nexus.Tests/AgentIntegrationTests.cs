@@ -216,7 +216,6 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
 
         Assert.Equal(ErrorCodes.SessionUnavailable, (await client.RequestAsync("apps.launch", new JsonObject { ["appId"] = "steam" })).ErrorCode());
         Assert.Equal(ErrorCodes.SessionUnavailable, (await client.RequestAsync("power.lock")).ErrorCode());
-        Assert.Equal(ErrorCodes.NotImplemented, (await client.RequestAsync("metrics.snapshot")).ErrorCode());
         Assert.Equal("unavailable", (await client.RequestAsync("pc.status"))["payload"]!["userSession"]!.GetValue<string>());
     }
 

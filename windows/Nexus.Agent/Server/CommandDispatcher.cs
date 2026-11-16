@@ -19,6 +19,7 @@ internal sealed class CommandDispatcher(AgentServices services)
     [
         "system.hello", "pair.request", "auth.begin", "auth.prove", "pc.status",
         "power.shutdown", "power.restart", "power.sleep", "power.cancel",
+        "metrics.snapshot", "metrics.history",
     ];
 
     /// <summary>Commands that need Nexus.Tray in the signed-in session; available only while it is connected.</summary>
@@ -28,10 +29,7 @@ internal sealed class CommandDispatcher(AgentServices services)
         "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete",
     ];
 
-    private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal)
-    {
-        ["metrics.snapshot"] = "Metrics arrive in P1d.",
-    };
+    private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Minimum countdown for a shutdown/restart without force when it has to go through the service,
@@ -95,12 +93,16 @@ internal sealed class CommandDispatcher(AgentServices services)
                 return AuthBegin(id, begin, session);
             case AuthProvePayload prove:
                 return AuthProve(id, prove, session);
+            case MetricsHistoryPayload history:
+                var (resolution, points) = services.Metrics.History(history.Range);
+                return Ok(id, MetricsJson.History(history.Range, resolution, points));
         }
 
         return command.Spec.Type switch
         {
             "system.hello" => Ok(id, Hello(session)),
             "pc.status" => Ok(id, Status()),
+            "metrics.snapshot" => Ok(id, MetricsJson.Snapshot(services.Metrics.Latest ?? services.Metrics.SampleNow())),
             "power.shutdown" or "power.restart" => await PowerAsync(id, command, session, cancellationToken).ConfigureAwait(false),
             "power.sleep" => Sleep(id, session),
             "power.cancel" => FromOutcome(id, services.Power.Cancel(), new JsonObject { ["cancelled"] = true }),

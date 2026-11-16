@@ -55,6 +55,16 @@ final class LiveAgentTests: XCTestCase {
         XCTAssertEqual(unconfirmed.errorCode, "confirm.required")
         let sleep = try await connection.request("power.sleep")
         XCTAssertEqual(sleep.errorCode, "power.unsupported")
+        // Monitoring: the CI agent is not on Windows, so CPU/memory are null with a reason, never invented.
+        let metrics = try await connection.request("metrics.snapshot").unwrap()
+        let cpu = try XCTUnwrap(metrics["cpu"] as? [String: Any])
+        XCTAssertTrue(cpu["usage"] is NSNull || cpu["usage"] == nil)
+        let unavailable = try XCTUnwrap(metrics["unavailable"] as? [String: Any])
+        XCTAssertNotNil(unavailable["cpu.temperature"] as? String)
+        let history = try await connection.request("metrics.history", payload: ["range": "10m"]).unwrap()
+        XCTAssertEqual(history["intervalSeconds"] as? Int, 2)
+        XCTAssertNotNil(history["points"] as? [Any])
+
         // No tray on the CI machine.
         let apps = try await connection.request("apps.list")
         XCTAssertEqual(apps.errorCode, "session.unavailable")

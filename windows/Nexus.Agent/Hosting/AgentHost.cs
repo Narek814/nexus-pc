@@ -15,6 +15,7 @@ using Nexus.Windows;
 using Nexus.Agent.Server;
 using Nexus.Agent.Session;
 using Nexus.Agent.Storage;
+using Nexus.Monitoring;
 
 namespace Nexus.Agent.Hosting;
 
@@ -31,6 +32,8 @@ internal sealed record AgentHostOptions
     public bool EnableAdminPipe { get; init; } = true;
     public string SessionPipeName { get; init; } = TraySessionServer.DefaultPipeName;
     public bool EnableSessionPipe { get; init; } = true;
+    /// <summary>Overrides the telemetry source (tests). Default: Windows sources on Windows, portable elsewhere.</summary>
+    public IMetricsSource? MetricsSource { get; init; }
     /// <summary>Overrides the executable allowed on the session pipe (tests).</summary>
     public string? TrayPath { get; init; }
     public TimeSpan? PairingLifetime { get; init; }
@@ -50,7 +53,8 @@ internal static class AgentHost
         var identity = new AgentIdentity(config.PcId, Environment.MachineName, certificate);
         var devices = new JsonDeviceStore(options.DataDirectory);
         var power = options.Power ?? (OperatingSystem.IsWindows() ? new WindowsPowerController() : new UnsupportedPowerController());
-        var services = new AgentServices(identity, devices, power, new AuditLog(options.DataDirectory, options.Time), options.Time, options.PairingLifetime, options.HandshakeTimeout);
+        var metricsSource = options.MetricsSource ?? (OperatingSystem.IsWindows() ? new WindowsMetricsSource() : new PortableMetricsSource());
+        var services = new AgentServices(identity, devices, power, new AuditLog(options.DataDirectory, options.Time), options.Time, options.PairingLifetime, options.HandshakeTimeout, metricsSource);
 
         var port = options.Port ?? config.Port;
         // Production listens on all IPv4 addresses and filters every connection by the local address it
@@ -96,6 +100,7 @@ internal static class AgentHost
 
         builder.Services.AddSingleton(services);
         builder.Services.AddSingleton<AdminService>();
+        builder.Services.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
         if (options.EnableSessionPipe)
         {
             var trayPath = options.TrayPath ?? config.TrayPath ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Tray", "Nexus.Tray.exe"));

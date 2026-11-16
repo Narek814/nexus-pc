@@ -15,6 +15,13 @@ struct HomeView: View {
     }
 
     var body: some View {
+        NavigationStack {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private var content: some View {
         ZStack(alignment: .top) {
             Theme.background.ignoresSafeArea()
             ScrollView {
@@ -24,6 +31,9 @@ struct HomeView: View {
                         onboarding
                     } else {
                         statusCard
+                        if controller.can("metrics.snapshot") {
+                            monitoringLink
+                        }
                         powerGrid
                         if let pending = controller.pendingPower {
                             GlassCard {
@@ -130,6 +140,32 @@ struct HomeView: View {
                     Text(reason).font(.footnote).foregroundStyle(Theme.textMuted)
                 }
             }
+        }
+    }
+
+    private var monitoringLink: some View {
+        NavigationLink {
+            MonitoringView(controller: controller)
+        } label: {
+            GlassCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "waveform.path.ecg").font(.title2).foregroundStyle(Theme.accent)
+                    metricSummary("CPU", Format.percent(controller.metrics?.cpuUsage))
+                    metricSummary("GPU", Format.percent(controller.metrics?.gpus.first?.usage))
+                    metricSummary("RAM", Format.percent(controller.metrics?.memoryUsage))
+                    metricSummary("GPU", Format.temperature(controller.metrics?.gpus.first?.temperature))
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func metricSummary(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.subheadline.weight(.bold)).monospacedDigit().foregroundStyle(Theme.textPrimary)
+            Text(title).font(.caption2).foregroundStyle(Theme.textMuted)
         }
     }
 

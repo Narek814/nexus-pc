@@ -1557,6 +1557,87 @@
         "error": "command.invalidPayload"
       },
       "schemaValid": false
+    },
+    {
+      "name": "metrics.history 24h",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000201",
+        "kind": "request",
+        "type": "metrics.history",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "range": "24h"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "metrics.history unknown range",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000202",
+        "kind": "request",
+        "type": "metrics.history",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "range": "1y"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "metrics.history missing range",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000203",
+        "kind": "request",
+        "type": "metrics.history",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
     }
   ]
 }
