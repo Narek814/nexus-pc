@@ -94,6 +94,12 @@
 | `profiles.run` | apps | normal | `{ profileId: slug }` |
 | `profiles.upsert` | apps | normal | `{ profile: { id: slug, name: 1..64 символа, appIds: slug[] ≤ 32, без повторов } }` |
 | `profiles.delete` | apps | normal | `{ profileId: slug }` |
+| `input.move` | input | normal | `{ dx, dy }` — целые ±2000, относительное смещение курсора |
+| `input.button` | input | normal | `{ button: left\|right\|middle, action: click\|double\|down\|up }` |
+| `input.scroll` | input | normal | `{ dx?, dy? }` — ±2400, 120 = один щелчок колеса; `dy > 0` — вверх |
+| `input.text` | input | normal | `{ text: 1..256 символов }` — печать Unicode; `\n` → Enter, `\t` → Tab; управляющие символы запрещены |
+| `input.key` | input | normal | `{ key, modifiers?: [ctrl, alt, shift, win] }` — только клавиши из списка (см. «Тачпад») |
+| `input.media` | input | normal | `{ action: playPause\|next\|previous\|mute\|volumeDown\|volumeUp }` |
 | `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
 | `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
 | `rgb.profiles.upsert` | rgb | normal | `{ profile: { id: slug, name, color, brightness, effect } }` (≤ 32 профилей) |
@@ -102,7 +108,7 @@
 
 `slug` — `^[a-z0-9][a-z0-9-]{0,63}$`. Это **никогда не путь**: путь к программе задаётся только на ПК.
 
-`capabilities` в `system.hello` перечисляет команды, которые **работают прямо сейчас**: `power.lock`, `apps.*`, `profiles.*` — только пока Nexus.Tray запущен в сеансе человека за ПК (`pc.status.userSession = "available"`). Без трея они отвечают `session.unavailable`. Клиент скрывает остальные.
+`capabilities` в `system.hello` перечисляет команды, которые **работают прямо сейчас**: `power.lock`, `apps.*`, `profiles.*`, `input.*` — только пока Nexus.Tray запущен в сеансе человека за ПК (`pc.status.userSession = "available"`). Без трея они отвечают `session.unavailable`. Клиент скрывает остальные.
 
 **Приложения и профили** выполняет Nexus.Tray от имени пользователя. `apps.list` → `{ apps: [{ id, name, canClose }] }` — **без путей к файлам**. Добавлять программы можно только на ПК. `apps.close` просит окна закрыться (как кнопка ×) и никогда не завершает процесс принудительно. `profiles.upsert` с телефона может ссылаться только на программы из списка ПК (иначе `profiles.invalid`). `profiles.run` → `{ started, results: [{ appId, ok, error? }] }`.
 
@@ -138,6 +144,8 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 | `apps.notFound` / `apps.launchFailed` / `apps.closeNotAllowed` | приложения |
 | `profiles.notFound` / `profiles.invalid` / `profiles.limit` | профили (`invalid` — ссылка на программу не из списка ПК) |
 | `power.lockFailed` | блокировка не удалась |
+| `rgb.unavailable` | OpenRGB не запущен или SDK Server выключен |
+| `input.blocked` | экран ПК заблокирован, открыт UAC, или управление запрещено в меню трея |
 | `internal` | ошибка агента |
 
 ## Ответы
@@ -191,4 +199,16 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 **Связь с профилями программ.** Если есть профиль подсветки с тем же `id`, что у профиля программ (например, `gaming`), то после успешного `profiles.run` агент применяет и его и добавляет в ответ `lighting`: `"applied"`, `"noDevices"` (ни одно устройство не приняло) или `"unavailable"` (OpenRGB не запущен). Только для устройств с разрешением `rgb`; без него поле отсутствует и подсветка не меняется.
 
 Профили подсветки хранятся в `C:\ProgramData\NexusPC\rgb.json`.
+
+## Тачпад и клавиатура (P5)
+
+Выполняет Nexus.Tray в сеансе пользователя (`SendInput`): без трея — `session.unavailable`. Разрешение `input` **никогда не выдаётся при сопряжении** — его включает администратор ПК (`Nexus.Agent.exe devices permissions <deviceId> …,input`).
+
+Клавиши `input.key`: `a`–`z`, `0`–`9`, `f1`–`f12`, `enter`, `tab`, `escape`, `backspace`, `space`, `delete`, `insert`, стрелки `left/up/right/down`, `home`, `end`, `pageUp`, `pageDown`, `printScreen`, `win`. Сочетание нажимается и отпускается целиком в одном вызове — клавиши не могут «залипнуть». Ctrl+Alt+Del Windows программам не разрешает.
+
+`input.button` с `down`/`up` — для перетаскивания. Если после `down` от телефона 5 секунд ничего не приходит (обрыв связи), трей сам отпускает кнопку.
+
+Ответ — `{}` или ошибка `input.blocked`: экран ПК заблокирован, открыт запрос UAC или владелец запретил управление в меню трея. Ввод в окна программ, запущенных от имени администратора, Windows молча отбрасывает (UIPI) — агент не может это обнаружить.
+
+Клиент отправляет ввод по одному запросу: движения, накопленные за время ожидания ответа, объединяются (NexusKit `InputQueue`). В журнал аудита успешный ввод пишется не чаще раза в минуту на устройство, ошибки — всегда; набранный текст в журнал не попадает.
 

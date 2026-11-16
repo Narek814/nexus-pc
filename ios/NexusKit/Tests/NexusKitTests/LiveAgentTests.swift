@@ -74,6 +74,13 @@ final class LiveAgentTests: XCTestCase {
         // No tray on the CI machine.
         let apps = try await connection.request("apps.list")
         XCTAssertEqual(apps.errorCode, "session.unavailable")
+
+        // Touchpad: never granted by pairing, the PC owner enables it explicitly.
+        var queue = InputQueue()
+        queue.move(dx: 4, dy: 2)
+        let move = try XCTUnwrap(queue.next())
+        let input = try await connection.request(move.type, payload: move.payload)
+        XCTAssertEqual(input.errorCode, "auth.permissionDenied")
     }
 
     func testWrongCertificatePinIsRefused() async throws {

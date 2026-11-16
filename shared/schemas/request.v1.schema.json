@@ -259,6 +259,102 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.move"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputMove"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.button"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputButton"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.scroll"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputScroll"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.text"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputText"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.key"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputKey"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.media"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputMedia"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -288,7 +384,13 @@
             "rgb.apply",
             "rgb.profiles.upsert",
             "rgb.profiles.delete",
-            "rgb.profiles.apply"
+            "rgb.profiles.apply",
+            "input.move",
+            "input.button",
+            "input.scroll",
+            "input.text",
+            "input.key",
+            "input.media"
           ]
         }
       }
@@ -590,6 +692,193 @@
               "description": "\"static\", \"off\" or the name of a device's own mode (e.g. \"Rainbow\")."
             }
           }
+        }
+      }
+    },
+    "inputMove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dx",
+        "dy"
+      ],
+      "properties": {
+        "dx": {
+          "type": "integer",
+          "minimum": -2000,
+          "maximum": 2000
+        },
+        "dy": {
+          "type": "integer",
+          "minimum": -2000,
+          "maximum": 2000
+        }
+      }
+    },
+    "inputButton": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "button",
+        "action"
+      ],
+      "properties": {
+        "button": {
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ]
+        },
+        "action": {
+          "enum": [
+            "click",
+            "double",
+            "down",
+            "up"
+          ]
+        }
+      }
+    },
+    "inputScroll": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "dx": {
+          "type": "integer",
+          "minimum": -2400,
+          "maximum": 2400
+        },
+        "dy": {
+          "type": "integer",
+          "minimum": -2400,
+          "maximum": 2400
+        }
+      }
+    },
+    "inputText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$"
+        }
+      }
+    },
+    "inputKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ],
+      "properties": {
+        "key": {
+          "enum": [
+            "enter",
+            "tab",
+            "escape",
+            "backspace",
+            "space",
+            "delete",
+            "insert",
+            "left",
+            "up",
+            "right",
+            "down",
+            "home",
+            "end",
+            "pageUp",
+            "pageDown",
+            "printScreen",
+            "win",
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z",
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "f1",
+            "f2",
+            "f3",
+            "f4",
+            "f5",
+            "f6",
+            "f7",
+            "f8",
+            "f9",
+            "f10",
+            "f11",
+            "f12"
+          ]
+        },
+        "modifiers": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ctrl",
+              "alt",
+              "shift",
+              "win"
+            ]
+          }
+        }
+      }
+    },
+    "inputMedia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "playPause",
+            "next",
+            "previous",
+            "mute",
+            "volumeDown",
+            "volumeUp"
+          ]
         }
       }
     }

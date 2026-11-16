@@ -36,6 +36,23 @@ internal sealed class FakeDesktop : IDesktop
         Calls.Enqueue($"power:{action}:{(int)delay.TotalSeconds}:{force}");
         return PowerOutcome.Success;
     }
+
+    public ConcurrentQueue<Nexus.Core.Input.InputStep> Input { get; } = new();
+
+    public bool InputBlocked { get; set; }
+
+    public DesktopResult SendInput(IReadOnlyList<Nexus.Core.Input.InputStep> steps)
+    {
+        if (InputBlocked)
+        {
+            return new DesktopResult(false, "locked");
+        }
+        foreach (var step in steps)
+        {
+            Input.Enqueue(step);
+        }
+        return DesktopResult.Success;
+    }
 }
 
 internal static class PipePair

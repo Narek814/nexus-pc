@@ -22,14 +22,33 @@ public interface IDesktop
 
     /// <summary>Shutdown/restart from the user's own session, so apps can ask to save first.</summary>
     PowerOutcome SchedulePower(PowerAction action, TimeSpan delay, bool force, string reason);
+
+    /// <summary>Injects mouse/keyboard input into the desktop (SendInput). Fails while the PC is locked.</summary>
+    DesktopResult SendInput(IReadOnlyList<Input.InputStep> steps);
 }
 
 /// <summary>
 /// Handles agent → tray requests. The agent has already authenticated and authorized the phone and
 /// validated the payload; this re-checks ids against the user's own list (defense in depth).
 /// </summary>
-public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop)
+public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, TimeProvider? time = null)
 {
+    /// <summary>A notice on the PC when a phone starts controlling the mouse/keyboard after this much quiet.</summary>
+    public static readonly TimeSpan InputNoticeAfter = TimeSpan.FromMinutes(2);
+
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
+    private readonly Input.HeldButtons _held = new();
+    private readonly Lock _inputLock = new();
+    private DateTimeOffset _lastInput = DateTimeOffset.MinValue;
+    private volatile bool _inputPaused;
+
+    /// <summary>The person at the PC switched phone control off in the tray menu ("Стоп").</summary>
+    public bool InputPaused
+    {
+        get => _inputPaused;
+        set => _inputPaused = value;
+    }
+
     /// <summary>Fired after an action on behalf of a phone, for a small notice in the tray.</summary>
     public event EventHandler<string>? ActionPerformed;
 
@@ -47,9 +66,61 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop)
             SessionOps.ProfilesDelete => DeleteProfile(args),
             SessionOps.Lock => FromDesktop(desktop.Lock(), ErrorCodes.LockFailed, "Workstation locked"),
             SessionOps.PowerSchedule => SchedulePower(args),
+            _ when op.StartsWith("input.", StringComparison.Ordinal) => Input(op, args),
             _ => RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'."),
         };
         return Task.FromResult(result);
+    }
+
+    /// <summary>Called by the tray every second: releases a dragged button if the phone went quiet.</summary>
+    public void ReleaseIdleButtons()
+    {
+        var steps = _held.ReleaseIfIdle(_time.GetUtcNow());
+        if (steps.Count > 0)
+        {
+            desktop.SendInput(steps);
+        }
+    }
+
+    private RpcResult Input(string op, JsonObject args)
+    {
+        // Same parser as the agent (defense in depth): only whitelisted keys and bounded values.
+        if (!CommandCatalog.V1.TryGet(op, out var spec) || spec.RequiredPermission != Security.Permission.Input)
+        {
+            return RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'.");
+        }
+        if (_inputPaused)
+        {
+            return RpcResult.Failure(ErrorCodes.InputBlocked, "Управление с телефона выключено на ПК (меню Nexus PC в трее).");
+        }
+        var parsed = spec.ParsePayload(System.Text.Json.JsonSerializer.SerializeToElement(args));
+        if (parsed.Value is not { } payload)
+        {
+            return RpcResult.Failure(ErrorCodes.InvalidPayload, parsed.Error ?? "Invalid input.");
+        }
+
+        var now = _time.GetUtcNow();
+        bool notice;
+        lock (_inputLock)
+        {
+            notice = now - _lastInput > InputNoticeAfter;
+            _lastInput = now;
+        }
+        if (notice)
+        {
+            ActionPerformed?.Invoke(this, "Телефон управляет мышью и клавиатурой. Запретить: правой кнопкой по значку Nexus PC.");
+        }
+
+        var steps = Nexus.Core.Input.InputPlanner.For(payload);
+        _held.Observe(payload, now);
+        if (steps.Count == 0)
+        {
+            return RpcResult.Success([]);
+        }
+        var result = desktop.SendInput(steps);
+        return result.Ok
+            ? RpcResult.Success([])
+            : RpcResult.Failure(ErrorCodes.InputBlocked, result.Message ?? "Windows did not accept the input.");
     }
 
     private JsonArray AppsJson() =>

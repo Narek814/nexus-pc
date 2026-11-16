@@ -2092,6 +2092,359 @@
         "ok": true
       },
       "schemaValid": true
+    },
+    {
+      "name": "input.move",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000501",
+        "kind": "request",
+        "type": "input.move",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "dx": 12,
+          "dy": -7
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.move too far",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000502",
+        "kind": "request",
+        "type": "input.move",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "dx": 5000,
+          "dy": 0
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "input.button right click",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000503",
+        "kind": "request",
+        "type": "input.button",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "button": "right",
+          "action": "click"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.button unknown button",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000504",
+        "kind": "request",
+        "type": "input.button",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "button": "x1",
+          "action": "click"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "input.scroll",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000505",
+        "kind": "request",
+        "type": "input.scroll",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "dy": -120
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.text",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000506",
+        "kind": "request",
+        "type": "input.text",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "text": "Привет, PC!\n"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.text control character",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000507",
+        "kind": "request",
+        "type": "input.text",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "text": "a\u0007b"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "input.key ctrl+c",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000508",
+        "kind": "request",
+        "type": "input.key",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "key": "c",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.key unknown key",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000509",
+        "kind": "request",
+        "type": "input.key",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "key": "capsLock"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "input.key repeated modifier",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000510",
+        "kind": "request",
+        "type": "input.key",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "key": "d",
+          "modifiers": [
+            "win",
+            "win"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "input.media",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000511",
+        "kind": "request",
+        "type": "input.media",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "action": "volumeUp"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input needs input permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000512",
+        "kind": "request",
+        "type": "input.move",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "dx": 1,
+          "dy": 1
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
     }
   ]
 }

@@ -14,6 +14,8 @@ namespace Nexus.Agent.Server;
 /// <summary>Validates every request through <see cref="CommandValidator"/>, then runs its handler.</summary>
 internal sealed class CommandDispatcher(AgentServices services)
 {
+    private readonly InputAuditThrottle _inputAudit = new(services.Time);
+
     /// <summary>Commands the agent handles itself.</summary>
     public static readonly IReadOnlyList<string> Implemented =
     [
@@ -28,6 +30,7 @@ internal sealed class CommandDispatcher(AgentServices services)
     [
         "power.lock", "apps.list", "apps.launch", "apps.close",
         "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete",
+        "input.move", "input.button", "input.scroll", "input.text", "input.key", "input.media",
     ];
 
     private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal);
@@ -69,7 +72,13 @@ internal sealed class CommandDispatcher(AgentServices services)
             result = Fail(command.Envelope.Id, ErrorCodes.Internal, "Internal error.");
         }
 
-        services.Audit.Record(session.CurrentClient().DeviceId ?? client.DeviceId, command.Spec.Type, result.Ok, result.ErrorCode, session.Remote);
+        var deviceId = session.CurrentClient().DeviceId ?? client.DeviceId;
+        if (!result.Ok || !command.Spec.Type.StartsWith("input.", StringComparison.Ordinal) || _inputAudit.ShouldRecord(deviceId))
+        {
+            // A touchpad sends dozens of events a second: successful input is recorded at most once a minute
+            // per device, so it cannot push older entries out of the rotating log. Failures are always recorded.
+            services.Audit.Record(deviceId, command.Spec.Type, result.Ok, result.ErrorCode, session.Remote);
+        }
         return result;
     }
 
@@ -383,6 +392,29 @@ internal sealed class CommandDispatcher(AgentServices services)
         catch (JsonException)
         {
             return null;
+        }
+    }
+}
+
+/// <summary>At most one audit line per device per minute for successful input events.</summary>
+internal sealed class InputAuditThrottle(TimeProvider time)
+{
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    private readonly Dictionary<string, DateTimeOffset> _last = new(StringComparer.Ordinal);
+    private readonly Lock _lock = new();
+
+    public bool ShouldRecord(string? deviceId)
+    {
+        var key = deviceId ?? "";
+        var now = time.GetUtcNow();
+        lock (_lock)
+        {
+            if (_last.TryGetValue(key, out var last) && now - last < Interval)
+            {
+                return false;
+            }
+            _last[key] = now;
+            return true;
         }
     }
 }

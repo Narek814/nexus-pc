@@ -49,6 +49,21 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if controller.can("input.move") {
+                            NavigationLink {
+                                TouchpadView(controller: controller)
+                            } label: {
+                                GlassCard {
+                                    HStack {
+                                        Label("Тачпад и клавиатура", systemImage: "hand.point.up.left.fill")
+                                            .foregroundStyle(Theme.textPrimary)
+                                        Spacer()
+                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                         if controller.can("rgb.status") {
                             NavigationLink {
                                 RgbView(controller: controller)

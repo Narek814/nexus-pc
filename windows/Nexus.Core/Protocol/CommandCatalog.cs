@@ -56,6 +56,13 @@ public sealed class CommandCatalog
         new("profiles.run", Permission.Apps, RiskClass.Normal, true, PayloadParsers.ProfileRef),
         new("profiles.upsert", Permission.Apps, RiskClass.Normal, true, PayloadParsers.ProfileUpsert),
         new("profiles.delete", Permission.Apps, RiskClass.Normal, true, PayloadParsers.ProfileRef),
+        // Remote input (P5): full control of the signed-in desktop, so the permission is never granted by default.
+        new("input.move", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Move),
+        new("input.button", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Button),
+        new("input.scroll", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Scroll),
+        new("input.text", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Text),
+        new("input.key", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Key),
+        new("input.media", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Media),
     ]);
 
     private readonly FrozenDictionary<string, CommandSpec> _commands;

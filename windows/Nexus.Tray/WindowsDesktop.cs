@@ -71,6 +71,65 @@ internal sealed partial class WindowsDesktop : IDesktop
     public PowerOutcome SchedulePower(PowerAction action, TimeSpan delay, bool force, string reason) =>
         _power.Schedule(action, delay, force, reason);
 
+    public DesktopResult SendInput(IReadOnlyList<Nexus.Core.Input.InputStep> steps)
+    {
+        var inputs = new INPUT[steps.Count];
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var s = steps[i];
+            inputs[i] = s.IsMouse
+                ? new INPUT { Type = InputMouse, U = new InputUnion { Mouse = new MOUSEINPUT { Dx = s.Dx, Dy = s.Dy, MouseData = unchecked((uint)s.MouseData), Flags = s.Flags } } }
+                : new INPUT { Type = InputKeyboard, U = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = s.VirtualKey, Scan = s.Scan, Flags = s.Flags } } };
+        }
+        var sent = SendInputNative((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        // Windows rejects input while the secure desktop (lock screen, UAC prompt) is active. Input into
+        // windows of elevated apps is dropped silently (UIPI) and cannot be detected here.
+        return sent == inputs.Length
+            ? DesktopResult.Success
+            : new DesktopResult(false, $"Windows не принял ввод: экран ПК заблокирован или открыт запрос администратора (код {Marshal.GetLastPInvokeError()}).");
+    }
+
+    private const uint InputMouse = 0;
+    private const uint InputKeyboard = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint Type;
+        public InputUnion U;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT Mouse;
+        [FieldOffset(0)] public KEYBDINPUT Keyboard;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort VirtualKey;
+        public ushort Scan;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    [LibraryImport("user32.dll", EntryPoint = "SendInput", SetLastError = true)]
+    private static partial uint SendInputNative(uint count, [In] INPUT[] inputs, int size);
+
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool LockWorkStation();

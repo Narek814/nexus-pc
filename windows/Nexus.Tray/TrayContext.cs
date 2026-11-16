@@ -15,6 +15,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly UserAppStore _store;
     private readonly AgentConnection _agent;
     private readonly SynchronizationContext _ui;
+    private readonly System.Windows.Forms.Timer _inputWatch = new() { Interval = 1000 };
     private Icon _currentIcon;
     private Form? _openForm;
 
@@ -26,6 +27,9 @@ internal sealed class TrayContext : ApplicationContext
 
         var handler = new TrayCommandHandler(_store, new WindowsDesktop());
         handler.ActionPerformed += (_, text) => _ui.Post(_ => Notify(text), null);
+        // A phone that drags and then loses connection must not leave a mouse button held.
+        _inputWatch.Tick += (_, _) => handler.ReleaseIdleButtons();
+        _inputWatch.Start();
 
         var agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Agent", "Nexus.Agent.exe"));
         _status = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
@@ -47,6 +51,13 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
         menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
+        var stopInput = new ToolStripMenuItem("Запретить управление мышью и клавиатурой с телефона");
+        stopInput.Click += (_, _) =>
+        {
+            handler.InputPaused = !handler.InputPaused;
+            stopInput.Checked = handler.InputPaused;
+        };
+        menu.Items.Add(stopInput);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autostart);
         menu.Items.Add("Выход", null, (_, _) => ExitThread());
@@ -109,6 +120,7 @@ internal sealed class TrayContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        _inputWatch.Dispose();
         _icon.Visible = false;
         _icon.Dispose();
         _currentIcon.Dispose();
