@@ -12,7 +12,7 @@ public sealed class InputPlannerTests
     private static object Parse(string type, string json)
     {
         Assert.True(CommandCatalog.V1.TryGet(type, out var spec));
-        var result = spec.ParsePayload(JsonDocument.Parse(json).RootElement);
+        var result = spec.ParsePayload(JsonElement.Parse(json));
         Assert.True(result.Error is null, result.Error);
         return result.Value!;
     }
@@ -120,7 +120,7 @@ public sealed class InputPlannerTests
     public void Rejects(string type, string json)
     {
         Assert.True(CommandCatalog.V1.TryGet(type, out var spec));
-        Assert.NotNull(spec.ParsePayload(JsonDocument.Parse(json).RootElement).Error);
+        Assert.NotNull(spec.ParsePayload(JsonElement.Parse(json)).Error);
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class InputPlannerTests
     {
         Assert.True(CommandCatalog.V1.TryGet("input.text", out var spec));
         var json = JsonSerializer.Serialize(new { text = new string('a', InputKeys.MaxTextLength + 1) });
-        Assert.NotNull(spec.ParsePayload(JsonDocument.Parse(json).RootElement).Error);
+        Assert.NotNull(spec.ParsePayload(JsonElement.Parse(json)).Error);
     }
 }
 
