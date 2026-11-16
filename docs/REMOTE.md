@@ -42,6 +42,22 @@ New-NetFirewallRule -DisplayName "Nexus PC Agent (Tailscale)" -Direction Inbound
 
 Полностью выключенный ПК по Wi-Fi не просыпается. Схема для Wi-Fi: **вместо выключения — сон** (в Nexus PC кнопка «Сон» или Siri “Put my PC to sleep with Nexus PC”), а будить — «Включить ПК».
 
+0. **Главное (проверено на ПК владельца с Intel Wi-Fi 6 AX201):** по умолчанию Windows не разрешала Wi-Fi-адаптеру будить ПК. Проверка и включение (PowerShell от имени администратора):
+
+```powershell
+powercfg /devicequery wake_armed
+```
+
+```powershell
+powercfg /devicequery wake_programmable
+```
+
+Если адаптер есть во втором списке, но нет в первом — разрешите (точное имя из списка):
+
+```powershell
+powercfg /deviceenablewake "Intel(R) Wi-Fi 6 AX201 160MHz"
+```
+
 1. **Диспетчер устройств → Сетевые адаптеры → Wi-Fi-адаптер (Wireless/Wi-Fi) → Свойства:**
    - «Управление электропитанием»: «Разрешить этому устройству выводить компьютер из ждущего режима» и «…только с помощью магического пакета» — отметить. Если вкладки или пунктов нет, адаптер не умеет просыпаться по сети.
    - «Дополнительно»: *Wake on Magic Packet* — Enabled; *Wake on Pattern Match* — Enabled (если есть).
