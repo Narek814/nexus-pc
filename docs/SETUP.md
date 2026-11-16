@@ -80,7 +80,19 @@ sc.exe query NexusPCAgent
 New-NetFirewallRule -DisplayName "Nexus PC Agent" -Direction Inbound -Program "C:\Program Files\NexusPC\Agent\Nexus.Agent.exe" -Protocol TCP -LocalPort 47800 -Profile Private -Action Allow
 ```
 
-Проверьте, что домашняя сеть отмечена как **частная**: Параметры → Сеть и Интернет → ваша сеть → «Частная сеть». В публичных сетях агент недоступен.
+Проверьте, что домашняя сеть отмечена как **частная** — иначе iPhone получит «ПК не ответил вовремя» (так было на реальном ПК: Windows отметила домашний Wi-Fi как Public):
+
+```powershell
+Get-NetConnectionProfile
+```
+
+Если у вашей сети `NetworkCategory : Public`, сделайте её частной (окно администратора; `9` — ваш `InterfaceIndex` из вывода выше):
+
+```powershell
+Set-NetConnectionProfile -InterfaceIndex 9 -NetworkCategory Private
+```
+
+В общественных сетях (кафе и т. п.) оставляйте Public — там агент недоступен.
 
 Порт в роутере **не открывайте**. Для доступа из интернета — Tailscale (этап P2/P11).
 
