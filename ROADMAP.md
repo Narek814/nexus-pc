@@ -9,7 +9,7 @@
 | **P1b** ✅ | `Nexus.Agent`: служба, WSS, сопряжение (код/ссылка; QR — в P1c), вход, power control, аудит; `Nexus.DevClient`; CI | Основное проверено на реальном ПК (W1, W5–W10); остальное — docs/TESTING.md. |
 | **P1c** ✅ | `Nexus.Tray`: канал со службой, QR-сопряжение, список программ, профили, блокировка, выключение из сеанса пользователя | Проверено на реальном ПК: T1, T3–T8, T10, T11; осталось T2, T9, T12. |
 | **P1d** | **[изм.]** Базовые метрики CPU/RAM/диски/сеть через Performance Counters | Нужны Command Center уже на P2; полноценный Monitoring остаётся на P4. |
-| **P2** | iOS: `NexusKit`, дизайн-система, сопряжение, Command Center, Devices, Profiles, Power | На iPhone: сопряжение, запуск профиля, выключение. |
+| **P2** 🟨 | iOS: `NexusKit` (сеть с закреплённым сертификатом, вход по подписи), дизайн-система, QR-сопряжение, Command Center, профили, приложения, питание | На iPhone: сопряжение, запуск профиля, выключение. |
 | **P2.0** ✅ | **[изм.]** CI GitHub Actions на macOS: `swift test` (NexusKit на общих примерах с C#), XcodeGen + `xcodebuild` без подписи → .ipa; установка через Sideloadly (docs/IOS.md) | Проверено 2026-11-16: собрано в CI без Mac (Xcode 26.6), установлено через Sideloadly с бесплатным Apple ID, открывается на iPhone (iOS 27). |
 | **P3** | Siri, Widgets, Live Activities, Notifications | **[изм.]** Пуши в фоне — через ntfy/Telegram (D11), не APNs. |
 | **P4** | Monitoring (GPU, температуры, частоты, история, графики), Smart Alerts | Недоступные датчики честно помечены. |
