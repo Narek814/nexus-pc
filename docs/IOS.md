@@ -10,6 +10,8 @@ xcodegen + xcodebuild           Sideloadly + бесплатный         каб
 → NexusPC-unsigned.ipa          Apple ID подписывает
 ```
 
+**Проверено (2026-11-16):** сборка CI (Xcode 26.6, 7 тестов NexusKit) → Sideloadly на Windows → iPhone с iOS 27: приложение открывается. На английском iOS пункты: *Settings → Privacy & Security → Developer Mode* и *Settings → General → VPN & Device Management → Trust*.
+
 **Статус (P2.0):** приложение — заготовка Command Center в стиле Nexus PC. Умеет проверить ссылку сопряжения (вставить из буфера). Подключения к ПК пока **нет** — это этап P2.
 
 ## 1. Скачать сборку
