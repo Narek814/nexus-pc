@@ -157,7 +157,7 @@ ios/NexusPC/
 | Microsoft.Extensions.Hosting.WindowsServices | 10.0.15 | Agent | MIT | Работа как служба Windows |
 | xunit, xunit.runner.visualstudio, Microsoft.NET.Test.Sdk | 2.9.3 / 3.1.4 / 17.14.1 | Tests | Apache-2.0 / MIT | Тесты |
 
-Только для проверки (не попадают в приложение): `zxing-cpp` и `pillow` (Python, Apache-2.0 / MIT-CMU) — независимый декодер QR в `tools/check_qr.py` и CI. QR-кодировщик написан свой (`Nexus.Core.Pairing.QrCode`), без зависимостей — по решению владельца.
+Только для сборки/проверки (не попадают в приложение): XcodeGen (MIT) — генерирует Xcode-проект на macOS-раннере CI;  `zxing-cpp` и `pillow` (Python, Apache-2.0 / MIT-CMU) — независимый декодер QR в `tools/check_qr.py` и CI. QR-кодировщик написан свой (`Nexus.Core.Pairing.QrCode`), без зависимостей — по решению владельца.
 
 Кандидаты (не добавлены, требуют проверки и одобрения):
 

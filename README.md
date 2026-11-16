@@ -14,6 +14,7 @@
 - [docs/API.md](docs/API.md) — протокол v1
 - [docs/TESTING.md](docs/TESTING.md) — как запускать тесты и план ручной проверки
 - [docs/SETUP.md](docs/SETUP.md) — установка агента на Windows
+- [docs/IOS.md](docs/IOS.md) — сборка iPhone-приложения без Mac и установка
 
 ## Структура
 
@@ -24,6 +25,8 @@ windows/Nexus.Core       модели, каталог команд, разреш
 windows/Nexus.Agent      служба Windows: WSS, вход, питание, каналы администратора и трея
 windows/Nexus.Tray       приложение в трее (WinForms): QR, программы, профили, блокировка
 windows/Nexus.Windows    общие вызовы Windows
+ios/NexusKit             Swift-пакет: протокол, сопряжение, криптография (общие примеры с C#)
+ios/NexusPC              приложение SwiftUI; ios/project.yml — спецификация XcodeGen
 windows/Nexus.DevClient  тестовый клиент вместо iPhone
 windows/Nexus.Tests      xUnit: юнит, контракт и интеграционные тесты
 .github/workflows        CI: тесты на Windows и Linux, проверка схем

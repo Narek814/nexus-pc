@@ -10,7 +10,7 @@
 | **P1c** ✅ | `Nexus.Tray`: канал со службой, QR-сопряжение, список программ, профили, блокировка, выключение из сеанса пользователя | Проверено на реальном ПК: T1, T3–T8, T10, T11; осталось T2, T9, T12. |
 | **P1d** | **[изм.]** Базовые метрики CPU/RAM/диски/сеть через Performance Counters | Нужны Command Center уже на P2; полноценный Monitoring остаётся на P4. |
 | **P2** | iOS: `NexusKit`, дизайн-система, сопряжение, Command Center, Devices, Profiles, Power | На iPhone: сопряжение, запуск профиля, выключение. |
-| **P2.0** | **[изм.]** CI GitHub Actions: Windows (`dotnet test`) и macOS (`swift test`, `xcodebuild` без подписи → .ipa-артефакт) | Без Mac это единственный способ собрать iOS (D12). |
+| **P2.0** 🟨 | **[изм.]** CI GitHub Actions на macOS: `swift test` (NexusKit на общих примерах с C#), XcodeGen + `xcodebuild` без подписи → .ipa; установка через Sideloadly (docs/IOS.md) | Приложение установлено и открывается на iPhone. |
 | **P3** | Siri, Widgets, Live Activities, Notifications | **[изм.]** Пуши в фоне — через ntfy/Telegram (D11), не APNs. |
 | **P4** | Monitoring (GPU, температуры, частоты, история, графики), Smart Alerts | Недоступные датчики честно помечены. |
 | **P5** | Remote Touchpad, затем спайк WebRTC → Remote Screen | Задержка и качество измерены. |

@@ -1,0 +1,70 @@
+{
+  "description": "Pairing links (QR contents). Both C# PairingLink.TryParse and Swift NexusKit must accept/reject identically.",
+  "valid": [
+    {
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263",
+      "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+      "pcName": "Игровой ПК",
+      "hosts": [
+        "192.168.0.102",
+        "100.101.102.103"
+      ],
+      "port": 47800,
+      "fingerprint": "AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12",
+      "code": "04817263"
+    },
+    {
+      "link": "nexuspc://pair?v=1&pc=42fe00f7-98ad-4607-84c0-4580b73d2f0e&name=PC-NAREK&h=192.168.0.102&p=47800&fp=711B91EC8E18D225D4870FAC3855C8B66B5EF15F9ABA09910A2810F1C557A190&c=87994745",
+      "pcId": "42fe00f7-98ad-4607-84c0-4580b73d2f0e",
+      "pcName": "PC-NAREK",
+      "hosts": [
+        "192.168.0.102"
+      ],
+      "port": 47800,
+      "fingerprint": "711B91EC8E18D225D4870FAC3855C8B66B5EF15F9ABA09910A2810F1C557A190",
+      "code": "87994745"
+    }
+  ],
+  "invalid": [
+    {
+      "why": "other scheme",
+      "link": "https://evil.example/pair?v=1"
+    },
+    {
+      "why": "version 2",
+      "link": "nexuspc://pair?v=2&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263"
+    },
+    {
+      "why": "host name instead of IP",
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=evil.example&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263"
+    },
+    {
+      "why": "port out of range",
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=70000&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263"
+    },
+    {
+      "why": "short fingerprint",
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12&c=04817263"
+    },
+    {
+      "why": "lowercase fingerprint",
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12&c=04817263"
+    },
+    {
+      "why": "short code",
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=123"
+    },
+    {
+      "why": "duplicate key",
+      "link": "nexuspc://pair?v=1&v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263"
+    },
+    {
+      "why": "missing name",
+      "link": "nexuspc://pair?v=1&pc=7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263"
+    },
+    {
+      "why": "bad pc id",
+      "link": "nexuspc://pair?v=1&pc=not-a-uuid&name=%D0%98%D0%B3%D1%80%D0%BE%D0%B2%D0%BE%D0%B9%20%D0%9F%D0%9A&h=192.168.0.102%2C100.101.102.103&p=47800&fp=AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12&c=04817263"
+    }
+  ]
+}

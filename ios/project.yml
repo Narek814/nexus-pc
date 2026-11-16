@@ -1,0 +1,37 @@
+# XcodeGen spec: the Xcode project is generated in CI (no Mac needed). See docs/IOS.md.
+name: NexusPC
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  NexusKit:
+    path: NexusKit
+targets:
+  NexusPC:
+    type: application
+    platform: iOS
+    sources:
+      - path: NexusPC
+        excludes:
+          - "**/README.md"
+    dependencies:
+      - package: NexusKit
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.narek814.nexuspc
+        PRODUCT_NAME: NexusPC
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Nexus PC"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # Unsigned in CI; Sideloadly signs it with a free Apple ID on the owner's PC.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""

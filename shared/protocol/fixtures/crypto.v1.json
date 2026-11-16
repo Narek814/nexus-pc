@@ -1,0 +1,40 @@
+{
+  "description": "Cross-language crypto vectors (C# Nexus.Core.Security.DeviceCrypto and Swift NexusKit must agree). Keys are fixed test keys, never used for anything real.",
+  "verificationCodes": [
+    {
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBBsArFozQrIlVzJEfzWLidQhjKnGu7ggMkAcVV3BfBOMssi8oT021AyyhMtbd/qwLBVy3i61mgMWD8IV6BeWTA==",
+      "fingerprint": "711B91EC8E18D225D4870FAC3855C8B66B5EF15F9ABA09910A2810F1C557A190",
+      "code": "030288"
+    },
+    {
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEwvM5vwVswtosj1HP5qCdUX1PRMMyhbblcc9E4YyLgy0iou1ww+nsRW6kKYvJZzXWXUA7BFHXFvTkAcRdKYaHdg==",
+      "fingerprint": "711B91EC8E18D225D4870FAC3855C8B66B5EF15F9ABA09910A2810F1C557A190",
+      "code": "043607"
+    },
+    {
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBBsArFozQrIlVzJEfzWLidQhjKnGu7ggMkAcVV3BfBOMssi8oT021AyyhMtbd/qwLBVy3i61mgMWD8IV6BeWTA==",
+      "fingerprint": "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+      "code": "688075"
+    }
+  ],
+  "authTranscripts": [
+    {
+      "pcId": "42FE00F7-98AD-4607-84C0-4580B73D2F0E",
+      "deviceId": "7bd2d25d-78e4-42f5-b261-3ac851d80599",
+      "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "fingerprint": "711B91EC8E18D225D4870FAC3855C8B66B5EF15F9ABA09910A2810F1C557A190",
+      "transcript": "nexuspc-auth-v1\n42fe00f7-98ad-4607-84c0-4580b73d2f0e\n7bd2d25d-78e4-42f5-b261-3ac851d80599\nAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\n711B91EC8E18D225D4870FAC3855C8B66B5EF15F9ABA09910A2810F1C557A190",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBBsArFozQrIlVzJEfzWLidQhjKnGu7ggMkAcVV3BfBOMssi8oT021AyyhMtbd/qwLBVy3i61mgMWD8IV6BeWTA==",
+      "signatureDer": "MEUCIGKVD39iLEiVhzqpLY8eR8H8P73Huvgp93D6u5Hwyb7xAiEAjwy372uouUc9gez6Me9IgYKN1cHGBpALr503W4R2xaQ="
+    },
+    {
+      "pcId": "00000000-0000-4000-8000-000000000001",
+      "deviceId": "FFFFFFFF-FFFF-4FFF-BFFF-FFFFFFFFFFFF",
+      "nonce": "//////////////////////////////////////////8=",
+      "fingerprint": "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+      "transcript": "nexuspc-auth-v1\n00000000-0000-4000-8000-000000000001\nffffffff-ffff-4fff-bfff-ffffffffffff\n//////////////////////////////////////////8=\nAB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEwvM5vwVswtosj1HP5qCdUX1PRMMyhbblcc9E4YyLgy0iou1ww+nsRW6kKYvJZzXWXUA7BFHXFvTkAcRdKYaHdg==",
+      "signatureDer": "MEUCIQDOZ8smFs5T5VPGDyXxL+luKcUr9x5DMY1gkdYLRjomZwIgPvo3T+iqSJjkVfOFn9nKDi0ngGyW+/0r4l1rcPO+3qs="
+    }
+  ]
+}
