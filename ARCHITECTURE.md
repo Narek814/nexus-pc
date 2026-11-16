@@ -79,7 +79,7 @@
 | `Nexus.Core` | библиотека (кроссплатформенная) | Модели протокола, каталог команд, разрешения, валидатор команд, политика подтверждений. Без Windows-API → тестируется на любой ОС. |
 | `Nexus.Agent` | Windows Service | Kestrel (WSS/HTTPS), сопряжение, сессии, маршрутизация команд, power control (`InitiateShutdownW`, `SetSuspendState`), IPC-сервер, Bonjour/mDNS-анонс. |
 | `Nexus.Tray` | WinExe, автозапуск в сеансе пользователя | Запуск/закрытие приложений из реестра, `LockWorkStation`, буфер обмена, `SendInput`, Core Audio, захват экрана, окна подтверждения. |
-| `Nexus.Monitoring` | библиотека | Провайдеры телеметрии за интерфейсом `ISensorProvider`: Performance Counters / PDH (CPU, RAM, диски, сеть, GPU Engine), NVML (NVIDIA), LibreHardwareMonitorLib (температуры, частоты — опционально, см. §8). |
+| `Nexus.Monitoring` | библиотека | `IMetricsSource`: Windows — GetSystemTimes, GlobalMemoryStatusEx, NVML (NVIDIA); везде — диски и сеть. `MetricsSampler`: 2 с, история 10 мин / 24 ч. Температура CPU — только с драйвером датчиков (LibreHardwareMonitor, решение владельца). |
 | `Nexus.Remote` | библиотека (в Tray) | Захват (Windows.Graphics.Capture / DXGI Desktop Duplication), кодирование, WebRTC, ввод. |
 | `Nexus.RGB` | библиотека | `IRgbAdapter`; первые адаптеры — OpenRGB SDK и Windows Dynamic Lighting. |
 | `Nexus.Automation` | библиотека (в Agent) | Движок «Триггер → Условие → Действие», планировщик. |

@@ -4,7 +4,7 @@
 Контрольные примеры: [`shared/protocol/fixtures/requests.v1.json`](../shared/protocol/fixtures/requests.v1.json), их прогоняют реализации на C# и на Swift.
 Реализация на C#: `windows/Nexus.Core/Protocol`.
 
-Статус: транспорт, сопряжение, вход и питание проверены на реальном ПК (P1b). Приложения, профили и блокировка (P1c) работают через Nexus.Tray и проверены тестами; на реальном ПК — ещё нет (docs/TESTING.md T1–T12). `metrics.snapshot` отвечает `command.notImplemented` до P1d.
+Статус: транспорт, сопряжение, вход и питание проверены на реальном ПК (P1b). Приложения, профили и блокировка (P1c) работают через Nexus.Tray и проверены тестами; на реальном ПК — ещё нет (docs/TESTING.md T1–T12). Мониторинг (`metrics.*`) — P4a.
 
 ## Транспорт
 
@@ -77,7 +77,8 @@
 | `auth.begin` | — (без авторизации) | read | `{ deviceId }` |
 | `auth.prove` | — (без авторизации) | read | `{ signature }` |
 | `pc.status` | monitoring | read | `{}` → `{ pcId, pcName, os, uptimeSeconds, agentVersion, userSession }` |
-| `metrics.snapshot` | monitoring | read | `{}` |
+| `metrics.snapshot` | monitoring | read | `{}` → снимок, см. «Мониторинг» |
+| `metrics.history` | monitoring | read | `{ range: "10m" \| "1h" \| "24h" }` |
 | `power.shutdown` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
 | `power.restart` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
 | `power.sleep` | power | normal | `{}` |
@@ -140,3 +141,25 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 { "v": 1, "id": "<id запроса>", "kind": "response", "ok": false, "error": { "code": "auth.permissionDenied", "message": "…" } }
 ```
 `id` равен `null`, если запрос не удалось разобрать. События (`kind: "event"`) появятся вместе с первым их источником.
+
+## Мониторинг (P4a)
+
+`metrics.snapshot` → (единицы: %, °C, МГц, байты, байты/с; `null` — значение недоступно, причина в `unavailable`):
+
+```json
+{
+  "ts": "2026-11-16T15:20:00.0000000+00:00",
+  "cpu": { "usage": 12.5, "logicalProcessors": 16, "temperature": null, "clockMhz": null },
+  "memory": { "usage": 41.2, "usedBytes": 13958643712, "totalBytes": 34359738368 },
+  "gpus": [ { "name": "NVIDIA GeForce RTX 4070", "usage": 30, "temperature": 54,
+              "memoryUsedBytes": 2147483648, "memoryTotalBytes": 12884901888,
+              "coreClockMhz": 2475, "memoryClockMhz": 10501 } ],
+  "disks": [ { "name": "C:\\", "totalBytes": 1000202039296, "freeBytes": 250050510848, "usage": 75 } ],
+  "network": { "receiveBytesPerSecond": 1200.5, "sendBytesPerSecond": 300 },
+  "unavailable": { "cpu.temperature": "Windows не отдаёт температуру процессора без драйвера датчиков…" }
+}
+```
+
+Источники (без дополнительных пакетов): `GetSystemTimes` (загрузка CPU), `GlobalMemoryStatusEx` (память), NVML из драйвера NVIDIA (`nvml.dll`: загрузка, температура, видеопамять, частоты GPU), `DriveInfo` (диски), счётчики сетевых интерфейсов (скорость сети). Температура и реальная частота процессора требуют драйвера датчиков — отдаются как недоступные с причиной. Видеокарты AMD/Intel — позже.
+
+`metrics.history { range }` → `{ range, intervalSeconds, points: [{ t, cpu, memory, gpu, gpuTemperature, rx, tx }] }`. `10m` — точки каждые 2 с; `1h`, `24h` — средние за минуту. История хранится в памяти службы и начинается заново после её перезапуска (постоянная история — P6).
