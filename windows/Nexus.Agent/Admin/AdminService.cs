@@ -57,10 +57,17 @@ internal sealed class AdminService(AgentServices services)
     public PairingLink CreateLink(string code)
     {
         var identity = services.Identity;
-        var external = identity.Endpoints.Where(e => !IPAddress.IsLoopback(e.Address)).ToList();
-        var shown = external.Count > 0 ? external : [.. identity.Endpoints];
-        var port = shown.Count > 0 ? shown[0].Port : 0;
-        return new PairingLink(identity.PcId, Truncate(identity.PcName), [.. shown.Select(e => e.Address.ToString()).Distinct().Take(8)], port, identity.Fingerprint, code);
+        // Addresses as they are now (Wi-Fi may have come up after the service started), not at start-up.
+        var bound = identity.Endpoints;
+        var port = bound.Count > 0 ? bound[0].Port : 0;
+        var hosts = bound.Any(e => e.Address.Equals(IPAddress.Any))
+            ? [.. Hosting.NetworkAddresses.EligibleLocalAddresses().Select(a => a.ToString())]
+            : bound.Where(e => !IPAddress.IsLoopback(e.Address)).Select(e => e.Address.ToString()).ToList();
+        if (hosts.Count == 0)
+        {
+            hosts = ["127.0.0.1"];
+        }
+        return new PairingLink(identity.PcId, Truncate(identity.PcName), [.. hosts.Distinct().Take(8)], port, identity.Fingerprint, code);
     }
 
     private JsonObject Status() => Ok(new JsonObject
@@ -70,6 +77,7 @@ internal sealed class AdminService(AgentServices services)
         ["version"] = services.Identity.Version,
         ["fingerprint"] = services.Identity.Fingerprint,
         ["endpoints"] = new JsonArray([.. services.Identity.Endpoints.Select(e => (JsonNode)e.ToString())]),
+        ["addresses"] = new JsonArray([.. Hosting.NetworkAddresses.EligibleLocalAddresses().Select(a => (JsonNode)a.ToString())]),
         ["pairedDevices"] = services.Devices.All.Count,
         ["auditLog"] = services.Audit.FilePath,
     });

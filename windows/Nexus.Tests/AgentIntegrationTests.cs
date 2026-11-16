@@ -330,6 +330,40 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
 public sealed class AgentLifecycleTests
 {
     [Fact]
+    public async Task Listening_on_all_addresses_serves_loopback_and_refuses_non_private_local_addresses()
+    {
+        await using var host = await AgentTestHost.StartAsync(bindAddresses: [System.Net.IPAddress.Any]);
+        try
+        {
+            await using (var local = await host.ConnectAsync())
+            {
+                Assert.True((await local.RequestAsync("system.hello")).IsOk());
+            }
+
+            // The pairing link lists real addresses, never 0.0.0.0.
+            var link = host.Admin.CreateLink("01234567");
+            Assert.DoesNotContain("0.0.0.0", link.Hosts);
+            Assert.All(link.Hosts, h => Assert.True(Nexus.Agent.Hosting.NetworkAddresses.IsAllowedLocalAddress(System.Net.IPAddress.Parse(h))));
+
+            // Any address of this machine outside loopback/private/Tailscale must be refused before TLS.
+            var outside = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .SelectMany(n => n.GetIPProperties().UnicastAddresses)
+                .Select(u => u.Address)
+                .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                    && !Nexus.Agent.Hosting.NetworkAddresses.IsAllowedLocalAddress(a));
+            if (outside is null)
+            {
+                return; // this machine has only private addresses; the predicate itself is unit-tested
+            }
+            await Assert.ThrowsAnyAsync<System.Net.WebSockets.WebSocketException>(() => host.ConnectAsync(host: outside.ToString()));
+        }
+        finally
+        {
+            AgentTestHost.DeleteDirectory(host.DataDirectory);
+        }
+    }
+
+    [Fact]
     public async Task Identity_and_devices_survive_a_restart()
     {
         var dir = Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));

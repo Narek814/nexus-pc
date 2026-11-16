@@ -39,6 +39,9 @@ internal sealed class NexusClient : IAsyncDisposable
             certificate is not null
             && CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData()))), expected);
 
+        // Always a direct connection to the PC: a system/HTTPS proxy must never relay LAN traffic
+        // (found in the cloud test environment, where HTTPS_PROXY broke connections to non-loopback hosts).
+        socket.Options.Proxy = null;
         configure?.Invoke(socket.Options);
         var hostPart = IPAddress.TryParse(host, out var ip) && ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{host}]" : host;
         try

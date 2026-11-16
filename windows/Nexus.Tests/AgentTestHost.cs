@@ -64,7 +64,8 @@ internal sealed class AgentTestHost : IAsyncDisposable
 
     public static async Task<AgentTestHost> StartAsync(
         string? dataDirectory = null, IPowerController? power = null, bool fakePower = true,
-        string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null)
+        string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null,
+        IReadOnlyList<IPAddress>? bindAddresses = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         power ??= fakePower ? new FakePowerController() : null;
@@ -73,7 +74,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
         {
             DataDirectory = dataDirectory,
             Port = 0,
-            BindAddresses = [IPAddress.Loopback],
+            BindAddresses = bindAddresses ?? [IPAddress.Loopback],
             Power = power,
             EnableAdminPipe = adminPipe is not null,
             AdminPipeName = adminPipe ?? AdminPipeServer.DefaultPipeName,
@@ -87,8 +88,8 @@ internal sealed class AgentTestHost : IAsyncDisposable
         return new AgentTestHost(app, dataDirectory, power, sessionPipe);
     }
 
-    public Task<NexusClient> ConnectAsync(string? fingerprint = null, Action<System.Net.WebSockets.ClientWebSocketOptions>? configure = null) =>
-        NexusClient.ConnectAsync("127.0.0.1", Port, fingerprint ?? Fingerprint, CancellationToken.None, configure: configure);
+    public Task<NexusClient> ConnectAsync(string? fingerprint = null, Action<System.Net.WebSockets.ClientWebSocketOptions>? configure = null, string host = "127.0.0.1") =>
+        NexusClient.ConnectAsync(host, Port, fingerprint ?? Fingerprint, CancellationToken.None, configure: configure);
 
     /// <summary>Runs the whole pairing ceremony: admin opens, device submits, admin approves.</summary>
     public async Task<(Guid DeviceId, ECDsa Key, JsonObject Response)> PairAsync(NexusClient client, string name = "Test iPhone", bool approve = true)

@@ -69,3 +69,24 @@ public class ModelTests
         Assert.Throws<InvalidOperationException>(() => registry.Add(new AppEntry("obs", "OBS 2", AppLaunchKind.Executable, "obs.exe", false)));
     }
 }
+
+public class NetworkAddressTests
+{
+    [Theory]
+    [InlineData("127.0.0.1", true)]
+    [InlineData("192.168.0.106", true)]
+    [InlineData("10.1.2.3", true)]
+    [InlineData("172.19.144.1", true)]
+    [InlineData("100.101.102.103", true)]   // Tailscale
+    [InlineData("::ffff:192.168.0.106", true)]
+    [InlineData("::1", true)]
+    [InlineData("8.8.8.8", false)]
+    [InlineData("172.32.0.1", false)]
+    [InlineData("100.128.0.1", false)]
+    [InlineData("0.0.0.0", false)]
+    [InlineData("2001:db8::1", false)]
+    public void Only_loopback_private_and_tailscale_connections_are_served(string address, bool allowed)
+    {
+        Assert.Equal(allowed, Nexus.Agent.Hosting.NetworkAddresses.IsAllowedLocalAddress(System.Net.IPAddress.Parse(address)));
+    }
+}

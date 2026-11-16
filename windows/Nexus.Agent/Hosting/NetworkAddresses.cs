@@ -45,6 +45,20 @@ internal static class NetworkAddresses
         return withGateway.Count > 0 ? withGateway : allPrivate;
     }
 
+    /// <summary>
+    /// Whether a connection that arrived on this local address may be served: loopback, private LAN or
+    /// Tailscale. IPv4-mapped IPv6 addresses are unwrapped first.
+    /// </summary>
+    public static bool IsAllowedLocalAddress(IPAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+        return IPAddress.IsLoopback(address) || IsEligible(address);
+    }
+
     public static bool IsTailscale(IPAddress address)
     {
         ArgumentNullException.ThrowIfNull(address);

@@ -53,8 +53,11 @@ internal static class AgentHost
         var services = new AgentServices(identity, devices, power, new AuditLog(options.DataDirectory, options.Time), options.Time, options.PairingLifetime, options.HandshakeTimeout);
 
         var port = options.Port ?? config.Port;
-        // Loopback always (local tools); LAN and Tailscale addresses only — never 0.0.0.0 or a public address.
-        var addresses = options.BindAddresses ?? [IPAddress.Loopback, .. NetworkAddresses.EligibleLocalAddresses()];
+        // Production listens on all IPv4 addresses and filters every connection by the local address it
+        // arrived on (loopback, private LAN, Tailscale), before TLS. Binding to the addresses seen at start
+        // missed Wi-Fi that came up after the service (found on a real PC: only the WSL adapter existed at
+        // boot). Public addresses are refused here and by the "Private only" firewall rule.
+        var addresses = options.BindAddresses ?? [IPAddress.Any];
 
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
         builder.WebHost.UseKestrelHttpsConfiguration();
@@ -70,12 +73,24 @@ internal static class AgentHost
             kestrel.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
             foreach (var address in addresses)
             {
-                kestrel.Listen(address, port, listen => listen.UseHttps(new HttpsConnectionAdapterOptions
+                kestrel.Listen(address, port, listen =>
                 {
-                    ServerCertificate = certificate,
-                    SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                    ClientCertificateMode = ClientCertificateMode.NoCertificate,
-                }));
+                    listen.Use(next => connection =>
+                    {
+                        if (connection.LocalEndPoint is not IPEndPoint local || !NetworkAddresses.IsAllowedLocalAddress(local.Address))
+                        {
+                            connection.Abort();
+                            return Task.CompletedTask;
+                        }
+                        return next(connection);
+                    });
+                    listen.UseHttps(new HttpsConnectionAdapterOptions
+                    {
+                        ServerCertificate = certificate,
+                        SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                        ClientCertificateMode = ClientCertificateMode.NoCertificate,
+                    });
+                });
             }
         });
 
