@@ -10,6 +10,7 @@ struct ScreenView: View {
     @State private var stream: ScreenStream
     @State private var sender: InputSender
     @State private var typing = false
+    @State private var fullscreen = false
     @Environment(\.scenePhase) private var scenePhase
 
     init(controller: PCController) {
@@ -20,8 +21,89 @@ struct ScreenView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 Color.black.ignoresSafeArea()
+                picture
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea(edges: fullscreen ? .all : [])
+                if fullscreen {
+                    fullscreenButtons
+                }
+            }
+            if !fullscreen {
+                controls
+            }
+        }
+        .background(fullscreen ? Color.black : Theme.background)
+        .navigationTitle("Экран ПК")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar)
+        .statusBarHidden(fullscreen)
+        .persistentSystemOverlays(fullscreen ? .hidden : .automatic)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    typing.toggle()
+                } label: {
+                    Image(systemName: typing ? "keyboard.chevron.compact.down" : "keyboard")
+                }
+                .tint(Theme.cyan)
+            }
+        }
+        .task { await stream.run() }
+        .onDisappear {
+            stream.stop()
+            if fullscreen { Self.rotate(landscape: false) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { stream.stop() }
+        }
+    }
+
+    /// Exit and keyboard buttons over the picture, faint so they do not hide much of it.
+    private var fullscreenButtons: some View {
+        HStack(spacing: 12) {
+            Button {
+                setFullscreen(false)
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .padding(10)
+                    .background(.black.opacity(0.45), in: Circle())
+            }
+            .accessibilityLabel("Выйти из полноэкранного режима")
+            Button {
+                typing.toggle()
+            } label: {
+                Image(systemName: typing ? "keyboard.chevron.compact.down" : "keyboard")
+                    .padding(10)
+                    .background(.black.opacity(0.45), in: Circle())
+            }
+            .accessibilityLabel("Клавиатура")
+            Text(stream.stats)
+                .font(.caption2.monospacedDigit())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.black.opacity(0.45), in: Capsule())
+        }
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(8)
+    }
+
+    private func setFullscreen(_ on: Bool) {
+        withAnimation(.easeInOut(duration: 0.2)) { fullscreen = on }
+        Self.rotate(landscape: on)
+    }
+
+    /// Turns the app to landscape (or back), even with the iPhone's rotation lock on.
+    private static func rotate(landscape: Bool) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+        scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: landscape ? .landscapeRight : .portrait))
+    }
+
+    @ViewBuilder
+    private var picture: some View {
+        ZStack {
                 if let image = stream.image {
                     Image(uiImage: image)
                         .resizable()
@@ -40,26 +122,6 @@ struct ScreenView: View {
                             .padding(.horizontal, 24)
                     }
                 }
-            }
-            controls
-        }
-        .background(Theme.background)
-        .navigationTitle("Экран ПК")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    typing.toggle()
-                } label: {
-                    Image(systemName: typing ? "keyboard.chevron.compact.down" : "keyboard")
-                }
-                .tint(Theme.cyan)
-            }
-        }
-        .task { await stream.run() }
-        .onDisappear { stream.stop() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { stream.stop() }
         }
     }
 
@@ -69,6 +131,16 @@ struct ScreenView: View {
                 Text(message).font(.caption2).foregroundStyle(.orange).lineLimit(3)
             }
             HStack(spacing: 10) {
+                Button {
+                    setFullscreen(true)
+                } label: {
+                    Label("На весь экран", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .labelStyle(.iconOnly)
+                        .padding(8)
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .tint(Theme.cyan)
+                .accessibilityLabel("На весь экран")
                 Picker("Качество", selection: $stream.preset) {
                     ForEach(ScreenStream.Preset.allCases) { Text($0.title).tag($0) }
                 }
