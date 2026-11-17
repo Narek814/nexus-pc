@@ -53,14 +53,17 @@ public sealed class VideoFrameBufferTests
         Assert.Equal([1L], buffer.Read(0, TimeSpan.Zero, out _).Select(f => f.Seq));
 
         var started = Environment.TickCount64;
-        _ = Task.Run(async () =>
+        // A dedicated thread, like the tray's capture thread (the shared pool can be busy with other tests).
+        var producer = new Thread(() =>
         {
-            await Task.Delay(50);
+            Thread.Sleep(50);
             buffer.Add(false, [3]);
         });
-        var frames = buffer.Read(1, TimeSpan.FromSeconds(2), out _);
+        producer.Start();
+        var frames = buffer.Read(1, TimeSpan.FromSeconds(10), out _);
+        producer.Join();
         Assert.Equal([2L], frames.Select(f => f.Seq));
-        Assert.InRange(Environment.TickCount64 - started, 30, 1500);
+        Assert.InRange(Environment.TickCount64 - started, 30, 9000);
     }
 
     [Fact]
