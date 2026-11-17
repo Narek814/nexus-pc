@@ -116,6 +116,7 @@
 | `screen.start` | screen | normal | `{}` — ПК спрашивает владельца при первом показе для устройства (до 2 мин) |
 | `screen.frame` | screen | read | `{ maxWidth?: 320..1920, quality?: 20..95, known?: hash }` → `{ width, height, hash, jpeg? , unchanged? }` |
 | `screen.stop` | screen | normal | `{}` |
+| `screen.video` | screen | read | `{ after?: -1.., keyframe?, maxWidth?: 320..1920, bitrateKbps?: 300..20000 }` → `{ width, height, encoder, frames: [{ seq, key, data }] }` (H.264 Annex-B, ждёт до 250 мс) |
 | `input.moveTo` | input | normal | `{ x, y }` — 0..65535 по основному монитору (картинка экрана) |
 | `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
 | `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
@@ -165,6 +166,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 | `files.notFound` / `files.offsetMismatch` / `files.hashMismatch` / `files.noSpace` / `files.uploadNotFound` / `files.failed` | файлы |
 | `clipboard.failed` | буфер обмена занят другой программой |
 | `automations.notFound` / `automations.limit` / `automations.running` | автоматизации |
+| `screen.videoUnavailable` | на ПК нет кодировщика H.264 — телефон переходит на кадры JPEG |
 | `screen.denied` / `screen.blocked` / `screen.notStarted` | показ экрана: отказ на ПК; запрещён в трее или экран заблокирован; сеанс не начат |
 | `input.blocked` | экран ПК заблокирован, открыт UAC, или управление запрещено в меню трея |
 | `internal` | ошибка агента |
@@ -274,4 +276,8 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 Управление — `input.moveTo` (абсолютная точка) + `input.button` / `input.scroll` / `input.text` / `input.key`, нужно разрешение `input`.
 
 Ограничения: только основной монитор; некоторые полноэкранные игры и защищённое видео получаются чёрными (Windows скрывает их от GDI); экран блокировки и запрос UAC недоступны (`screen.blocked`); звук не передаётся. Это не видеопоток: частота кадров зависит от сети и изменений на экране — приложение показывает к/с, задержку и размер кадра. Если этого мало, следующий шаг — видеокодек H.264 (встроен в Windows и iPhone) или WebRTC (сторонние библиотеки — только с разрешения владельца).
+
+### Видео H.264
+
+По умолчанию экран идёт видеопотоком: трей снимает экран до 30 раз в секунду, переводит в NV12 и кодирует встроенным кодировщиком Windows (Media Foundation, базовый профиль, низкая задержка; кадры без изменений не кодируются). `screen.video { after }` возвращает все кадры после номера `after`, ожидая до 250 мс, если новых нет. Каждый ключевой кадр содержит SPS/PPS. Телефон запрашивает видео по **второму** соединению, чтобы касания и клавиши не ждали за кадрами, и декодирует аппаратно (AVSampleBufferDisplayLayer). Если декодер сбился или телефон отстал — `keyframe: true`. Нет кодировщика (`screen.videoUnavailable`) — переход на `screen.frame` (JPEG). «Быстро / Обычно / Чётко»: 960 / 1280 / 1920 точек по ширине, 1,5 / 3 / 6 Мбит/с.
 

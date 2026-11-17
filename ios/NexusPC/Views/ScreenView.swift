@@ -1,3 +1,5 @@
+import AVFoundation
+import CoreMedia
 import NexusKit
 import SwiftUI
 import UIKit
@@ -80,8 +82,8 @@ struct ScreenView: View {
 
     @ViewBuilder
     private var picture: some View {
-        if let image = stream.image {
-            ScreenCanvas(image: image, sender: sender, typing: typing, resetToken: resetZoom, zoomed: $zoomed)
+        if let content = stream.content {
+            ScreenCanvas(content: content, stream: stream, sender: sender, typing: typing, resetToken: resetZoom, zoomed: $zoomed)
         } else {
             VStack(spacing: 12) {
                 ProgressView().tint(Theme.cyan)
@@ -131,7 +133,7 @@ struct ScreenView: View {
 
     private var controls: some View {
         VStack(spacing: 6) {
-            if let message = sender.message ?? (stream.image != nil ? stream.message : nil) {
+            if let message = sender.message ?? (stream.content != nil ? stream.message : nil) {
                 Text(message).font(.caption2).foregroundStyle(.orange).lineLimit(3)
             }
             ScreenKeysRow(sender: sender)
@@ -150,6 +152,19 @@ struct ScreenView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 260)
+                Menu {
+                    Picker("Способ", selection: $stream.mode) {
+                        Text("Видео H.264").tag(ScreenStream.Mode.video)
+                        Text("Кадры JPEG").tag(ScreenStream.Mode.jpeg)
+                    }
+                } label: {
+                    Text(stream.mode == .video ? "H.264" : "JPEG")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Theme.surface, in: Capsule())
+                }
+                .tint(Theme.cyan)
                 Spacer()
                 Text(stream.stats)
                     .font(.caption2.monospacedDigit())
@@ -218,11 +233,22 @@ struct ScreenKeysRow: View {
     }
 }
 
-/// Pulls frames one at a time: the next request goes out when the previous frame arrived, so a slow
-/// network lowers the frame rate instead of building a backlog. Unchanged pictures cost a few bytes.
+/// What the screen shows: a JPEG picture or the H.264 video of a given size.
+enum ScreenContent: Equatable {
+    case image(UIImage)
+    case video(CGSize)
+}
+
+/// Shows the PC screen. Video (H.264) by default: frames are fetched over a second connection of their
+/// own, so touches and keys never wait behind video. Falls back to JPEG pictures if the PC has no
+/// encoder. One request at a time: a slow network lowers the frame rate instead of building up delay.
 @MainActor
 @Observable
 final class ScreenStream {
+    enum Mode: String {
+        case video, jpeg
+    }
+
     enum Preset: String, CaseIterable, Identifiable {
         case fast, normal, sharp
         var id: String { rawValue }
@@ -247,18 +273,33 @@ final class ScreenStream {
             case .sharp: 75
             }
         }
+        var bitrateKbps: Int {
+            switch self {
+            case .fast: 1500
+            case .normal: 3000
+            case .sharp: 6000
+            }
+        }
     }
 
     private let controller: PCController
     private var running = false
+    private var generation = 0
     private var hash: String?
-    private var frameTimes: [Date] = []
+    private var frameTimes: [(Date, Int)] = []
     private var lastRtt: TimeInterval = 0
-    private var lastBytes = 0
-    var image: UIImage?
+    private var videoConnection: NexusConnection?
+    private var needKeyframe = true
+    private var lastSeq = -1
+    var content: ScreenContent?
     var message: String?
+    /// Set by the canvas: hands an access unit to the decoder; false if the decoder needs a keyframe.
+    @ObservationIgnored var videoSink: ((Data) -> Bool)?
     var preset: Preset = .normal {
-        didSet { hash = nil }
+        didSet { restartLoop() }
+    }
+    var mode: Mode = .video {
+        didSet { restartLoop() }
     }
 
     init(controller: PCController) {
@@ -266,8 +307,11 @@ final class ScreenStream {
     }
 
     var stats: String {
-        let fps = frameTimes.count
-        return "\(fps) к/с · \(Int(lastRtt * 1000)) мс · \(lastBytes / 1024) КБ"
+        let now = Date()
+        let recent = frameTimes.filter { now.timeIntervalSince($0.0) <= 1 }
+        let kb = recent.reduce(0) { $0 + $1.1 } / 1024
+        let rate = mode == .video ? "\(kb) КБ/с" : "\((recent.last?.1 ?? 0) / 1024) КБ"
+        return "\(recent.count) к/с · \(Int(lastRtt * 1000)) мс · \(rate)"
     }
 
     func run() async {
@@ -282,46 +326,104 @@ final class ScreenStream {
             running = false
             return
         }
-        while running {
-            let started = Date()
-            var payload: [String: Any] = ["maxWidth": preset.maxWidth, "quality": preset.quality]
-            if let hash { payload["known"] = hash }
-            do {
-                let frame = try await controller.fetch("screen.frame", payload: payload, timeout: 15)
-                lastRtt = Date().timeIntervalSince(started)
-                hash = frame["hash"] as? String
-                if let base64 = frame["jpeg"] as? String, let data = Data(base64Encoded: base64) {
-                    lastBytes = data.count
-                    if let decoded = await Task.detached(operation: { UIImage(data: data)?.preparingForDisplay() }).value {
-                        image = decoded
-                    }
-                    countFrame()
-                } else {
-                    // Nothing changed on the PC: ask again shortly.
-                    try? await Task.sleep(nanoseconds: 60_000_000)
-                }
-                if message != nil { message = nil }
-            } catch let error as NexusError where error.code == "screen.notStarted" && running {
-                // The session ended on the PC (idle or the tray restarted): start again.
-                _ = try? await controller.fetch("screen.start", timeout: 125)
-            } catch {
-                message = Self.describe(error, controller: controller)
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if case .connection? = error as? NexusError { running = false }
-            }
-        }
+        await loop(generation)
     }
 
     func stop() {
         guard running else { return }
         running = false
+        generation += 1
+        videoConnection?.close()
+        videoConnection = nil
         Task { _ = try? await controller.fetch("screen.stop") }
     }
 
-    private func countFrame() {
-        let now = Date()
-        frameTimes.append(now)
-        frameTimes.removeAll { now.timeIntervalSince($0) > 1 }
+    private func restartLoop() {
+        guard running else { return }
+        generation += 1
+        hash = nil
+        lastSeq = -1
+        needKeyframe = true
+        let current = generation
+        Task { await loop(current) }
+    }
+
+    private func loop(_ token: Int) async {
+        while running, token == generation {
+            if mode == .video {
+                await videoStep(token)
+            } else {
+                await jpegStep()
+            }
+        }
+    }
+
+    private func videoStep(_ token: Int) async {
+        let started = Date()
+        do {
+            if videoConnection == nil, let pc = controller.pc {
+                videoConnection = try await PCSession.connect(pc)
+            }
+            guard let connection = videoConnection else { throw NexusError.connection("ПК не подключён.") }
+            var payload: [String: Any] = ["after": lastSeq, "maxWidth": preset.maxWidth, "bitrateKbps": preset.bitrateKbps]
+            if needKeyframe { payload["keyframe"] = true }
+            let result = try await connection.request("screen.video", payload: payload, timeout: 10).unwrap()
+            guard token == generation else { return }
+            lastRtt = Date().timeIntervalSince(started)
+            needKeyframe = false
+            if let width = result["width"] as? Int, let height = result["height"] as? Int {
+                let size = CGSize(width: width, height: height)
+                if content != .video(size) { content = .video(size) }
+            }
+            for frame in result["frames"] as? [[String: Any]] ?? [] {
+                guard let seq = frame["seq"] as? Int, let text = frame["data"] as? String, let data = Data(base64Encoded: text) else { continue }
+                lastSeq = seq
+                if !(videoSink?(data) ?? false) {
+                    needKeyframe = true
+                }
+                frameTimes.append((Date(), data.count))
+            }
+            frameTimes.removeAll { Date().timeIntervalSince($0.0) > 2 }
+            if message != nil { message = nil }
+        } catch let error as NexusError where error.code == "screen.videoUnavailable" {
+            if case let .server(_, text) = error { message = text }
+            mode = .jpeg // the PC has no H.264 encoder
+        } catch let error as NexusError where error.code == "screen.notStarted" {
+            _ = try? await controller.fetch("screen.start", timeout: 125)
+        } catch {
+            message = Self.describe(error, controller: controller)
+            videoConnection?.close()
+            videoConnection = nil
+            needKeyframe = true
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+
+    private func jpegStep() async {
+        let started = Date()
+        var payload: [String: Any] = ["maxWidth": preset.maxWidth, "quality": preset.quality]
+        if let hash { payload["known"] = hash }
+        do {
+            let frame = try await controller.fetch("screen.frame", payload: payload, timeout: 15)
+            lastRtt = Date().timeIntervalSince(started)
+            hash = frame["hash"] as? String
+            if let base64 = frame["jpeg"] as? String, let data = Data(base64Encoded: base64) {
+                if let decoded = await Task.detached(operation: { UIImage(data: data)?.preparingForDisplay() }).value {
+                    content = .image(decoded)
+                }
+                frameTimes.append((Date(), data.count))
+                frameTimes.removeAll { Date().timeIntervalSince($0.0) > 2 }
+            } else {
+                try? await Task.sleep(nanoseconds: 60_000_000) // nothing changed on the PC
+            }
+            if message != nil { message = nil }
+        } catch let error as NexusError where error.code == "screen.notStarted" {
+            _ = try? await controller.fetch("screen.start", timeout: 125)
+        } catch {
+            message = Self.describe(error, controller: controller)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if case .connection? = error as? NexusError { running = false }
+        }
     }
 
     static func describe(_ error: Error, controller: PCController) -> String {
@@ -344,7 +446,8 @@ final class ScreenStream {
 
 /// The picture and its touch layer in one UIKit view, so taps map to the PC exactly even when zoomed.
 struct ScreenCanvas: UIViewRepresentable {
-    let image: UIImage
+    let content: ScreenContent
+    let stream: ScreenStream
     let sender: InputSender
     let typing: Bool
     let resetToken: Int
@@ -377,7 +480,13 @@ struct ScreenCanvas: UIViewRepresentable {
     }
 
     private func configure(_ view: ScreenCanvasView) {
-        view.image = image
+        switch content {
+        case let .image(image):
+            view.showImage(image)
+        case let .video(size):
+            view.showVideo(size: size)
+            stream.videoSink = { [weak view] data in view?.enqueueVideo(data) ?? false }
+        }
         let sender = sender
         let zoomed = $zoomed
         view.onPoint = { x, y in sender.send(.moveTo(x: x, y: y)) }
@@ -401,16 +510,9 @@ final class ScreenCanvasView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
     var onKey: ((String) -> Void)?
     var onZoomChanged: ((Bool) -> Void)?
 
-    var image: UIImage? {
-        didSet {
-            guard image !== oldValue else { return }
-            let resized = oldValue?.size != image?.size
-            imageView.image = image
-            if resized { setNeedsLayout() }
-        }
-    }
-
     private let imageView = UIImageView()
+    private let videoView = H264VideoView()
+    private var contentSize = CGSize.zero
     private var scale: CGFloat = 1
     private var offset = CGPoint.zero
     private var lastScroll = CGPoint.zero
@@ -428,6 +530,8 @@ final class ScreenCanvasView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
         imageView.contentMode = .scaleToFill
         imageView.layer.magnificationFilter = .linear
         addSubview(imageView)
+        videoView.isHidden = true
+        addSubview(videoView)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         addGestureRecognizer(tap)
@@ -453,9 +557,36 @@ final class ScreenCanvasView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
 
     // MARK: - Geometry
 
+    func showImage(_ image: UIImage) {
+        if imageView.image !== image { imageView.image = image }
+        imageView.isHidden = false
+        videoView.isHidden = true
+        setContentSize(image.size)
+    }
+
+    func showVideo(size: CGSize) {
+        imageView.isHidden = true
+        imageView.image = nil
+        videoView.isHidden = false
+        setContentSize(size)
+    }
+
+    /// One H.264 access unit; false if the decoder needs a keyframe.
+    func enqueueVideo(_ data: Data) -> Bool {
+        videoView.enqueue(data)
+    }
+
+    private func setContentSize(_ size: CGSize) {
+        if size != contentSize {
+            contentSize = size
+            setNeedsLayout()
+        }
+    }
+
     /// The picture fitted into the view at zoom 1.
     private var fittedRect: CGRect {
-        guard let size = image?.size, size.width > 0, size.height > 0, bounds.width > 0 else { return bounds }
+        let size = contentSize
+        guard size.width > 0, size.height > 0, bounds.width > 0 else { return bounds }
         let s = min(bounds.width / size.width, bounds.height / size.height)
         let w = size.width * s
         let h = size.height * s
@@ -487,6 +618,7 @@ final class ScreenCanvasView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
         super.layoutSubviews()
         clampOffset()
         imageView.frame = displayedRect
+        videoView.frame = displayedRect
     }
 
     func resetZoom() {
@@ -610,3 +742,89 @@ final class ScreenCanvasView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
     var smartDashesType: UITextSmartDashesType = .no
     var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
 }
+
+/// Hardware H.264 decoding and display (AVSampleBufferDisplayLayer): the PC's Annex-B access units are
+/// turned into AVCC samples; SPS/PPS before each keyframe define the format.
+final class H264VideoView: UIView {
+    override class var layerClass: AnyClass { AVSampleBufferDisplayLayer.self }
+
+    private var displayLayer: AVSampleBufferDisplayLayer { layer as! AVSampleBufferDisplayLayer }
+    private var format: CMVideoFormatDescription?
+    private var parameterSets: (sps: Data, pps: Data)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        displayLayer.videoGravity = .resize // the canvas already sizes this view to the picture
+        backgroundColor = .black
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    func enqueue(_ accessUnit: Data) -> Bool {
+        let renderer = displayLayer.sampleBufferRenderer
+        if renderer.status == .failed {
+            renderer.flush()
+            format = nil
+            return false
+        }
+        let units = H264Stream.nalUnits(accessUnit)
+        if let sps = units.first(where: { H264Stream.type(of: $0) == H264Stream.sps }),
+           let pps = units.first(where: { H264Stream.type(of: $0) == H264Stream.pps }),
+           parameterSets?.sps != sps || parameterSets?.pps != pps || format == nil {
+            parameterSets = (sps, pps)
+            format = Self.makeFormat(sps: sps, pps: pps)
+        }
+        let slices = units.filter { [H264Stream.slice, H264Stream.idr].contains(H264Stream.type(of: $0)) }
+        guard let format, !slices.isEmpty else {
+            // Nothing decodable yet (no SPS/PPS seen): ask for a keyframe.
+            return format != nil
+        }
+        guard let sample = Self.makeSample(H264Stream.avcc(slices), format: format) else { return false }
+        renderer.enqueue(sample)
+        return true
+    }
+
+    private static func makeFormat(sps: Data, pps: Data) -> CMVideoFormatDescription? {
+        var description: CMVideoFormatDescription?
+        let status = sps.withUnsafeBytes { spsBuffer in
+            pps.withUnsafeBytes { ppsBuffer in
+                let pointers: [UnsafePointer<UInt8>] = [
+                    spsBuffer.bindMemory(to: UInt8.self).baseAddress!,
+                    ppsBuffer.bindMemory(to: UInt8.self).baseAddress!,
+                ]
+                let sizes = [sps.count, pps.count]
+                return CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                    allocator: kCFAllocatorDefault, parameterSetCount: 2, parameterSetPointers: pointers,
+                    parameterSetSizes: sizes, nalUnitHeaderLength: 4, formatDescriptionOut: &description)
+            }
+        }
+        return status == noErr ? description : nil
+    }
+
+    private static func makeSample(_ avcc: Data, format: CMVideoFormatDescription) -> CMSampleBuffer? {
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: avcc.count, blockAllocator: kCFAllocatorDefault,
+            customBlockSource: nil, offsetToData: 0, dataLength: avcc.count, flags: 0, blockBufferOut: &block) == noErr,
+            let block else { return nil }
+        let copied = avcc.withUnsafeBytes { raw in
+            CMBlockBufferReplaceDataBytes(with: raw.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: avcc.count)
+        }
+        guard copied == noErr else { return nil }
+        var sample: CMSampleBuffer?
+        var size = avcc.count
+        guard CMSampleBufferCreateReady(
+            allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format, sampleCount: 1,
+            sampleTimingEntryCount: 0, sampleTimingArray: nil, sampleSizeEntryCount: 1, sampleSizeArray: &size,
+            sampleBufferOut: &sample) == noErr, let sample else { return nil }
+        // Show each frame as soon as it is decoded (no clock: lowest delay).
+        if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true) as? [NSMutableDictionary],
+           let first = attachments.first {
+            first[kCMSampleAttachmentKey_DisplayImmediately as NSString] = true
+        }
+        return sample
+    }
+}
+
