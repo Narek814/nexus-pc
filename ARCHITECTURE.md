@@ -79,7 +79,7 @@
 | `Nexus.Core` | библиотека (кроссплатформенная) | Модели протокола, каталог команд, разрешения, валидатор команд, политика подтверждений. Без Windows-API → тестируется на любой ОС. |
 | `Nexus.Agent` | Windows Service | Kestrel (WSS/HTTPS), сопряжение, сессии, маршрутизация команд, power control (`InitiateShutdownW`, `SetSuspendState`), IPC-сервер, Bonjour/mDNS-анонс. |
 | `Nexus.Tray` | WinExe, автозапуск в сеансе пользователя | Запуск/закрытие приложений из реестра, `LockWorkStation`, буфер обмена, `SendInput`, Core Audio, захват экрана, окна подтверждения. |
-| `Nexus.Monitoring` | библиотека | `IMetricsSource`: Windows — GetSystemTimes, GlobalMemoryStatusEx, NVML (NVIDIA); везде — диски и сеть. `MetricsSampler`: 2 с, история 10 мин / 24 ч. Температура CPU — только с драйвером датчиков (LibreHardwareMonitor, решение владельца). |
+| `Nexus.Monitoring` | библиотека | `IMetricsSource`: Windows — GetSystemTimes, GlobalMemoryStatusEx, NVML (NVIDIA); везде — диски и сеть. `MetricsSampler`: 2 с, история 10 мин / 24 ч. Температура и частота CPU — LibreHardwareMonitorLib (разрешено владельцем 2026-11-17), через драйвер PawnIO. |
 | `Nexus.Remote` | библиотека (в Tray) | Захват (Windows.Graphics.Capture / DXGI Desktop Duplication), кодирование, WebRTC, ввод. |
 | `Nexus.RGB` | библиотека | `IRgbAdapter`; первые адаптеры — OpenRGB SDK и Windows Dynamic Lighting. |
 | `Nexus.Automation` | библиотека (в Agent) | Движок «Триггер → Условие → Действие», планировщик. |
@@ -172,3 +172,4 @@ ios/NexusPC/
 | ntfy (HTTP API, без пакета) | Notifications | Apache-2.0 / GPL-2 (сервер) | P3 |
 | Ollama (HTTP API на localhost, без пакета) | AI | MIT | P9 |
 | OpenRGB SDK (сетевой протокол, без пакета) | RGB | своя реализация протокола (версия 0) в `Nexus.RGB`; OpenRGB (GPL-2) — отдельная программа, которую ставит владелец. Пакет openrgb-python скачан только в облачную песочницу как справочник по формату пакетов, в проект не входит | P10 |
+| LibreHardwareMonitorLib 0.9.6 (NuGet) и его зависимости: HidSharp, DiskInfoToolkit, RAMSPDToolkit-NDD, BlackSharp.Core, System.Management, System.IO.Ports, Mono.Posix.NETStandard, System.CodeDom, System.IO.FileSystem.AccessControl | Температура и частота CPU в `Nexus.Monitoring` (включена только часть CPU) | MPL-2.0 (LHM); зависимости — MIT/Apache-2.0/MPL. Датчики процессора читает через драйвер PawnIO (ставит OpenRGB или pawnio.eu), а не через WinRing0 | P4, разрешено владельцем 2026-11-17 |

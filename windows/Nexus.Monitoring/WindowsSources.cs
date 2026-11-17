@@ -7,23 +7,29 @@ namespace Nexus.Monitoring;
 /// <summary>
 /// Windows telemetry from documented OS and driver APIs only, no extra packages:
 /// CPU usage (GetSystemTimes), memory (GlobalMemoryStatusEx), NVIDIA GPUs (NVML, installed with the
-/// driver), disks and network (.NET). CPU temperature and real clock need a kernel sensor driver and
-/// are reported as unavailable instead of guessed.
+/// driver), disks and network (.NET). CPU temperature and real clock come from LibreHardwareMonitor
+/// (CpuSensorReader); without its driver they are reported as unavailable instead of guessed.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed partial class WindowsMetricsSource : IMetricsSource, IDisposable
 {
     private readonly NetworkRateReader _network = new();
     private readonly NvmlReader _nvml = new();
+    private readonly CpuSensorReader _cpuSensors = new();
     private (long Idle, long Kernel, long User)? _lastCpu;
 
     public MetricsSnapshot Sample(DateTimeOffset now)
     {
-        var unavailable = new Dictionary<string, string>
+        var unavailable = new Dictionary<string, string>();
+        var (cpuTemperature, cpuClock, sensorProblem) = _cpuSensors.Read();
+        if (cpuTemperature is null)
         {
-            ["cpu.temperature"] = "Windows не отдаёт температуру процессора без драйвера датчиков (например, LibreHardwareMonitor).",
-            ["cpu.clock"] = "Windows не сообщает реальную частоту процессора без драйвера датчиков.",
-        };
+            unavailable["cpu.temperature"] = sensorProblem ?? "Нет датчика температуры процессора.";
+        }
+        if (cpuClock is null)
+        {
+            unavailable["cpu.clock"] = sensorProblem ?? "Нет данных о частоте процессора.";
+        }
 
         var cpuUsage = ReadCpuUsage();
         if (cpuUsage is null)
@@ -46,7 +52,7 @@ public sealed partial class WindowsMetricsSource : IMetricsSource, IDisposable
         return new MetricsSnapshot
         {
             Timestamp = now,
-            Cpu = new CpuMetrics { Usage = cpuUsage },
+            Cpu = new CpuMetrics { Usage = cpuUsage, Temperature = cpuTemperature, ClockMhz = cpuClock },
             Memory = memory ?? new MemoryMetrics(),
             Gpus = gpus,
             Disks = DiskReader.Read(),
@@ -87,7 +93,11 @@ public sealed partial class WindowsMetricsSource : IMetricsSource, IDisposable
         };
     }
 
-    public void Dispose() => _nvml.Dispose();
+    public void Dispose()
+    {
+        _nvml.Dispose();
+        _cpuSensors.Dispose();
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MemoryStatusEx
