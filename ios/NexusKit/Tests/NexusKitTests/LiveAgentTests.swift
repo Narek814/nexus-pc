@@ -91,8 +91,8 @@ final class LiveAgentTests: XCTestCase {
         // Automations need their own permission; history is readable with monitoring.
         let automations = try await connection.request("automations.list")
         XCTAssertEqual(automations.errorCode, "auth.permissionDenied")
-        let history = try await connection.request("history.list", payload: ["limit": 20]).unwrap()
-        XCTAssertNotNil(history["entries"] as? [Any])
+        let pcHistory = try await connection.request("history.list", payload: ["limit": 20]).unwrap()
+        XCTAssertNotNil(pcHistory["entries"] as? [Any])
     }
 
     func testWrongCertificatePinIsRefused() async throws {
