@@ -51,7 +51,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
 
         var agentExe = SetupPlan.AgentExe(Root);
-        var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion : null;
+        var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion?.Split('+')[0] : null;
         Say(oldVersion is null ? $"Устанавливаю версию {newVersion}." : $"Обновляю {oldVersion} → {newVersion}. Сопряжённые устройства, автоматизации и настройки сохраняются.");
 
         Step("Останавливаю Nexus PC", () =>
