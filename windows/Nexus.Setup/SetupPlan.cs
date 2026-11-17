@@ -44,6 +44,9 @@ internal static partial class SetupPlan
 
     public static string InstallRoot(string programFiles) => Path.Combine(programFiles, "NexusPC");
 
+    /// <summary>Start menu entry for all users (C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk).</summary>
+    public static string StartMenuShortcut(string commonPrograms) => Path.Combine(commonPrograms, "Nexus PC.lnk");
+
     public static string AgentExe(string root) => Path.Combine(root, "Agent", "Nexus.Agent.exe");
 
     public static string TrayExe(string root) => Path.Combine(root, "Tray", "Nexus.Tray.exe");

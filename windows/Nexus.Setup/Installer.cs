@@ -110,6 +110,8 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             WaitForState(4, TimeSpan.FromSeconds(30));
         });
 
+        Step("Добавляю «Nexus PC» в меню «Пуск»", CreateStartMenuShortcut);
+
         if (!options.NoTray)
         {
             Step("Запускаю Nexus PC в трее и включаю автозапуск", () =>
@@ -150,6 +152,14 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             using var run = Registry.CurrentUser.OpenSubKey(SetupPlan.RunKey, writable: true);
             run?.DeleteValue(SetupPlan.RunValue, throwOnMissingValue: false);
         });
+        Step("Удаляю ярлык из меню «Пуск»", () =>
+        {
+            var shortcut = SetupPlan.StartMenuShortcut(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms));
+            if (File.Exists(shortcut))
+            {
+                File.Delete(shortcut);
+            }
+        });
         Step("Удаляю файлы программы", () => Retry(() =>
         {
             if (Directory.Exists(Root))
@@ -178,6 +188,34 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         Say("Готово.");
         return 0;
+    }
+
+    /// <summary>"Nexus PC" in the Start menu (to start the tray by hand), via the Windows Script Host shell object.</summary>
+    private void CreateStartMenuShortcut()
+    {
+        var path = SetupPlan.StartMenuShortcut(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms));
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("WScript.Shell");
+            dynamic shell = Activator.CreateInstance(shellType)!;
+            try
+            {
+                dynamic link = shell.CreateShortcut(path);
+                link.TargetPath = SetupPlan.TrayExe(Root);
+                link.WorkingDirectory = Path.GetDirectoryName(SetupPlan.TrayExe(Root));
+                link.Description = "Nexus PC — управление ПК с iPhone";
+                link.Save();
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(link);
+            }
+            finally
+            {
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException or UnauthorizedAccessException)
+        {
+            log.WriteLine("Start menu shortcut not created: " + ex.Message); // optional: the tray autostarts anyway
+        }
     }
 
     private void CheckNetworks()

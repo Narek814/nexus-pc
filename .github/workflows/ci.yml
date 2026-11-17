@@ -92,6 +92,9 @@ jobs:
           Check ($rule.Profile -eq 'Private') "firewall rule is Private only"
           Check ((Get-CimInstance Win32_Service -Filter "Name='NexusPCAgent'").StartMode -eq 'Auto') "service starts automatically"
           Check (Test-Path "$env:ProgramFiles\NexusPC\Tray\Nexus.Tray.exe") "tray installed"
+          $shortcut = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk"
+          Check (Test-Path $shortcut) "Start menu shortcut"
+          Check ((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath -eq "$env:ProgramFiles\NexusPC\Tray\Nexus.Tray.exe") "shortcut points to the tray"
 
           # Found on the owner's PC: an admin console still running Nexus.Agent.exe keeps the DLLs locked.
           $leftover = Start-Process -FilePath $agent -ArgumentList pair -PassThru -WindowStyle Hidden
@@ -105,6 +108,7 @@ jobs:
           & .\out\NexusPC-Setup.exe --uninstall --quiet; Check ($LASTEXITCODE -eq 0) "uninstall exit code"
           Check (-not (Get-Service NexusPCAgent -ErrorAction SilentlyContinue)) "service removed"
           Check (-not (Test-Path "$env:ProgramFiles\NexusPC")) "program files removed"
+          Check (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk")) "Start menu shortcut removed"
           Check (-not (Get-NetFirewallRule -DisplayName "Nexus PC Agent" -ErrorAction SilentlyContinue)) "firewall rule removed"
           Check (Test-Path "$env:ProgramData\NexusPC") "data kept after uninstall"
 
