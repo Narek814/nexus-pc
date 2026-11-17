@@ -88,8 +88,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
 
         Step("Настраиваю службу Windows", () =>
         {
-            var query = RunQuiet(SetupPlan.ScQuery(_system32));
-            var exists = SetupPlan.ServiceState(query.Exit, query.Output) is not null;
+            var exists = RunQuiet(SetupPlan.ScQuery(_system32)).Exit != 1060; // ERROR_SERVICE_DOES_NOT_EXIST
             Must(exists ? SetupPlan.ScConfig(_system32, agentExe) : SetupPlan.ScCreate(_system32, agentExe));
             RunQuiet(SetupPlan.ScDescription(_system32));
             Must(SetupPlan.ScFailure(_system32));
@@ -257,10 +256,9 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     private void StopService()
     {
         var query = RunQuiet(SetupPlan.ScQuery(_system32));
-        var state = SetupPlan.ServiceState(query.Exit, query.Output);
-        if (state is null or 1)
+        if (query.Exit == 1060 || SetupPlan.ServiceState(query.Exit, query.Output) == 1)
         {
-            return;
+            return; // not installed, or already stopped
         }
         RunQuiet(SetupPlan.ScStop(_system32));
         WaitForState(1, TimeSpan.FromSeconds(30));
@@ -278,7 +276,9 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             }
             Thread.Sleep(500);
         }
-        throw new InvalidOperationException(wanted == 4 ? "служба не запустилась за 30 секунд" : "служба не остановилась за 30 секунд");
+        var last = RunQuiet(SetupPlan.ScQuery(_system32));
+        throw new InvalidOperationException((wanted == 4 ? "служба не запустилась за 30 секунд" : "служба не остановилась за 30 секунд")
+            + (SetupPlan.ServiceState(last.Exit, last.Output) is { } state ? $" (состояние {state})." : ". Состояние неизвестно: " + last.Output.Trim()));
     }
 
     private static ZipArchive? OpenPayload()

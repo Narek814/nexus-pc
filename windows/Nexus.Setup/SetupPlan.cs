@@ -136,6 +136,8 @@ internal static partial class SetupPlan
         return null;
     }
 
-    [GeneratedRegex(@"STATE\s*:\s*(\d)", RegexOptions.CultureInvariant)]
+    // The label is translated ("STATE", "Состояние"…), but the code and its English name are not:
+    // "Состояние          : 4  RUNNING" (found on the owner's Russian Windows).
+    [GeneratedRegex(@":\s*([1-7])\s+(STOPPED|START_PENDING|STOP_PENDING|RUNNING|CONTINUE_PENDING|PAUSE_PENDING|PAUSED)\b", RegexOptions.CultureInvariant)]
     private static partial Regex StateRegex();
 }

@@ -61,6 +61,10 @@ public sealed class SetupPlanTests
     [InlineData(0, "SERVICE_NAME: NexusPCAgent\n        TYPE               : 10  WIN32_OWN_PROCESS\n        STATE              : 4  RUNNING\n", 4)]
     [InlineData(0, "        STATE              : 1  STOPPED\n", 1)]
     [InlineData(1060, "[SC] EnumQueryServicesStatus:OpenService FAILED 1060", null)]
+    // Real output from the owner's Russian Windows: the label is translated.
+    [InlineData(0, "Имя_службы: NexusPCAgent\n        Тип                : 10  WIN32_OWN_PROCESS\n        Состояние          : 4  RUNNING\n                                (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)\n        Код_выхода_Win32   : 0  (0x0)\n        Код_выхода_службы  : 0  (0x0)\n        Контрольная_точка  : 0x0\n        Ожидание           : 0x0\n", 4)]
+    [InlineData(0, "        Состояние          : 1  STOPPED\n        Код_выхода_Win32   : 1077  (0x435)\n", 1)]
+    [InlineData(0, "        Состояние          : 3  STOP_PENDING\n", 3)]
     public void Service_state(int exit, string output, int? state) => Assert.Equal(state, SetupPlan.ServiceState(exit, output));
 
     [Fact]
