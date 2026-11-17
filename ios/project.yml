@@ -44,7 +44,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: "Nexus PC"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         # Unsigned in CI; Sideloadly signs it with a free Apple ID on the owner's PC.
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO

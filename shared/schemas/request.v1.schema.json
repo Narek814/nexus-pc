@@ -61,7 +61,9 @@
               "rgb.status",
               "files.list",
               "clipboard.get",
-              "automations.list"
+              "automations.list",
+              "screen.start",
+              "screen.stop"
             ]
           }
         }
@@ -509,6 +511,38 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.moveTo"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/inputMoveTo"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "screen.frame"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/screenFrame"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -559,7 +593,11 @@
             "automations.delete",
             "automations.run",
             "automations.stop",
-            "history.list"
+            "history.list",
+            "input.moveTo",
+            "screen.start",
+            "screen.frame",
+            "screen.stop"
           ]
         }
       }
@@ -1474,6 +1512,46 @@
         "before": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "inputMoveTo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      }
+    },
+    "screenFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 1920
+        },
+        "quality": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 95
+        },
+        "known": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     }

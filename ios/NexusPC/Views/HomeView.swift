@@ -79,6 +79,9 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if controller.can("screen.start") {
+                            homeLink("Экран ПК", icon: "display") { ScreenView(controller: controller) }
+                        }
                         if controller.can("automations.list") {
                             homeLink("Автоматизации", icon: "gearshape.2.fill") { AutomationsView(controller: controller) }
                         }

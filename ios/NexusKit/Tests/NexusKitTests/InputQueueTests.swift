@@ -71,4 +71,20 @@ final class InputQueueTests: XCTestCase {
         XCTAssertTrue(q.isEmpty)
         XCTAssertNil(q.next())
     }
+
+    func testAbsoluteMovesKeepOnlyTheLatestButNeverJumpAClick() {
+        var q = InputQueue()
+        q.send(.moveTo(x: 10, y: 10))
+        q.send(.moveTo(x: 20, y: 20))
+        q.send(.button("left", action: "down"))
+        q.send(.moveTo(x: 30, y: 30))
+        q.send(.moveTo(x: 99999, y: -5))
+        q.send(.button("left", action: "up"))
+        XCTAssertEqual(drain(&q), [
+            "input.moveTo x=20,y=20",
+            "input.button action=down,button=left",
+            "input.moveTo x=65535,y=0",
+            "input.button action=up,button=left",
+        ])
+    }
 }

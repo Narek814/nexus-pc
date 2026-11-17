@@ -35,6 +35,9 @@ public static class ErrorCodes
     public const string LockFailed = "power.lockFailed";
     public const string RgbUnavailable = "rgb.unavailable";
     public const string InputBlocked = "input.blocked";
+    public const string ScreenDenied = "screen.denied";
+    public const string ScreenBlocked = "screen.blocked";
+    public const string ScreenNotStarted = "screen.notStarted";
     public const string FilesNotFound = "files.notFound";
     public const string FilesOffsetMismatch = "files.offsetMismatch";
     public const string FilesHashMismatch = "files.hashMismatch";

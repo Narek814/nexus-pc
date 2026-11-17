@@ -10,6 +10,9 @@ public enum ButtonAction { Click, DoubleClick, Down, Up }
 
 public sealed record InputMovePayload(int Dx, int Dy);
 
+/// <summary>Absolute position on the primary monitor, 0..65535 on both axes (the remote screen picture).</summary>
+public sealed record InputMoveToPayload(int X, int Y);
+
 public sealed record InputButtonPayload(MouseButton Button, ButtonAction Action);
 
 /// <summary>Wheel units: 120 = one notch. Positive dy scrolls up (away from the user), positive dx right.</summary>
@@ -43,6 +46,7 @@ public static class InputFlags
     public const uint MiddleUp = 0x0040;
     public const uint Wheel = 0x0800;
     public const uint HWheel = 0x1000;
+    public const uint Absolute = 0x8000;
 
     public const uint KeyExtended = 0x0001;
     public const uint KeyUp = 0x0002;
@@ -121,6 +125,8 @@ public static class InputKeys
 public static class InputPlanner
 {
     public static IReadOnlyList<InputStep> Move(InputMovePayload p) => [InputStep.Mouse(InputFlags.MouseMove, p.Dx, p.Dy)];
+
+    public static IReadOnlyList<InputStep> MoveTo(InputMoveToPayload p) => [InputStep.Mouse(InputFlags.MouseMove | InputFlags.Absolute, p.X, p.Y)];
 
     public static IReadOnlyList<InputStep> Button(InputButtonPayload p)
     {
@@ -209,6 +215,7 @@ public static class InputPlanner
     public static IReadOnlyList<InputStep> For(object payload) => payload switch
     {
         InputMovePayload m => Move(m),
+        InputMoveToPayload t => MoveTo(t),
         InputButtonPayload b => Button(b),
         InputScrollPayload s => Scroll(s),
         InputTextPayload t => Text(t),
@@ -289,6 +296,16 @@ public static class InputParsers
             return PayloadResult.Invalid($"'dx' and 'dy' must be integers within ±{InputKeys.MaxMove}.");
         }
         return PayloadResult.Ok(new InputMovePayload(dx, dy));
+    }
+
+    public static PayloadResult MoveTo(JsonElement p)
+    {
+        if (!Only(p, "x", "y") || !p.TryGetProperty("x", out var xe) || !xe.TryGetInt32(out var x) || x is < 0 or > 65535
+            || !p.TryGetProperty("y", out var ye) || !ye.TryGetInt32(out var y) || y is < 0 or > 65535)
+        {
+            return PayloadResult.Invalid("'x' and 'y' must be 0..65535.");
+        }
+        return PayloadResult.Ok(new InputMoveToPayload(x, y));
     }
 
     public static PayloadResult Button(JsonElement p)

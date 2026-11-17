@@ -19,6 +19,7 @@ internal sealed class DevicesForm : Form
         ("monitoring", "Мониторинг, уведомления и история"),
         ("rgb", "Подсветка"),
         ("input", "Тачпад и клавиатура (полный контроль ПК)"),
+        ("screen", "Показ экрана (ПК спросит ещё раз при первом показе)"),
         ("files", "Файлы (папка «Загрузки\\Nexus PC»)"),
         ("clipboard", "Буфер обмена"),
         ("automation", "Автоматизации"),
@@ -27,7 +28,7 @@ internal sealed class DevicesForm : Form
     private readonly AgentConnection _agent;
     private readonly string _agentExe;
     private readonly ListBox _devices = new() { Width = 220, Height = 300 };
-    private readonly CheckedListBox _permissions = new() { Width = 360, Height = 210, CheckOnClick = true };
+    private readonly CheckedListBox _permissions = new() { Width = 360, Height = 210, CheckOnClick = true, IntegralHeight = false };
     private readonly Label _info = new() { AutoSize = false, Width = 360, Height = 40 };
     private readonly Button _save = new() { Text = "Сохранить разрешения", Width = 220, Height = 36 };
     private readonly Button _revoke = new() { Text = "Отключить устройство", Width = 170, Height = 36 };

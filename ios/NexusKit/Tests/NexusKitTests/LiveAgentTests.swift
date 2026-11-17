@@ -89,6 +89,8 @@ final class LiveAgentTests: XCTestCase {
         XCTAssertEqual(clipboard.errorCode, "auth.permissionDenied")
 
         // Automations need their own permission; history is readable with monitoring.
+        let screen = try await connection.request("screen.start")
+        XCTAssertEqual(screen.errorCode, "auth.permissionDenied")
         let automations = try await connection.request("automations.list")
         XCTAssertEqual(automations.errorCode, "auth.permissionDenied")
         let pcHistory = try await connection.request("history.list", payload: ["limit": 20]).unwrap()

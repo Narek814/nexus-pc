@@ -3,6 +3,8 @@ import Foundation
 /// A discrete touchpad/keyboard action (docs/API.md "Тачпад").
 public enum InputCommand: Equatable, Sendable {
     case button(_ button: String, action: String)
+    /// Absolute position on the PC's primary monitor, 0...65535 on both axes (remote screen).
+    case moveTo(x: Int, y: Int)
     case key(_ key: String, modifiers: [String] = [])
     case text(String)
     case media(String)
@@ -10,6 +12,7 @@ public enum InputCommand: Equatable, Sendable {
     public var type: String {
         switch self {
         case .button: "input.button"
+        case .moveTo: "input.moveTo"
         case .key: "input.key"
         case .text: "input.text"
         case .media: "input.media"
@@ -19,6 +22,7 @@ public enum InputCommand: Equatable, Sendable {
     public var payload: [String: Any] {
         switch self {
         case let .button(button, action): ["button": button, "action": action]
+        case let .moveTo(x, y): ["x": max(0, min(65535, x)), "y": max(0, min(65535, y))]
         case let .key(key, modifiers): modifiers.isEmpty ? ["key": key] : ["key": key, "modifiers": modifiers]
         case let .text(text): ["text": text]
         case let .media(action): ["action": action]
@@ -75,6 +79,11 @@ public struct InputQueue: Sendable {
                 items.append(.command(.text(String(chunk))))
                 rest = rest.dropFirst(chunk.count)
             }
+            return
+        }
+        // Only the latest absolute position matters: consecutive ones replace each other.
+        if case .moveTo = command, case .command(.moveTo)? = items.last {
+            items[items.count - 1] = .command(command)
             return
         }
         items.append(.command(command))

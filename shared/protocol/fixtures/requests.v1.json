@@ -3499,6 +3499,267 @@
         "error": "auth.permissionDenied"
       },
       "schemaValid": true
+    },
+    {
+      "name": "screen.start",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000801",
+        "kind": "request",
+        "type": "screen.start",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "screen.start cannot name the device",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000802",
+        "kind": "request",
+        "type": "screen.start",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "deviceId": "00000000-0000-4000-8000-000000000001",
+          "deviceName": "PC owner"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "screen.frame",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000803",
+        "kind": "request",
+        "type": "screen.frame",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "maxWidth": 1280,
+          "quality": 60,
+          "known": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "screen.frame defaults",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000804",
+        "kind": "request",
+        "type": "screen.frame",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "screen.frame too wide",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000805",
+        "kind": "request",
+        "type": "screen.frame",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "maxWidth": 3840
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "screen.stop",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000806",
+        "kind": "request",
+        "type": "screen.stop",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.moveTo",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000807",
+        "kind": "request",
+        "type": "input.moveTo",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "x": 32768,
+          "y": 0
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "input.moveTo off screen",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000808",
+        "kind": "request",
+        "type": "input.moveTo",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "x": 70000,
+          "y": 10
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "screen needs screen permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000809",
+        "kind": "request",
+        "type": "screen.start",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
     }
   ]
 }

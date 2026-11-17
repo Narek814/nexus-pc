@@ -126,6 +126,113 @@ internal sealed partial class WindowsDesktop : IDesktop
         return result;
     }
 
+    /// <summary>Set by the tray: shows the question on its UI thread and returns the answer.</summary>
+    public Func<string, bool>? Confirm { get; set; }
+
+    public bool ConfirmScreenShare(string deviceName) => Confirm?.Invoke(deviceName) ?? false;
+
+    /// <summary>
+    /// GDI capture of the primary monitor with the mouse pointer drawn in, scaled and JPEG-encoded
+    /// (no extra libraries). Some fullscreen games and protected video come out black: Windows hides them from GDI.
+    /// </summary>
+    public Nexus.Core.Screen.ScreenCapture CaptureScreen(int maxWidth, int quality, string? knownHash)
+    {
+        var bounds = System.Windows.Forms.Screen.PrimaryScreen?.Bounds ?? Rectangle.Empty;
+        if (bounds.Width == 0)
+        {
+            return new(false, null, 0, 0, null, Message: "Нет экрана.");
+        }
+        try
+        {
+            using var full = new Bitmap(bounds.Width, bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
+            using (var g = Graphics.FromImage(full))
+            {
+                g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
+                DrawPointer(g, bounds);
+            }
+            var width = Math.Min(maxWidth, bounds.Width);
+            var height = Math.Max(1, (int)((long)bounds.Height * width / bounds.Width));
+            using var scaled = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+            using (var g = Graphics.FromImage(scaled))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                g.DrawImage(full, 0, 0, width, height);
+            }
+            var hash = PixelHash(scaled);
+            if (hash == knownHash)
+            {
+                return new(true, null, width, height, hash, Unchanged: true);
+            }
+            using var jpeg = new MemoryStream();
+            using var parameters = new System.Drawing.Imaging.EncoderParameters(1);
+            parameters.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)quality);
+            scaled.Save(jpeg, JpegCodec, parameters);
+            return new(true, jpeg.ToArray(), width, height, hash);
+        }
+        catch (Exception ex) when (ex is Win32Exception or ExternalException or ArgumentException)
+        {
+            // CopyFromScreen fails while the secure desktop (lock screen, UAC prompt) is shown.
+            return new(false, null, 0, 0, null, Message: "Экран ПК сейчас недоступен: он заблокирован или открыт запрос администратора.");
+        }
+    }
+
+    private static readonly System.Drawing.Imaging.ImageCodecInfo JpegCodec =
+        System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+
+    private static string PixelHash(Bitmap bitmap)
+    {
+        var rect = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        var data = bitmap.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, bitmap.PixelFormat);
+        try
+        {
+            unsafe
+            {
+                var span = new ReadOnlySpan<byte>((void*)data.Scan0, Math.Abs(data.Stride) * data.Height);
+                return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(span));
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private static void DrawPointer(Graphics g, Rectangle bounds)
+    {
+        var info = new CURSORINFO { Size = Marshal.SizeOf<CURSORINFO>() };
+        if (!GetCursorInfo(ref info) || (info.Flags & 1) == 0)
+        {
+            return; // hidden pointer (e.g. while typing in some apps)
+        }
+        var hdc = g.GetHdc();
+        try
+        {
+            DrawIcon(hdc, info.X - bounds.X, info.Y - bounds.Y, info.Cursor);
+        }
+        finally
+        {
+            g.ReleaseHdc(hdc);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CURSORINFO
+    {
+        public int Size;
+        public int Flags;
+        public nint Cursor;
+        public int X;
+        public int Y;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetCursorInfo(ref CURSORINFO info);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DrawIcon(nint hdc, int x, int y, nint icon);
+
     /// <summary>The user's Downloads folder, wherever they moved it.</summary>
     public static string DownloadsFolder()
     {

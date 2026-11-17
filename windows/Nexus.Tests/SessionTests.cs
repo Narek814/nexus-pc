@@ -43,6 +43,27 @@ internal sealed class FakeDesktop : IDesktop
 
     public string? Clipboard { get; set; }
 
+    public bool AllowScreen { get; set; } = true;
+
+    public int ScreenQuestions { get; private set; }
+
+    public int Captures { get; private set; }
+
+    public bool ConfirmScreenShare(string deviceName)
+    {
+        ScreenQuestions++;
+        return AllowScreen;
+    }
+
+    public Nexus.Core.Screen.ScreenCapture CaptureScreen(int maxWidth, int quality, string? knownHash)
+    {
+        Captures++;
+        const string hash = "0000000000000000000000000000000000000000000000000000000000000001";
+        return knownHash == hash
+            ? new(true, null, maxWidth, maxWidth * 9 / 16, hash, Unchanged: true)
+            : new(true, [0xFF, 0xD8, 0xFF, 0xD9], maxWidth, maxWidth * 9 / 16, hash);
+    }
+
     public ClipboardRead GetClipboardText() => new(true, Clipboard);
 
     public DesktopResult SetClipboardText(string text)

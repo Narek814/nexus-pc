@@ -16,6 +16,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly AgentConnection _agent;
     private readonly SynchronizationContext _ui;
     private readonly string? _sharedFolder;
+    private readonly ToolStripMenuItem _stopScreen;
+    private string? _screenViewer;
     private readonly System.Windows.Forms.Timer _inputWatch = new() { Interval = 1000 };
     private Icon _currentIcon;
     private Form? _openForm;
@@ -41,7 +43,20 @@ internal sealed class TrayContext : ApplicationContext
         }
         _sharedFolder = files?.FolderPath;
 
-        var handler = new TrayCommandHandler(_store, new WindowsDesktop(), files: files);
+        var desktop = new WindowsDesktop();
+        // Asked once per device, on the PC itself; the answer is remembered (Nexus.Core.Screen.ScreenApprovals).
+        desktop.Confirm = deviceName =>
+        {
+            var allowed = false;
+            _ui.Send(_ => allowed = MessageBox.Show(
+                $"«{deviceName}» хочет видеть экран этого ПК.\n\nРазрешить? Ответ запомнится для этого устройства. Запретить показ потом можно в меню значка Nexus PC.",
+                "Nexus PC — показ экрана", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2,
+                MessageBoxOptions.DefaultDesktopOnly) == DialogResult.Yes, null);
+            return allowed;
+        };
+        var handler = new TrayCommandHandler(_store, desktop, files: files,
+            screenApprovals: new Nexus.Core.Screen.ScreenApprovals(dataDir));
+        handler.ScreenSharingChanged += (_, viewer) => _ui.Post(_ => ShowScreenSharing(viewer), null);
         handler.ActionPerformed += (_, text) => _ui.Post(_ => Notify(text), null);
         // A phone that drags and then loses connection must not leave a mouse button held.
         _inputWatch.Tick += (_, _) => handler.ReleaseIdleButtons();
@@ -75,6 +90,13 @@ internal sealed class TrayContext : ApplicationContext
             stopInput.Checked = handler.InputPaused;
         };
         menu.Items.Add(stopInput);
+        _stopScreen = new ToolStripMenuItem("Запретить показ экрана");
+        _stopScreen.Click += (_, _) =>
+        {
+            handler.ScreenPaused = !handler.ScreenPaused;
+            _stopScreen.Checked = handler.ScreenPaused;
+        };
+        menu.Items.Add(_stopScreen);
         if (_sharedFolder is not null)
         {
             menu.Items.Add("Открыть папку файлов с телефона", null, (_, _) => OpenSharedFolder());
@@ -106,6 +128,19 @@ internal sealed class TrayContext : ApplicationContext
     }
 
     /// <summary>Visible notice whenever a phone did something on this PC.</summary>
+    /// <summary>Visible indicator while a phone sees the screen (SECURITY.md §6).</summary>
+    private void ShowScreenSharing(string? viewer)
+    {
+        _screenViewer = viewer;
+        if (viewer is not null)
+        {
+            Notify($"«{viewer}» видит экран этого ПК. Остановить: правой кнопкой по значку → «Запретить показ экрана».");
+        }
+        _stopScreen.Text = viewer is null ? "Запретить показ экрана" : $"Запретить показ экрана (сейчас смотрит «{viewer}»)";
+        var text = viewer is null ? (_agent.IsConnected ? "Nexus PC — готов" : "Nexus PC — нет связи со службой") : $"Nexus PC — экран видит «{viewer}»";
+        _icon.Text = text.Length > 63 ? text[..63] : text;
+    }
+
     private void OpenSharedFolder()
     {
         if (_sharedFolder is not null)

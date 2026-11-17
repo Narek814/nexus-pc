@@ -30,6 +30,12 @@ public interface IDesktop
     ClipboardRead GetClipboardText();
 
     DesktopResult SetClipboardText(string text);
+
+    /// <summary>Asks the person at the PC whether this device may see the screen. Blocks until answered.</summary>
+    bool ConfirmScreenShare(string deviceName);
+
+    /// <summary>Primary monitor scaled to <paramref name="maxWidth"/>; Unchanged if its pixels hash to <paramref name="knownHash"/>.</summary>
+    Screen.ScreenCapture CaptureScreen(int maxWidth, int quality, string? knownHash);
 }
 
 public sealed record ClipboardRead(bool Ok, string? Text, string? Message = null);
@@ -38,8 +44,33 @@ public sealed record ClipboardRead(bool Ok, string? Text, string? Message = null
 /// Handles agent → tray requests. The agent has already authenticated and authorized the phone and
 /// validated the payload; this re-checks ids against the user's own list (defense in depth).
 /// </summary>
-public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, TimeProvider? time = null, Files.SharedFolder? files = null)
+public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, TimeProvider? time = null, Files.SharedFolder? files = null, Screen.ScreenApprovals? screenApprovals = null)
 {
+    /// <summary>A screen session ends by itself when the phone stops asking for frames for this long.</summary>
+    public static readonly TimeSpan ScreenIdleEnd = TimeSpan.FromSeconds(10);
+
+    private readonly Lock _screenLock = new();
+    private string? _screenViewer;
+    private DateTimeOffset _screenLastFrame;
+    private volatile bool _screenPaused;
+
+    /// <summary>Raised with the viewer's name when sharing starts, and with null when it ends (tray indicator).</summary>
+    public event EventHandler<string?>? ScreenSharingChanged;
+
+    /// <summary>"Запретить показ экрана" in the tray menu: ends a running session and refuses new ones.</summary>
+    public bool ScreenPaused
+    {
+        get => _screenPaused;
+        set
+        {
+            _screenPaused = value;
+            if (value)
+            {
+                EndScreen();
+            }
+        }
+    }
+
     /// <summary>A notice on the PC when a phone starts controlling the mouse/keyboard after this much quiet.</summary>
     public static readonly TimeSpan InputNoticeAfter = TimeSpan.FromMinutes(2);
 
@@ -76,15 +107,27 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
             _ when op.StartsWith("input.", StringComparison.Ordinal) => Input(op, args),
             _ when op.StartsWith("files.", StringComparison.Ordinal) => Files(op, args),
             "clipboard.get" => ClipboardGet(),
+            "screen.start" => ScreenStart(args),
+            "screen.frame" => ScreenFrame(args),
+            "screen.stop" => ScreenStop(),
             "clipboard.set" => ClipboardSet(args),
             _ => RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'."),
         };
         return Task.FromResult(result);
     }
 
-    /// <summary>Called by the tray every second: releases a dragged button if the phone went quiet.</summary>
+    /// <summary>Called by the tray every second: releases a dragged button and ends an abandoned screen session.</summary>
     public void ReleaseIdleButtons()
     {
+        bool ended;
+        lock (_screenLock)
+        {
+            ended = _screenViewer is not null && _time.GetUtcNow() - _screenLastFrame > ScreenIdleEnd;
+        }
+        if (ended)
+        {
+            EndScreen();
+        }
         var steps = _held.ReleaseIfIdle(_time.GetUtcNow());
         if (steps.Count > 0)
         {
@@ -212,6 +255,93 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return RpcResult.Failure(ErrorCodes.FilesFailed, "Ошибка диска на ПК: " + ex.Message);
+        }
+    }
+
+    private RpcResult ScreenStart(JsonObject args)
+    {
+        if (_screenPaused)
+        {
+            return RpcResult.Failure(ErrorCodes.ScreenBlocked, "Показ экрана запрещён на ПК (меню Nexus PC в трее).");
+        }
+        // Filled in by the agent from the authenticated session, never by the phone.
+        var deviceId = args["deviceId"]?.GetValue<string>();
+        var deviceName = args["deviceName"]?.GetValue<string>() ?? "Устройство";
+        if (deviceId is null || screenApprovals is null)
+        {
+            return RpcResult.Failure(ErrorCodes.ScreenDenied, "Показ экрана недоступен.");
+        }
+        if (!screenApprovals.IsApproved(deviceId))
+        {
+            if (!desktop.ConfirmScreenShare(deviceName))
+            {
+                return RpcResult.Failure(ErrorCodes.ScreenDenied, "На ПК не разрешили показ экрана.");
+            }
+            screenApprovals.Approve(deviceId);
+        }
+        bool started;
+        lock (_screenLock)
+        {
+            started = _screenViewer is null;
+            _screenViewer = deviceName;
+            _screenLastFrame = _time.GetUtcNow();
+        }
+        if (started)
+        {
+            ScreenSharingChanged?.Invoke(this, deviceName);
+        }
+        return RpcResult.Success([]);
+    }
+
+    private RpcResult ScreenFrame(JsonObject args)
+    {
+        lock (_screenLock)
+        {
+            if (_screenViewer is null || _screenPaused)
+            {
+                return RpcResult.Failure(ErrorCodes.ScreenNotStarted, "Показ экрана не начат.");
+            }
+            _screenLastFrame = _time.GetUtcNow();
+        }
+        if (!TryParse("screen.frame", args, Security.Permission.Screen, out var payload, out var error))
+        {
+            return error!;
+        }
+        var request = (Screen.ScreenFramePayload)payload;
+        var frame = desktop.CaptureScreen(request.MaxWidth, request.Quality, request.Known);
+        if (!frame.Ok)
+        {
+            return RpcResult.Failure(ErrorCodes.ScreenBlocked, frame.Message ?? "Экран сейчас недоступен (заблокирован или открыт запрос администратора).");
+        }
+        var result = new JsonObject { ["width"] = frame.Width, ["height"] = frame.Height, ["hash"] = frame.Hash };
+        if (frame.Unchanged)
+        {
+            result["unchanged"] = true;
+        }
+        else
+        {
+            result["jpeg"] = Convert.ToBase64String(frame.Jpeg!);
+        }
+        return RpcResult.Success(result);
+    }
+
+    private RpcResult ScreenStop()
+    {
+        EndScreen();
+        return RpcResult.Success([]);
+    }
+
+    private void EndScreen()
+    {
+        bool ended;
+        lock (_screenLock)
+        {
+            ended = _screenViewer is not null;
+            _screenViewer = null;
+        }
+        if (ended)
+        {
+            ScreenSharingChanged?.Invoke(this, null);
         }
     }
 

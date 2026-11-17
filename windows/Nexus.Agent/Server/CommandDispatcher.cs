@@ -32,14 +32,15 @@ internal sealed class CommandDispatcher(AgentServices services)
     [
         "power.lock", "apps.list", "apps.launch", "apps.close",
         "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete",
-        "input.move", "input.button", "input.scroll", "input.text", "input.key", "input.media",
+        "input.move", "input.moveTo", "input.button", "input.scroll", "input.text", "input.key", "input.media",
+        "screen.start", "screen.frame", "screen.stop",
         "files.list", "files.upload.begin", "files.upload.chunk", "files.upload.finish", "files.upload.cancel",
         "files.read", "files.hash", "clipboard.get", "clipboard.set",
     ];
 
     /// <summary>Sent many times a second (touchpad, file chunks): successful ones are audited at most once a minute.</summary>
     private static bool IsHighFrequency(string type) =>
-        type.StartsWith("input.", StringComparison.Ordinal) || type is "files.upload.chunk" or "files.read";
+        type.StartsWith("input.", StringComparison.Ordinal) || type is "files.upload.chunk" or "files.read" or "screen.frame";
 
     private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal);
 
@@ -101,7 +102,7 @@ internal sealed class CommandDispatcher(AgentServices services)
 
         if (ViaTray.Contains(command.Spec.Type))
         {
-            var forwarded = await ForwardToTrayAsync(id, command, cancellationToken).ConfigureAwait(false);
+            var forwarded = await ForwardToTrayAsync(id, command, session, cancellationToken).ConfigureAwait(false);
             // Linked lighting only for devices that also hold the rgb permission.
             if (forwarded.Ok && command.Payload is ProfileRefPayload { } run && command.Spec.Type == "profiles.run"
                 && session.CurrentClient().Permissions.HasFlag(Permission.Rgb))
@@ -310,12 +311,23 @@ internal sealed class CommandDispatcher(AgentServices services)
         return Ok(id, payload);
     }
 
-    private async Task<HandlerResult> ForwardToTrayAsync(Guid id, ValidatedCommand command, CancellationToken cancellationToken)
+    private async Task<HandlerResult> ForwardToTrayAsync(Guid id, ValidatedCommand command, ConnectionSession session, CancellationToken cancellationToken)
     {
         // The payload was validated against the schema; the Tray re-checks ids against its own list.
         var args = JsonNode.Parse(command.Envelope.Payload.GetRawText()) as JsonObject ?? [];
-        // Hashing a large file on the PC can take a while.
-        var timeout = command.Spec.Type is "files.upload.finish" or "files.hash" ? TimeSpan.FromMinutes(5) : Nexus.Agent.Session.TrayRegistry.CallTimeout;
+        if (command.Spec.Type == "screen.start" && session.AuthenticatedDevice is { } deviceId)
+        {
+            // Who is asking, from the authenticated session (the schema allows no fields from the phone here).
+            args["deviceId"] = deviceId.ToString("D");
+            args["deviceName"] = services.Devices.Find(deviceId)?.Name ?? "Устройство";
+        }
+        // Hashing a large file can take a while; screen.start may wait for the person at the PC to answer.
+        var timeout = command.Spec.Type switch
+        {
+            "files.upload.finish" or "files.hash" => TimeSpan.FromMinutes(5),
+            "screen.start" => TimeSpan.FromMinutes(2),
+            _ => Nexus.Agent.Session.TrayRegistry.CallTimeout,
+        };
         var result = await services.Trays.CallAsync(command.Spec.Type, args, cancellationToken, timeout).ConfigureAwait(false);
         return result.Ok
             ? Ok(id, result.Result ?? [])
@@ -445,6 +457,8 @@ internal sealed class CommandDispatcher(AgentServices services)
             "files.hash" => "Файл отправлен на телефон",
             "clipboard.get" => "Телефон прочитал буфер обмена ПК",
             "clipboard.set" => "Телефон положил текст в буфер обмена ПК",
+            "screen.start" => "Телефон начал показ экрана ПК",
+            "screen.stop" => "Показ экрана завершён",
             "automations.upsert" => "Автоматизация сохранена",
             "automations.delete" => $"Автоматизация «{Arg("automationId")}» удалена",
             "automations.run" => $"Автоматизация «{Arg("automationId")}» запущена вручную",

@@ -58,6 +58,7 @@ public sealed class CommandCatalog
         new("profiles.delete", Permission.Apps, RiskClass.Normal, true, PayloadParsers.ProfileRef),
         // Remote input (P5): full control of the signed-in desktop, so the permission is never granted by default.
         new("input.move", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Move),
+        new("input.moveTo", Permission.Input, RiskClass.Normal, true, Input.InputParsers.MoveTo),
         new("input.button", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Button),
         new("input.scroll", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Scroll),
         new("input.text", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Text),
@@ -74,6 +75,10 @@ public sealed class CommandCatalog
         // Clipboard (P7): text only, on explicit request; not granted by pairing.
         new("clipboard.get", Permission.Clipboard, RiskClass.Normal, true, PayloadParsers.Empty),
         new("clipboard.set", Permission.Clipboard, RiskClass.Normal, true, Files.FileParsers.ClipboardSet),
+        // Remote screen (P5): never granted by pairing; the PC also asks its owner once per device.
+        new("screen.start", Permission.Screen, RiskClass.Normal, true, PayloadParsers.Empty),
+        new("screen.frame", Permission.Screen, RiskClass.Read, true, Screen.ScreenParsers.Frame),
+        new("screen.stop", Permission.Screen, RiskClass.Normal, true, PayloadParsers.Empty),
         // Automations (P6): rules that run on the PC; creating one also needs the permissions of its actions.
         new("automations.list", Permission.Automation, RiskClass.Read, true, PayloadParsers.Empty),
         new("automations.upsert", Permission.Automation, RiskClass.Normal, true, Automation.AutomationJson.Upsert),
