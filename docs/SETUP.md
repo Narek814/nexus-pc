@@ -220,7 +220,7 @@ dotnet publish $env:USERPROFILE\nexus-pc\windows\Nexus.Agent -c Release -o "C:\P
 sc.exe start NexusPCAgent
 ```
 
-Трей: сначала закройте его (иначе сборка не сможет заменить файлы — «блокирует этот файл»):
+Трей: сначала закройте его (иначе сборка не сможет заменить файлы — «блокирует этот файл»). Проверить, что трей обновился: `(Get-Item "C:\Program Files\NexusPC\Tray\Nexus.Core.dll").LastWriteTime` — должно быть текущее время (на реальном ПК трей однажды остался старым, и тачпад отвечал `Tray does not handle 'input.move'`):
 
 ```powershell
 Stop-Process -Name Nexus.Tray -ErrorAction SilentlyContinue
