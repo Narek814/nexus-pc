@@ -79,6 +79,7 @@ public sealed class CommandCatalog
         new("screen.start", Permission.Screen, RiskClass.Normal, true, PayloadParsers.Empty),
         new("screen.frame", Permission.Screen, RiskClass.Read, true, Screen.ScreenParsers.Frame),
         new("screen.stop", Permission.Screen, RiskClass.Normal, true, PayloadParsers.Empty),
+        new("screen.video", Permission.Screen, RiskClass.Read, true, Screen.ScreenVideoParsers.Video),
         // Automations (P6): rules that run on the PC; creating one also needs the permissions of its actions.
         new("automations.list", Permission.Automation, RiskClass.Read, true, PayloadParsers.Empty),
         new("automations.upsert", Permission.Automation, RiskClass.Normal, true, Automation.AutomationJson.Upsert),

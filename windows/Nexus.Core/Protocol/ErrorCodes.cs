@@ -38,6 +38,7 @@ public static class ErrorCodes
     public const string ScreenDenied = "screen.denied";
     public const string ScreenBlocked = "screen.blocked";
     public const string ScreenNotStarted = "screen.notStarted";
+    public const string ScreenVideoUnavailable = "screen.videoUnavailable";
     public const string FilesNotFound = "files.notFound";
     public const string FilesOffsetMismatch = "files.offsetMismatch";
     public const string FilesHashMismatch = "files.hashMismatch";

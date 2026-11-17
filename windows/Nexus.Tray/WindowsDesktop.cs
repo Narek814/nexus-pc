@@ -197,7 +197,10 @@ internal sealed partial class WindowsDesktop : IDesktop
         }
     }
 
-    private static void DrawPointer(Graphics g, Rectangle bounds)
+    public Nexus.Core.Screen.IScreenVideo? StartVideo(int maxWidth, int bitrateKbps, out string? problem) =>
+        ScreenVideoStream.Start(maxWidth, bitrateKbps, out problem);
+
+    internal static void DrawPointer(Graphics g, Rectangle bounds)
     {
         var info = new CURSORINFO { Size = Marshal.SizeOf<CURSORINFO>() };
         if (!GetCursorInfo(ref info) || (info.Flags & 1) == 0)

@@ -3760,6 +3760,97 @@
         "error": "auth.permissionDenied"
       },
       "schemaValid": true
+    },
+    {
+      "name": "screen.video",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000851",
+        "kind": "request",
+        "type": "screen.video",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "after": 41,
+          "maxWidth": 1280,
+          "bitrateKbps": 3000
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "screen.video first request with keyframe",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000852",
+        "kind": "request",
+        "type": "screen.video",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "after": -1,
+          "keyframe": true
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "screen.video bitrate too high",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "input",
+          "screen"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000853",
+        "kind": "request",
+        "type": "screen.video",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "bitrateKbps": 50000
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
     }
   ]
 }

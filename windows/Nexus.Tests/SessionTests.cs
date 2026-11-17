@@ -49,6 +49,21 @@ internal sealed class FakeDesktop : IDesktop
 
     public int Captures { get; private set; }
 
+    public FakeVideo? Video { get; private set; }
+
+    public string? VideoProblem { get; set; }
+
+    public Nexus.Core.Screen.IScreenVideo? StartVideo(int maxWidth, int bitrateKbps, out string? problem)
+    {
+        problem = VideoProblem;
+        if (VideoProblem is not null)
+        {
+            return null;
+        }
+        Video = new FakeVideo(maxWidth);
+        return Video;
+    }
+
     public bool ConfirmScreenShare(string deviceName)
     {
         ScreenQuestions++;
@@ -404,3 +419,25 @@ public sealed class TrayCommandHandlerTests : IDisposable
         Assert.Empty(_desktop.Calls);
     }
 }
+
+internal sealed class FakeVideo(int width) : Nexus.Core.Screen.IScreenVideo
+{
+    public Nexus.Core.Screen.VideoFrameBuffer Buffer { get; } = new();
+
+    public int Keyframes { get; private set; }
+
+    public bool Disposed { get; private set; }
+
+    public int Width => width;
+
+    public int Height => width * 9 / 16;
+
+    public string EncoderName => "fake";
+
+    public IReadOnlyList<Nexus.Core.Screen.VideoFrame> Read(long after, TimeSpan wait) => Buffer.Read(after, wait, out _);
+
+    public void RequestKeyframe() => Keyframes++;
+
+    public void Dispose() => Disposed = true;
+}
+

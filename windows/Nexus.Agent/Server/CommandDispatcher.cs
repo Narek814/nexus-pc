@@ -33,14 +33,14 @@ internal sealed class CommandDispatcher(AgentServices services)
         "power.lock", "apps.list", "apps.launch", "apps.close",
         "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete",
         "input.move", "input.moveTo", "input.button", "input.scroll", "input.text", "input.key", "input.media",
-        "screen.start", "screen.frame", "screen.stop",
+        "screen.start", "screen.frame", "screen.stop", "screen.video",
         "files.list", "files.upload.begin", "files.upload.chunk", "files.upload.finish", "files.upload.cancel",
         "files.read", "files.hash", "clipboard.get", "clipboard.set",
     ];
 
     /// <summary>Sent many times a second (touchpad, file chunks): successful ones are audited at most once a minute.</summary>
     private static bool IsHighFrequency(string type) =>
-        type.StartsWith("input.", StringComparison.Ordinal) || type is "files.upload.chunk" or "files.read" or "screen.frame";
+        type.StartsWith("input.", StringComparison.Ordinal) || type is "files.upload.chunk" or "files.read" or "screen.frame" or "screen.video";
 
     private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal);
 

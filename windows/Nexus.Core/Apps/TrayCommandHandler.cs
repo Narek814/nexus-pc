@@ -36,6 +36,9 @@ public interface IDesktop
 
     /// <summary>Primary monitor scaled to <paramref name="maxWidth"/>; Unchanged if its pixels hash to <paramref name="knownHash"/>.</summary>
     Screen.ScreenCapture CaptureScreen(int maxWidth, int quality, string? knownHash);
+
+    /// <summary>Starts an H.264 encoder on the primary monitor; null with a reason if Windows has none.</summary>
+    Screen.IScreenVideo? StartVideo(int maxWidth, int bitrateKbps, out string? problem);
 }
 
 public sealed record ClipboardRead(bool Ok, string? Text, string? Message = null);
@@ -53,6 +56,11 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
     private string? _screenViewer;
     private DateTimeOffset _screenLastFrame;
     private volatile bool _screenPaused;
+    private Screen.IScreenVideo? _video;
+    private (int MaxWidth, int Bitrate) _videoSettings;
+
+    /// <summary>How long a video request waits for the next frame (long poll).</summary>
+    public static readonly TimeSpan VideoWait = TimeSpan.FromMilliseconds(250);
 
     /// <summary>Raised with the viewer's name when sharing starts, and with null when it ends (tray indicator).</summary>
     public event EventHandler<string?>? ScreenSharingChanged;
@@ -110,6 +118,7 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
             "screen.start" => ScreenStart(args),
             "screen.frame" => ScreenFrame(args),
             "screen.stop" => ScreenStop(),
+            "screen.video" => ScreenVideo(args),
             "clipboard.set" => ClipboardSet(args),
             _ => RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'."),
         };
@@ -325,6 +334,55 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
         return RpcResult.Success(result);
     }
 
+    private RpcResult ScreenVideo(JsonObject args)
+    {
+        lock (_screenLock)
+        {
+            if (_screenViewer is null || _screenPaused)
+            {
+                return RpcResult.Failure(ErrorCodes.ScreenNotStarted, "Показ экрана не начат.");
+            }
+            _screenLastFrame = _time.GetUtcNow();
+        }
+        if (!TryParse("screen.video", args, Security.Permission.Screen, out var payload, out var error))
+        {
+            return error!;
+        }
+        var request = (Screen.ScreenVideoPayload)payload;
+        Screen.IScreenVideo video;
+        lock (_screenLock)
+        {
+            if (_video is null || _videoSettings != (request.MaxWidth, request.BitrateKbps))
+            {
+                _video?.Dispose();
+                _video = desktop.StartVideo(request.MaxWidth, request.BitrateKbps, out var problem);
+                _videoSettings = (request.MaxWidth, request.BitrateKbps);
+                if (_video is null)
+                {
+                    return RpcResult.Failure(ErrorCodes.ScreenVideoUnavailable, problem ?? "Видеокодек H.264 недоступен на этом ПК.");
+                }
+            }
+            video = _video;
+        }
+        if (request.Keyframe)
+        {
+            video.RequestKeyframe();
+        }
+        var frames = video.Read(request.After, VideoWait);
+        return RpcResult.Success(new JsonObject
+        {
+            ["width"] = video.Width,
+            ["height"] = video.Height,
+            ["encoder"] = video.EncoderName,
+            ["frames"] = new JsonArray([.. frames.Select(f => (JsonNode)new JsonObject
+            {
+                ["seq"] = f.Seq,
+                ["key"] = f.Key,
+                ["data"] = Convert.ToBase64String(f.Data),
+            })]),
+        });
+    }
+
     private RpcResult ScreenStop()
     {
         EndScreen();
@@ -338,6 +396,8 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
         {
             ended = _screenViewer is not null;
             _screenViewer = null;
+            _video?.Dispose(); // stops capturing and encoding at once
+            _video = null;
         }
         if (ended)
         {

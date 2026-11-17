@@ -543,6 +543,22 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "screen.video"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/screenVideo"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -597,7 +613,8 @@
             "input.moveTo",
             "screen.start",
             "screen.frame",
-            "screen.stop"
+            "screen.stop",
+            "screen.video"
           ]
         }
       }
@@ -1552,6 +1569,29 @@
         "known": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "screenVideo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "keyframe": {
+          "type": "boolean"
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 1920
+        },
+        "bitrateKbps": {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 20000
         }
       }
     }
