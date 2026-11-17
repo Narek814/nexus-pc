@@ -22,6 +22,7 @@ struct MetricsReading: Equatable {
 
     let cpuUsage: Double?
     let cpuTemperature: Double?
+    let cpuClock: Double?
     let logicalProcessors: Int?
     let memoryUsage: Double?
     let memoryUsed: Double?
@@ -38,6 +39,7 @@ struct MetricsReading: Equatable {
         let network = p["network"] as? [String: Any] ?? [:]
         cpuUsage = Self.number(cpu["usage"])
         cpuTemperature = Self.number(cpu["temperature"])
+        cpuClock = Self.number(cpu["clockMhz"])
         logicalProcessors = cpu["logicalProcessors"] as? Int
         memoryUsage = Self.number(memory["usage"])
         memoryUsed = Self.number(memory["usedBytes"])

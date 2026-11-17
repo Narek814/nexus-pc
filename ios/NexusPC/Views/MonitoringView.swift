@@ -27,6 +27,8 @@ struct MonitoringView: View {
                     gauges
                     SectionTitle("История")
                     chartCard
+                    SectionTitle("Процессор")
+                    cpuCard
                     if let gpus = reading?.gpus, !gpus.isEmpty {
                         SectionTitle("Видеокарта")
                         ForEach(gpus) { gpuCard($0) }
@@ -107,6 +109,20 @@ struct MonitoringView: View {
                     .chartForegroundStyleScale(["CPU": Theme.violet, "GPU": Theme.cyan, "RAM": Color.pink, "GPU °C": Color.orange])
                     .chartYScale(domain: 0...100)
                     .frame(height: 180)
+                }
+            }
+        }
+    }
+
+    private var cpuCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Процессор").font(.headline).foregroundStyle(Theme.textPrimary)
+                row("Загрузка", Format.percent(reading?.cpuUsage))
+                row("Температура", Format.temperature(reading?.cpuTemperature))
+                row("Частота", reading?.cpuClock.map { "\(Int($0)) МГц" } ?? "—")
+                if let threads = reading?.logicalProcessors {
+                    row("Потоков", "\(threads)")
                 }
             }
         }
