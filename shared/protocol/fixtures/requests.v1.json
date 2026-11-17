@@ -2445,6 +2445,480 @@
         "error": "auth.permissionDenied"
       },
       "schemaValid": true
+    },
+    {
+      "name": "files.list",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000601",
+        "kind": "request",
+        "type": "files.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "files.upload.begin",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000602",
+        "kind": "request",
+        "type": "files.upload.begin",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "name": "IMG_0042.JPG",
+          "size": 2483112,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "files.upload.begin uppercase hash",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000603",
+        "kind": "request",
+        "type": "files.upload.begin",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "name": "a.jpg",
+          "size": 1,
+          "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "files.upload.chunk",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000604",
+        "kind": "request",
+        "type": "files.upload.chunk",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "uploadId": "6f3c3f0e-3d0e-4c4e-9a43-6f0f2b1c9d11",
+          "offset": 0,
+          "data": "SGVsbG8="
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "files.upload.chunk not base64",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000605",
+        "kind": "request",
+        "type": "files.upload.chunk",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "uploadId": "6f3c3f0e-3d0e-4c4e-9a43-6f0f2b1c9d11",
+          "offset": 0,
+          "data": "***"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "files.upload.finish",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000606",
+        "kind": "request",
+        "type": "files.upload.finish",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "uploadId": "6f3c3f0e-3d0e-4c4e-9a43-6f0f2b1c9d11"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "files.upload.cancel",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000607",
+        "kind": "request",
+        "type": "files.upload.cancel",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "uploadId": "6f3c3f0e-3d0e-4c4e-9a43-6f0f2b1c9d11"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "files.read",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000608",
+        "kind": "request",
+        "type": "files.read",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "name": "report.pdf",
+          "offset": 524288,
+          "length": 524288
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "files.read path",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000609",
+        "kind": "request",
+        "type": "files.read",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "name": "../secret.txt",
+          "offset": 0,
+          "length": 10
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "files.read too long",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000610",
+        "kind": "request",
+        "type": "files.read",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "name": "a.txt",
+          "offset": 0,
+          "length": 524289
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "files.hash",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000611",
+        "kind": "request",
+        "type": "files.hash",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "name": "report.pdf"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "clipboard.get",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000612",
+        "kind": "request",
+        "type": "clipboard.get",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "clipboard.set",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000613",
+        "kind": "request",
+        "type": "clipboard.set",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "text": "https://example.com"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "clipboard.set empty",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files",
+          "clipboard"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000614",
+        "kind": "request",
+        "type": "clipboard.set",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "text": ""
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "files needs files permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000615",
+        "kind": "request",
+        "type": "files.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "clipboard needs clipboard permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "files"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000616",
+        "kind": "request",
+        "type": "clipboard.get",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
     }
   ]
 }

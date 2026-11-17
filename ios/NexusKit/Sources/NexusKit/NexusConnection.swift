@@ -35,7 +35,8 @@ public final class NexusConnection: NSObject, @unchecked Sendable {
         configuration.waitsForConnectivity = false
         session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         task = session.webSocketTask(with: url)
-        task.maximumMessageSize = 64 * 1024
+        // File chunks: 512 KiB as base64 plus the envelope (the agent allows 1 MiB per message).
+        task.maximumMessageSize = 2 * 1024 * 1024
         super.init()
     }
 

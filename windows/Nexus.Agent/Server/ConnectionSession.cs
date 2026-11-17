@@ -20,6 +20,7 @@ internal sealed class ConnectionSession
     private readonly AgentServices _services;
     private readonly string _remote;
     private readonly TokenBucket _rate;
+    private readonly TokenBucket _authenticatedRate;
     private DateTimeOffset? _handshakeDeadline;
 
     public ConnectionSession(WebSocket socket, AgentServices services, string remote)
@@ -28,6 +29,8 @@ internal sealed class ConnectionSession
         _services = services;
         _remote = remote;
         _rate = new TokenBucket(capacity: 40, refillPerSecond: 20, services.Time);
+        // A touchpad sends a request per finger movement (one in flight at a time): allow ~100/s once authenticated.
+        _authenticatedRate = new TokenBucket(capacity: 200, refillPerSecond: 100, services.Time);
     }
 
     public Guid? AuthenticatedDevice { get; private set; }
@@ -101,7 +104,7 @@ internal sealed class ConnectionSession
                     return;
             }
 
-            if (!_rate.TryTake())
+            if (!(CurrentClient().IsAuthenticated ? _authenticatedRate : _rate).TryTake())
             {
                 await CloseAsync(WebSocketCloseStatus.PolicyViolation, "rate limit").ConfigureAwait(false);
                 return;

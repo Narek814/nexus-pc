@@ -173,12 +173,14 @@ internal sealed class FakeTray : IAsyncDisposable
     {
         Store = new Nexus.Core.Apps.UserAppStore(_dir);
         Channel = new Nexus.Core.Session.JsonLineChannel(pipe);
-        Handler = new Nexus.Core.Apps.TrayCommandHandler(Store, Desktop);
+        Files = new Nexus.Core.Files.SharedFolder(Path.Combine(_dir, "shared"), Path.Combine(_dir, "partial"), freeSpace: _ => long.MaxValue / 2);
+        Handler = new Nexus.Core.Apps.TrayCommandHandler(Store, Desktop, files: Files);
         _run = Channel.RunAsync(Handler.HandleAsync, _stop.Token);
     }
 
     public Nexus.Core.Apps.UserAppStore Store { get; }
     public FakeDesktop Desktop { get; } = new();
+    public Nexus.Core.Files.SharedFolder Files { get; }
     public Nexus.Core.Apps.TrayCommandHandler Handler { get; }
     public Nexus.Core.Session.JsonLineChannel Channel { get; }
 

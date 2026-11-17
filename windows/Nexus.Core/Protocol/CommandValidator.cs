@@ -36,6 +36,12 @@ public sealed class CommandValidator
 
     public ValidationResult Validate(string json, ClientContext client)
     {
+        ArgumentNullException.ThrowIfNull(json);
+        ArgumentNullException.ThrowIfNull(client);
+        if (!client.IsAuthenticated && System.Text.Encoding.UTF8.GetByteCount(json) > ProtocolInfo.MaxAnonymousMessageBytes)
+        {
+            return ValidationResult.Fail(ErrorCodes.TooLarge, $"Before authentication messages are limited to {ProtocolInfo.MaxAnonymousMessageBytes} bytes.");
+        }
         var parsed = EnvelopeParser.Parse(json);
         return parsed.Envelope is null
             ? new ValidationResult(null, parsed.Error)

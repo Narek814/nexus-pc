@@ -5,7 +5,11 @@ namespace Nexus.Core.Protocol;
 public static class ProtocolInfo
 {
     public const int Version = 1;
-    public const int MaxMessageBytes = 64 * 1024;
+    /// <summary>Largest message from an authenticated device (file chunks: 512 KiB as base64 plus envelope).</summary>
+    public const int MaxMessageBytes = 1024 * 1024;
+
+    /// <summary>Before authentication nothing needs more than a few hundred bytes.</summary>
+    public const int MaxAnonymousMessageBytes = 64 * 1024;
     public static readonly TimeSpan MaxClockSkew = TimeSpan.FromMinutes(5);
 }
 

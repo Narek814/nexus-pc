@@ -15,6 +15,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly UserAppStore _store;
     private readonly AgentConnection _agent;
     private readonly SynchronizationContext _ui;
+    private readonly string? _sharedFolder;
     private readonly System.Windows.Forms.Timer _inputWatch = new() { Interval = 1000 };
     private Icon _currentIcon;
     private Form? _openForm;
@@ -25,7 +26,22 @@ internal sealed class TrayContext : ApplicationContext
         var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusPC");
         _store = new UserAppStore(dataDir);
 
-        var handler = new TrayCommandHandler(_store, new WindowsDesktop());
+        // Files from/to the phone: only Downloads\Nexus PC; partial uploads stay in the user's private app data.
+        Nexus.Core.Files.SharedFolder? files = null;
+        try
+        {
+            files = new Nexus.Core.Files.SharedFolder(
+                Path.Combine(WindowsDesktop.DownloadsFolder(), "Nexus PC"),
+                Path.Combine(dataDir, "incoming"));
+            files.Received += (_, path) => WindowsDesktop.MarkAsDownloaded(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            TrayLog.Write(Path.Combine(dataDir, "tray.log"), "File sharing is off: " + ex.Message);
+        }
+        _sharedFolder = files?.FolderPath;
+
+        var handler = new TrayCommandHandler(_store, new WindowsDesktop(), files: files);
         handler.ActionPerformed += (_, text) => _ui.Post(_ => Notify(text), null);
         // A phone that drags and then loses connection must not leave a mouse button held.
         _inputWatch.Tick += (_, _) => handler.ReleaseIdleButtons();
@@ -58,6 +74,10 @@ internal sealed class TrayContext : ApplicationContext
             stopInput.Checked = handler.InputPaused;
         };
         menu.Items.Add(stopInput);
+        if (_sharedFolder is not null)
+        {
+            menu.Items.Add("Открыть папку файлов с телефона", null, (_, _) => OpenSharedFolder());
+        }
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autostart);
         menu.Items.Add("Выход", null, (_, _) => ExitThread());
@@ -85,6 +105,15 @@ internal sealed class TrayContext : ApplicationContext
     }
 
     /// <summary>Visible notice whenever a phone did something on this PC.</summary>
+    private void OpenSharedFolder()
+    {
+        if (_sharedFolder is not null)
+        {
+            Directory.CreateDirectory(_sharedFolder);
+            using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_sharedFolder) { UseShellExecute = true });
+        }
+    }
+
     private void Notify(string text) => _icon.ShowBalloonTip(3000, "Nexus PC", text, ToolTipIcon.Info);
 
     private void Show(Func<Form> create)

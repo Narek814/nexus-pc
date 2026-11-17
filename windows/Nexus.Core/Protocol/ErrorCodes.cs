@@ -35,6 +35,13 @@ public static class ErrorCodes
     public const string LockFailed = "power.lockFailed";
     public const string RgbUnavailable = "rgb.unavailable";
     public const string InputBlocked = "input.blocked";
+    public const string FilesNotFound = "files.notFound";
+    public const string FilesOffsetMismatch = "files.offsetMismatch";
+    public const string FilesHashMismatch = "files.hashMismatch";
+    public const string FilesNoSpace = "files.noSpace";
+    public const string FilesUploadNotFound = "files.uploadNotFound";
+    public const string FilesFailed = "files.failed";
+    public const string ClipboardFailed = "clipboard.failed";
     public const string Internal = "internal";
 }
 

@@ -58,7 +58,9 @@
               "metrics.snapshot",
               "alerts.get",
               "alerts.test",
-              "rgb.status"
+              "rgb.status",
+              "files.list",
+              "clipboard.get"
             ]
           }
         }
@@ -355,6 +357,105 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "files.upload.begin"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/filesUploadBegin"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "files.upload.chunk"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/filesUploadChunk"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "files.read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/filesRead"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "files.hash"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/fileName"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "clipboard.set"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/clipboardSet"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "files.upload.finish",
+              "files.upload.cancel"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/filesUploadRef"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -390,7 +491,16 @@
             "input.scroll",
             "input.text",
             "input.key",
-            "input.media"
+            "input.media",
+            "files.list",
+            "files.upload.begin",
+            "files.upload.chunk",
+            "files.upload.finish",
+            "files.upload.cancel",
+            "files.read",
+            "files.hash",
+            "clipboard.get",
+            "clipboard.set"
           ]
         }
       }
@@ -879,6 +989,134 @@
             "volumeDown",
             "volumeUp"
           ]
+        }
+      }
+    },
+    "filesUploadBegin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 17179869184
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "filesUploadChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uploadId",
+        "offset",
+        "data"
+      ],
+      "properties": {
+        "uploadId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 699052,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        }
+      }
+    },
+    "filesUploadRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uploadId"
+      ],
+      "properties": {
+        "uploadId": {
+          "$ref": "#/$defs/uuid"
+        }
+      }
+    },
+    "filesRead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "offset",
+        "length"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\:]+$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 524288
+        }
+      }
+    },
+    "fileName": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\:]+$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        }
+      }
+    },
+    "clipboardSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
         }
       }
     }

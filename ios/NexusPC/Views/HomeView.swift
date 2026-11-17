@@ -64,6 +64,21 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if controller.can("files.list") || controller.can("clipboard.get") {
+                            NavigationLink {
+                                FilesView(controller: controller)
+                            } label: {
+                                GlassCard {
+                                    HStack {
+                                        Label("Файлы и буфер обмена", systemImage: "arrow.up.arrow.down.square.fill")
+                                            .foregroundStyle(Theme.textPrimary)
+                                        Spacer()
+                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                         if controller.can("rgb.status") {
                             NavigationLink {
                                 RgbView(controller: controller)

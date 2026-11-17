@@ -25,7 +25,7 @@ public delegate Task<RpcResult> RpcHandler(string op, JsonObject args, Cancellat
 /// </summary>
 public sealed class JsonLineChannel : IAsyncDisposable
 {
-    public const int MaxLineChars = 64 * 1024;
+    public const int MaxLineChars = 2 * 1024 * 1024; // file chunks (512 KiB as base64) pass through
 
     private readonly Stream _stream;
     private readonly StreamReader _reader;

@@ -25,13 +25,20 @@ public interface IDesktop
 
     /// <summary>Injects mouse/keyboard input into the desktop (SendInput). Fails while the PC is locked.</summary>
     DesktopResult SendInput(IReadOnlyList<Input.InputStep> steps);
+
+    /// <summary>Text on the clipboard, or null when it holds no text (an image, files, nothing).</summary>
+    ClipboardRead GetClipboardText();
+
+    DesktopResult SetClipboardText(string text);
 }
+
+public sealed record ClipboardRead(bool Ok, string? Text, string? Message = null);
 
 /// <summary>
 /// Handles agent → tray requests. The agent has already authenticated and authorized the phone and
 /// validated the payload; this re-checks ids against the user's own list (defense in depth).
 /// </summary>
-public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, TimeProvider? time = null)
+public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, TimeProvider? time = null, Files.SharedFolder? files = null)
 {
     /// <summary>A notice on the PC when a phone starts controlling the mouse/keyboard after this much quiet.</summary>
     public static readonly TimeSpan InputNoticeAfter = TimeSpan.FromMinutes(2);
@@ -67,6 +74,9 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
             SessionOps.Lock => FromDesktop(desktop.Lock(), ErrorCodes.LockFailed, "Workstation locked"),
             SessionOps.PowerSchedule => SchedulePower(args),
             _ when op.StartsWith("input.", StringComparison.Ordinal) => Input(op, args),
+            _ when op.StartsWith("files.", StringComparison.Ordinal) => Files(op, args),
+            "clipboard.get" => ClipboardGet(),
+            "clipboard.set" => ClipboardSet(args),
             _ => RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'."),
         };
         return Task.FromResult(result);
@@ -121,6 +131,115 @@ public sealed class TrayCommandHandler(UserAppStore store, IDesktop desktop, Tim
         return result.Ok
             ? RpcResult.Success([])
             : RpcResult.Failure(ErrorCodes.InputBlocked, result.Message ?? "Windows did not accept the input.");
+    }
+
+    private static bool TryParse(string op, JsonObject args, Security.Permission permission, out object payload, out RpcResult? error)
+    {
+        payload = null!;
+        error = null;
+        if (!CommandCatalog.V1.TryGet(op, out var spec) || spec.RequiredPermission != permission)
+        {
+            error = RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'.");
+            return false;
+        }
+        var parsed = spec.ParsePayload(System.Text.Json.JsonSerializer.SerializeToElement(args));
+        if (parsed.Value is null)
+        {
+            error = RpcResult.Failure(ErrorCodes.InvalidPayload, parsed.Error ?? "Invalid payload.");
+            return false;
+        }
+        payload = parsed.Value;
+        return true;
+    }
+
+    private RpcResult Files(string op, JsonObject args)
+    {
+        if (files is null)
+        {
+            return RpcResult.Failure(ErrorCodes.FilesFailed, "Папка для файлов недоступна на этом ПК.");
+        }
+        if (!TryParse(op, args, Security.Permission.Files, out var payload, out var error))
+        {
+            return error!;
+        }
+        try
+        {
+            switch (payload)
+            {
+                case EmptyPayload:
+                    return RpcResult.Success(new JsonObject
+                    {
+                        ["folder"] = files.FolderPath,
+                        ["freeBytes"] = files.FreeBytes,
+                        ["files"] = new JsonArray([.. files.List().Select(f => (JsonNode)new JsonObject
+                        {
+                            ["name"] = f.Name,
+                            ["size"] = f.Size,
+                            ["modified"] = f.Modified.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture),
+                        })]),
+                    });
+                case Files.FileUploadBeginPayload begin:
+                    var (uploadId, offset) = files.Begin(begin);
+                    return RpcResult.Success(new JsonObject { ["uploadId"] = uploadId.ToString("D"), ["offset"] = offset });
+                case Files.FileUploadChunkPayload chunk:
+                    return RpcResult.Success(new JsonObject { ["received"] = files.Chunk(chunk) });
+                case Files.FileUploadRefPayload reference when op == "files.upload.finish":
+                    var done = files.Finish(reference.UploadId);
+                    ActionPerformed?.Invoke(this, $"Получен файл с телефона: {done.Name}");
+                    return RpcResult.Success(new JsonObject { ["name"] = done.Name, ["size"] = done.Size });
+                case Files.FileUploadRefPayload reference:
+                    files.Cancel(reference.UploadId);
+                    return RpcResult.Success([]);
+                case Files.FileReadPayload read:
+                    var (data, size) = files.Read(read);
+                    return RpcResult.Success(new JsonObject
+                    {
+                        ["data"] = Convert.ToBase64String(data),
+                        ["size"] = size,
+                        ["eof"] = read.Offset + data.Length >= size,
+                    });
+                case Files.FileNamePayload name:
+                    var (sha256, length) = files.Hash(name.Name);
+                    return RpcResult.Success(new JsonObject { ["sha256"] = sha256, ["size"] = length });
+                default:
+                    return RpcResult.Failure(ErrorCodes.UnknownCommand, $"Tray does not handle '{op}'.");
+            }
+        }
+        catch (Files.SharedFolderException ex)
+        {
+            return RpcResult.Failure(ex.Code, ex.Message);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return RpcResult.Failure(ErrorCodes.FilesFailed, "Ошибка диска на ПК: " + ex.Message);
+        }
+    }
+
+    private RpcResult ClipboardGet()
+    {
+        var read = desktop.GetClipboardText();
+        if (!read.Ok)
+        {
+            return RpcResult.Failure(ErrorCodes.ClipboardFailed, read.Message ?? "Буфер обмена занят другой программой.");
+        }
+        // The person at the PC should know their clipboard was read.
+        ActionPerformed?.Invoke(this, "Телефон прочитал буфер обмена");
+        return RpcResult.Success(new JsonObject { ["text"] = read.Text });
+    }
+
+    private RpcResult ClipboardSet(JsonObject args)
+    {
+        if (!TryParse("clipboard.set", args, Security.Permission.Clipboard, out var payload, out var error))
+        {
+            return error!;
+        }
+        var result = desktop.SetClipboardText(((Files.ClipboardSetPayload)payload).Text);
+        if (!result.Ok)
+        {
+            return RpcResult.Failure(ErrorCodes.ClipboardFailed, result.Message ?? "Буфер обмена занят другой программой.");
+        }
+        ActionPerformed?.Invoke(this, "Телефон положил текст в буфер обмена");
+        return RpcResult.Success([]);
     }
 
     private JsonArray AppsJson() =>

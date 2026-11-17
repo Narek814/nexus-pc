@@ -41,6 +41,16 @@ internal sealed class FakeDesktop : IDesktop
 
     public bool InputBlocked { get; set; }
 
+    public string? Clipboard { get; set; }
+
+    public ClipboardRead GetClipboardText() => new(true, Clipboard);
+
+    public DesktopResult SetClipboardText(string text)
+    {
+        Clipboard = text;
+        return DesktopResult.Success;
+    }
+
     public DesktopResult SendInput(IReadOnlyList<Nexus.Core.Input.InputStep> steps)
     {
         if (InputBlocked)

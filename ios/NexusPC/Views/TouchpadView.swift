@@ -187,6 +187,7 @@ final class InputSender {
     private let controller: PCController
     private var queue = InputQueue()
     private var sending = false
+    private var lastSent: Date?
     var message: String?
 
     init(controller: PCController) {
@@ -216,6 +217,11 @@ final class InputSender {
 
     private func drain() async {
         while let next = queue.next() {
+            // At most ~80 requests a second (the agent allows 100): moves merge while we wait.
+            if let last = lastSent, Date().timeIntervalSince(last) < 0.012 {
+                try? await Task.sleep(nanoseconds: 12_000_000)
+            }
+            lastSent = Date()
             do {
                 _ = try await controller.fetch(next.type, payload: next.payload)
                 if message != nil { message = nil }

@@ -31,7 +31,13 @@ internal sealed class CommandDispatcher(AgentServices services)
         "power.lock", "apps.list", "apps.launch", "apps.close",
         "profiles.list", "profiles.run", "profiles.upsert", "profiles.delete",
         "input.move", "input.button", "input.scroll", "input.text", "input.key", "input.media",
+        "files.list", "files.upload.begin", "files.upload.chunk", "files.upload.finish", "files.upload.cancel",
+        "files.read", "files.hash", "clipboard.get", "clipboard.set",
     ];
+
+    /// <summary>Sent many times a second (touchpad, file chunks): successful ones are audited at most once a minute.</summary>
+    private static bool IsHighFrequency(string type) =>
+        type.StartsWith("input.", StringComparison.Ordinal) || type is "files.upload.chunk" or "files.read";
 
     private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal);
 
@@ -73,7 +79,7 @@ internal sealed class CommandDispatcher(AgentServices services)
         }
 
         var deviceId = session.CurrentClient().DeviceId ?? client.DeviceId;
-        if (!result.Ok || !command.Spec.Type.StartsWith("input.", StringComparison.Ordinal) || _inputAudit.ShouldRecord(deviceId))
+        if (!result.Ok || !IsHighFrequency(command.Spec.Type) || _inputAudit.ShouldRecord(deviceId, command.Spec.Type))
         {
             // A touchpad sends dozens of events a second: successful input is recorded at most once a minute
             // per device, so it cannot push older entries out of the rotating log. Failures are always recorded.
@@ -294,7 +300,9 @@ internal sealed class CommandDispatcher(AgentServices services)
     {
         // The payload was validated against the schema; the Tray re-checks ids against its own list.
         var args = JsonNode.Parse(command.Envelope.Payload.GetRawText()) as JsonObject ?? [];
-        var result = await services.Trays.CallAsync(command.Spec.Type, args, cancellationToken).ConfigureAwait(false);
+        // Hashing a large file on the PC can take a while.
+        var timeout = command.Spec.Type is "files.upload.finish" or "files.hash" ? TimeSpan.FromMinutes(5) : Nexus.Agent.Session.TrayRegistry.CallTimeout;
+        var result = await services.Trays.CallAsync(command.Spec.Type, args, cancellationToken, timeout).ConfigureAwait(false);
         return result.Ok
             ? Ok(id, result.Result ?? [])
             : Fail(id, result.ErrorCode ?? ErrorCodes.Internal, result.Message ?? "Failed.");
@@ -403,9 +411,9 @@ internal sealed class InputAuditThrottle(TimeProvider time)
     private readonly Dictionary<string, DateTimeOffset> _last = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
 
-    public bool ShouldRecord(string? deviceId)
+    public bool ShouldRecord(string? deviceId, string type)
     {
-        var key = deviceId ?? "";
+        var key = (deviceId ?? "") + "|" + type;
         var now = time.GetUtcNow();
         lock (_lock)
         {

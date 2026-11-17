@@ -100,6 +100,15 @@
 | `input.text` | input | normal | `{ text: 1..256 символов }` — печать Unicode; `\n` → Enter, `\t` → Tab; управляющие символы запрещены |
 | `input.key` | input | normal | `{ key, modifiers?: [ctrl, alt, shift, win] }` — только клавиши из списка (см. «Тачпад») |
 | `input.media` | input | normal | `{ action: playPause\|next\|previous\|mute\|volumeDown\|volumeUp }` |
+| `files.list` | files | read | `{}` → `{ folder, freeBytes, files: [{ name, size, modified }] }` |
+| `files.upload.begin` | files | normal | `{ name, size, sha256 }` → `{ uploadId, offset }` |
+| `files.upload.chunk` | files | normal | `{ uploadId, offset, data: base64 ≤ 512 КиБ }` → `{ received }` |
+| `files.upload.finish` | files | normal | `{ uploadId }` → `{ name, size }` |
+| `files.upload.cancel` | files | normal | `{ uploadId }` |
+| `files.read` | files | read | `{ name, offset, length ≤ 524288 }` → `{ data, size, eof }` |
+| `files.hash` | files | read | `{ name }` → `{ sha256, size }` |
+| `clipboard.get` | clipboard | normal | `{}` → `{ text }` (`null`, если в буфере не текст) |
+| `clipboard.set` | clipboard | normal | `{ text: 1..100 000 символов }` |
 | `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
 | `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
 | `rgb.profiles.upsert` | rgb | normal | `{ profile: { id: slug, name, color, brightness, effect } }` (≤ 32 профилей) |
@@ -145,6 +154,8 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 | `profiles.notFound` / `profiles.invalid` / `profiles.limit` | профили (`invalid` — ссылка на программу не из списка ПК) |
 | `power.lockFailed` | блокировка не удалась |
 | `rgb.unavailable` | OpenRGB не запущен или SDK Server выключен |
+| `files.notFound` / `files.offsetMismatch` / `files.hashMismatch` / `files.noSpace` / `files.uploadNotFound` / `files.failed` | файлы |
+| `clipboard.failed` | буфер обмена занят другой программой |
 | `input.blocked` | экран ПК заблокирован, открыт UAC, или управление запрещено в меню трея |
 | `internal` | ошибка агента |
 
@@ -211,4 +222,18 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 Ответ — `{}` или ошибка `input.blocked`: экран ПК заблокирован, открыт запрос UAC или владелец запретил управление в меню трея. Ввод в окна программ, запущенных от имени администратора, Windows молча отбрасывает (UIPI) — агент не может это обнаружить.
 
 Клиент отправляет ввод по одному запросу: движения, накопленные за время ожидания ответа, объединяются (NexusKit `InputQueue`). В журнал аудита успешный ввод пишется не чаще раза в минуту на устройство, ошибки — всегда; набранный текст в журнал не попадает.
+
+## Файлы и буфер обмена (P7)
+
+Размер сообщения: до **1 МиБ** после входа (кусок файла 512 КиБ в base64), до 64 КиБ до входа. Частота: до 100 запросов в секунду после входа (20 — до входа).
+
+**Папка.** Телефон видит одну папку на ПК — `Загрузки\Nexus PC` (папка «Загрузки» берётся из настроек Windows). Только файлы прямо в ней: без подпапок, скрытых и системных файлов, ссылок. `name` — точное имя из `files.list`, никогда не путь. Выполняет Nexus.Tray от имени пользователя (без трея — `session.unavailable`).
+
+**С телефона на ПК.** `begin` с SHA-256 и размером → куски по порядку (`offset` должен совпадать с уже полученным, иначе `files.offsetMismatch`) → `finish`: ПК проверяет SHA-256 (не совпало — файл удаляется, `files.hashMismatch`), даёт безопасное имя (только последняя часть пути, без `<>:"|?*`, зарезервированных имён `CON`, `NUL`…; до 120 символов) и не перезаписывает: `photo (2).jpg`. Пока файл не проверен, он лежит в `%LOCALAPPDATA%\NexusPC\incoming` (невидим для телефона). Докачка: недокачанный файл хранится 7 дней под именем своего SHA-256, повторный `begin` того же файла возвращает `offset`, с которого продолжать. Нужно свободное место: размер + 256 МБ. Полученный файл помечается как скачанный из интернета (Mark of the Web), чтобы Windows предупреждала перед запуском `.exe` и открывала документы в защищённом режиме.
+
+**С ПК на телефон.** `files.read` кусками, затем `files.hash` — телефон сверяет SHA-256 и только потом показывает файл.
+
+**Буфер обмена** — только текст и только по нажатию на телефоне; автоматической синхронизации нет. ПК показывает уведомление, когда телефон читает или меняет буфер.
+
+В журнал аудита не попадают имена и содержимое файлов и текст буфера; успешные `files.upload.chunk` и `files.read` — не чаще раза в минуту на устройство.
 

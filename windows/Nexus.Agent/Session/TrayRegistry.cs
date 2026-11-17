@@ -52,7 +52,7 @@ internal sealed class TrayRegistry
         }
     }
 
-    public async Task<RpcResult> CallAsync(string op, JsonObject? args, CancellationToken cancellationToken)
+    public async Task<RpcResult> CallAsync(string op, JsonObject? args, CancellationToken cancellationToken, TimeSpan? timeout = null)
     {
         if (Current() is not { } tray)
         {
@@ -60,7 +60,7 @@ internal sealed class TrayRegistry
         }
         try
         {
-            return await tray.Channel.CallAsync(op, args, CallTimeout, cancellationToken).ConfigureAwait(false);
+            return await tray.Channel.CallAsync(op, args, timeout ?? CallTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or ObjectDisposedException)
         {

@@ -89,6 +89,83 @@ internal sealed partial class WindowsDesktop : IDesktop
             : new DesktopResult(false, $"Windows не принял ввод: экран ПК заблокирован или открыт запрос администратора (код {Marshal.GetLastPInvokeError()}).");
     }
 
+    public ClipboardRead GetClipboardText() =>
+        OnStaThread(() => Clipboard.ContainsText(TextDataFormat.UnicodeText)
+            ? new ClipboardRead(true, Clipboard.GetText(TextDataFormat.UnicodeText))
+            : new ClipboardRead(true, null))
+        ?? new ClipboardRead(false, null, "Буфер обмена занят другой программой — попробуйте ещё раз.");
+
+    public DesktopResult SetClipboardText(string text) =>
+        OnStaThread(() =>
+        {
+            // Retries for a moment: another app may hold the clipboard open.
+            Clipboard.SetDataObject(text, copy: true, retryTimes: 10, retryDelay: 100);
+            return DesktopResult.Success;
+        })
+        ?? new DesktopResult(false, "Буфер обмена занят другой программой — попробуйте ещё раз.");
+
+    /// <summary>The clipboard API needs a single-threaded apartment; pipe requests arrive on pool threads.</summary>
+    private static T? OnStaThread<T>(Func<T> work)
+        where T : class
+    {
+        T? result = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                result = work();
+            }
+            catch (ExternalException)
+            {
+                result = null; // clipboard locked by another process
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        return result;
+    }
+
+    /// <summary>The user's Downloads folder, wherever they moved it.</summary>
+    public static string DownloadsFolder()
+    {
+        var downloads = new Guid("374DE290-123F-4565-9164-39C4925E467B"); // FOLDERID_Downloads
+        if (SHGetKnownFolderPath(downloads, 0, 0, out var path) == 0)
+        {
+            try
+            {
+                return Marshal.PtrToStringUni(path) ?? DefaultDownloads();
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(path);
+            }
+        }
+        return DefaultDownloads();
+    }
+
+    private static string DefaultDownloads() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+    /// <summary>
+    /// Mark of the Web, like a browser download: Windows SmartScreen and Office then treat a file from
+    /// the phone as coming from outside (an .exe asks before running, documents open in Protected View).
+    /// </summary>
+    public static void MarkAsDownloaded(string path)
+    {
+        try
+        {
+            File.WriteAllText(path + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // FAT/exFAT drives have no alternate data streams.
+        }
+    }
+
+    [LibraryImport("shell32.dll")]
+    private static partial int SHGetKnownFolderPath(in Guid folderId, uint flags, nint token, out nint path);
+
     private const uint InputMouse = 0;
     private const uint InputKeyboard = 1;
 

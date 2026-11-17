@@ -81,6 +81,10 @@ final class LiveAgentTests: XCTestCase {
         let move = try XCTUnwrap(queue.next())
         let input = try await connection.request(move.type, payload: move.payload)
         XCTAssertEqual(input.errorCode, "auth.permissionDenied")
+
+        // Files and clipboard are also off until the PC owner enables them.
+        XCTAssertEqual(try await connection.request("files.list").errorCode, "auth.permissionDenied")
+        XCTAssertEqual(try await connection.request("clipboard.get").errorCode, "auth.permissionDenied")
     }
 
     func testWrongCertificatePinIsRefused() async throws {

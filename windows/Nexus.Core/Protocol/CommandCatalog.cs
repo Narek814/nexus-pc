@@ -63,6 +63,17 @@ public sealed class CommandCatalog
         new("input.text", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Text),
         new("input.key", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Key),
         new("input.media", Permission.Input, RiskClass.Normal, true, Input.InputParsers.Media),
+        // Files (P7): only the shared folder Downloads\Nexus PC; not granted by pairing.
+        new("files.list", Permission.Files, RiskClass.Read, true, PayloadParsers.Empty),
+        new("files.upload.begin", Permission.Files, RiskClass.Normal, true, Files.FileParsers.UploadBegin),
+        new("files.upload.chunk", Permission.Files, RiskClass.Normal, true, Files.FileParsers.UploadChunk),
+        new("files.upload.finish", Permission.Files, RiskClass.Normal, true, Files.FileParsers.UploadRef),
+        new("files.upload.cancel", Permission.Files, RiskClass.Normal, true, Files.FileParsers.UploadRef),
+        new("files.read", Permission.Files, RiskClass.Read, true, Files.FileParsers.Read),
+        new("files.hash", Permission.Files, RiskClass.Read, true, Files.FileParsers.NameRef),
+        // Clipboard (P7): text only, on explicit request; not granted by pairing.
+        new("clipboard.get", Permission.Clipboard, RiskClass.Normal, true, PayloadParsers.Empty),
+        new("clipboard.set", Permission.Clipboard, RiskClass.Normal, true, Files.FileParsers.ClipboardSet),
     ]);
 
     private readonly FrozenDictionary<string, CommandSpec> _commands;
