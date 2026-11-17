@@ -44,7 +44,7 @@ internal sealed class PairingForm : Form
         _reject.Location = new Point(465, 365);
         Controls.AddRange([_title, _qr, _info, _countdown, _copy, _restart, _approve, _reject]);
         Theme.Apply(this);
-        _approve.FlatAppearance.BorderColor = Theme.Cyan;
+        Theme.MakePrimary(_approve);
 
         _copy.Click += (_, _) =>
         {

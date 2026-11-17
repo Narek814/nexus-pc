@@ -31,6 +31,7 @@ internal sealed class AppsForm : Form
         MinimumSize = new Size(700, 420);
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
+        Theme.StyleTabs(tabs);
         tabs.TabPages.Add(BuildAppsPage());
         tabs.TabPages.Add(BuildProfilesPage());
         Controls.Add(tabs);
@@ -87,6 +88,7 @@ internal sealed class AppsForm : Form
 
         var right = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(12), WrapContents = false };
         var save = new Button { Text = "Сохранить", Width = 140, Height = 34 };
+        Theme.MakePrimary(save);
         var delete = new Button { Text = "Удалить профиль", Width = 160, Height = 34 };
         var actions = new FlowLayoutPanel { AutoSize = true };
         actions.Controls.AddRange([save, delete]);
@@ -267,6 +269,7 @@ internal sealed class StartMenuPicker : Form
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(420, 520);
         var ok = new Button { Text = "Добавить", Dock = DockStyle.Bottom, Height = 38, DialogResult = DialogResult.OK };
+        Theme.MakePrimary(ok);
         Controls.Add(_list);
         Controls.Add(_search);
         Controls.Add(ok);

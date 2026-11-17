@@ -78,6 +78,7 @@ internal sealed class TrayContext : ApplicationContext
 
         _autostart = new ToolStripMenuItem("Запускать при входе в Windows", null, (_, _) => ToggleAutostart()) { Checked = IsAutostartEnabled() };
         var menu = new ContextMenuStrip();
+        Theme.StyleMenu(menu);
         menu.Items.Add(_status);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));

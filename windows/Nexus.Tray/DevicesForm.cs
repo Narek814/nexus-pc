@@ -58,7 +58,7 @@ internal sealed class DevicesForm : Form
         }
         Controls.AddRange([heading, _devices, _info, _permissions, _save, _revoke, _status]);
         Theme.Apply(this);
-        _save.FlatAppearance.BorderColor = Theme.Cyan;
+        Theme.MakePrimary(_save);
 
         _devices.SelectedIndexChanged += (_, _) => ShowSelected();
         _save.Click += async (_, _) => await SaveAsync();

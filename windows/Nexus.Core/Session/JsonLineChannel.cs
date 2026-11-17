@@ -69,7 +69,21 @@ public sealed class JsonLineChannel : IAsyncDisposable
         {
             while (await ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
             {
-                if (JsonNode.Parse(line) is not JsonObject message)
+                JsonNode? parsed;
+                try
+                {
+                    parsed = JsonNode.Parse(line);
+                }
+                catch (JsonException) when (Volatile.Read(ref _disposed) == 1)
+                {
+                    // We are closing: the reader handed back the half-received last line. That is a normal end.
+                    break;
+                }
+                catch (JsonException ex)
+                {
+                    throw new InvalidDataException("Channel message is not valid JSON.", ex);
+                }
+                if (parsed is not JsonObject message)
                 {
                     throw new InvalidDataException("Channel message is not a JSON object.");
                 }

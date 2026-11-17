@@ -112,6 +112,9 @@ jobs:
           & .\out\NexusPC-Setup.exe --purge --quiet; Check ($LASTEXITCODE -eq 0) "purge exit code"
           Check (-not (Test-Path "$env:ProgramData\NexusPC")) "data removed by purge"
           Check (-not (Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -like 'CN=Nexus PC Agent *')) "certificate removed by purge"
+      - name: H.264 encoder on this Windows (prints what the encoder produced, or why it is unavailable)
+        shell: pwsh
+        run: dotnet test windows/Nexus.Tests -c Release --filter "FullyQualifiedName~MediaFoundationEncoderTests" --logger "console;verbosity=detailed"
       - uses: actions/upload-artifact@v4
         with:
           name: NexusPC-Setup

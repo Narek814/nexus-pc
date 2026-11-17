@@ -36,7 +36,9 @@ internal static class Program
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
             Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine("Ошибка: " + ex.Message);
+            Console.ResetColor();
             Console.WriteLine("Подробности: " + logPath + " — пришлите этот файл, если не получается.");
             log.WriteLine(ex.ToString());
             code = 5;

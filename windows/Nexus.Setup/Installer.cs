@@ -27,6 +27,10 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
 
     private int Install()
     {
+        if (!options.Quiet)
+        {
+            Banner();
+        }
         Say("Nexus PC — установка");
         using var payload = OpenPayload();
         if (payload is null)
@@ -122,6 +126,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         CheckNetworks();
 
         Say("");
+        Write("  ✔ ", ConsoleColor.Green);
         Say("Готово. Nexus PC работает.");
         Say(oldVersion is null
             ? "Дальше: значок «N» у часов → «Подключить iPhone…» и отсканируйте QR-код в приложении Nexus PC."
@@ -365,10 +370,32 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
 
     private void Step(string title, Action action)
     {
-        Console.Write($"• {title}… ");
+        Write("  ▸ ", ConsoleColor.Magenta);
+        Console.Write($"{title}… ");
         log.WriteLine("== " + title);
         action();
-        Console.WriteLine("готово");
+        Write("готово", ConsoleColor.Green);
+        Console.WriteLine();
+    }
+
+    private static void Write(string text, ConsoleColor color)
+    {
+        var previous = Console.ForegroundColor;
+        Console.ForegroundColor = color;
+        Console.Write(text);
+        Console.ForegroundColor = previous;
+    }
+
+    private static void Banner()
+    {
+        Console.WriteLine();
+        Write("  ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗\n", ConsoleColor.Magenta);
+        Write("  ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝\n", ConsoleColor.Magenta);
+        Write("  ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗\n", ConsoleColor.DarkMagenta);
+        Write("  ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║\n", ConsoleColor.Cyan);
+        Write("  ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║\n", ConsoleColor.Cyan);
+        Write("  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝  PC\n", ConsoleColor.DarkCyan);
+        Console.WriteLine();
     }
 
     private void Say(string text)
