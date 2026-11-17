@@ -18,12 +18,16 @@ internal sealed class TrayRegistry
     private readonly Lock _lock = new();
     private readonly List<TrayConnection> _connections = [];
 
+    /// <summary>A tray connected: someone signed in to Windows (or the tray restarted).</summary>
+    public event EventHandler? Connected;
+
     public void Add(TrayConnection connection)
     {
         lock (_lock)
         {
             _connections.Add(connection);
         }
+        Connected?.Invoke(this, EventArgs.Empty);
     }
 
     public void Remove(TrayConnection connection)

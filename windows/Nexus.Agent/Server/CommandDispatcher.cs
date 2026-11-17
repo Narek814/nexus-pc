@@ -8,6 +8,7 @@ using Nexus.Core.Pairing;
 using Nexus.Core.Session;
 using Nexus.Core.Protocol;
 using Nexus.Core.Security;
+using Nexus.Agent.Storage;
 
 namespace Nexus.Agent.Server;
 
@@ -23,6 +24,7 @@ internal sealed class CommandDispatcher(AgentServices services)
         "power.shutdown", "power.restart", "power.sleep", "power.cancel",
         "metrics.snapshot", "metrics.history", "alerts.get", "alerts.set", "alerts.test",
         "rgb.status", "rgb.apply", "rgb.profiles.upsert", "rgb.profiles.delete", "rgb.profiles.apply",
+        "automations.list", "automations.upsert", "automations.delete", "automations.run", "automations.stop", "history.list",
     ];
 
     /// <summary>Commands that need Nexus.Tray in the signed-in session; available only while it is connected.</summary>
@@ -85,6 +87,7 @@ internal sealed class CommandDispatcher(AgentServices services)
             // per device, so it cannot push older entries out of the rotating log. Failures are always recorded.
             services.Audit.Record(deviceId, command.Spec.Type, result.Ok, result.ErrorCode, session.Remote);
         }
+        RecordHistory(command, result, deviceId);
         return result;
     }
 
@@ -106,6 +109,17 @@ internal sealed class CommandDispatcher(AgentServices services)
                 return await WithLightingAsync(id, forwarded, run.ProfileId, cancellationToken).ConfigureAwait(false);
             }
             return forwarded;
+        }
+        if (command.Spec.Type.StartsWith("automations.", StringComparison.Ordinal) && services.Automations is { } automations)
+        {
+            return Automations(id, command, session, automations);
+        }
+        if (command.Payload is Nexus.Core.Automation.HistoryListPayload historyList)
+        {
+            return Ok(id, new JsonObject
+            {
+                ["entries"] = new JsonArray([.. services.History.List(historyList.Limit, historyList.Before).Select(e => (JsonNode)HistoryStore.ToJson(e))]),
+            });
         }
         if (command.Spec.Type.StartsWith("rgb.", StringComparison.Ordinal) && services.Rgb is { } rgb)
         {
@@ -344,6 +358,131 @@ internal sealed class CommandDispatcher(AgentServices services)
         return Deferred(id, response, session, command.Spec.Type, () => services.Power.Schedule(action, TimeSpan.Zero, payload.Force, reason));
     }
 
+    private static HandlerResult Automations(Guid id, ValidatedCommand command, ConnectionSession session, AutomationService automations)
+    {
+        switch (command.Payload)
+        {
+            case Nexus.Core.Automation.AutomationUpsertPayload upsert:
+                var client = session.CurrentClient();
+                var required = Nexus.Core.Automation.AutomationRules.RequiredFor(upsert.Automation);
+                if ((client.Permissions & required) != required)
+                {
+                    // No escalation: a rule can only do what its creator may do directly.
+                    var missing = string.Join(", ", Permissions.ToWireNames(required & ~client.Permissions));
+                    return Fail(id, ErrorCodes.PermissionDenied, $"Для этих действий у устройства нет разрешения: {missing}.");
+                }
+                if (Nexus.Core.Automation.AutomationRules.NeedsConfirmation(upsert.Automation) && !command.Envelope.Confirmed)
+                {
+                    return Fail(id, ErrorCodes.ConfirmationRequired, "Автоматизация выключает или перезагружает ПК: подтвердите сохранение.");
+                }
+                var rule = upsert.Automation with { CreatedBy = client.DeviceId };
+                return automations.Upsert(rule) is { } limit
+                    ? Fail(id, ErrorCodes.AutomationLimit, limit)
+                    : Ok(id, automations.ToJson());
+            case Nexus.Core.Automation.AutomationRefPayload reference when command.Spec.Type == "automations.delete":
+                return automations.Delete(reference.AutomationId)
+                    ? Ok(id, automations.ToJson())
+                    : Fail(id, ErrorCodes.AutomationNotFound, "Такой автоматизации нет.");
+            case Nexus.Core.Automation.AutomationRefPayload reference when command.Spec.Type == "automations.run":
+                if (automations.Find(reference.AutomationId) is not { } found)
+                {
+                    return Fail(id, ErrorCodes.AutomationNotFound, "Такой автоматизации нет.");
+                }
+                return automations.Start(found, "вручную с телефона")
+                    ? Ok(id, new JsonObject { ["started"] = true })
+                    : Fail(id, ErrorCodes.AutomationBusy, "Эта автоматизация уже выполняется.");
+            case Nexus.Core.Automation.AutomationRefPayload reference:
+                return Ok(id, new JsonObject { ["stopped"] = automations.Stop(reference.AutomationId) });
+            default:
+                return Ok(id, automations.ToJson());
+        }
+    }
+
+    private readonly InputAuditThrottle _historyThrottle = new(services.Time, TimeSpan.FromMinutes(10));
+
+    /// <summary>PC history (P6): commands that change something, in words, without payload contents.</summary>
+    private void RecordHistory(ValidatedCommand command, HandlerResult result, string? deviceId)
+    {
+        var type = command.Spec.Type;
+        if (command.Spec.Risk == RiskClass.Read || type is "auth.begin" or "auth.prove" or "files.upload.begin"
+            or "files.upload.chunk" or "files.upload.cancel" or "alerts.set")
+        {
+            if (type != "files.hash")
+            {
+                return;
+            }
+        }
+        if (type.StartsWith("input.", StringComparison.Ordinal) && (!result.Ok || !_historyThrottle.ShouldRecord(deviceId, "input")))
+        {
+            return;
+        }
+        if (type == "files.hash" && !result.Ok)
+        {
+            return;
+        }
+        var payload = command.Envelope.Payload;
+        string? Arg(string name) => payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        int? Num(string name) => payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) ? n : null;
+        var title = type switch
+        {
+            "pair.request" => "Сопряжено новое устройство",
+            "power.shutdown" => $"Выключение ПК через {FormatDelay(Num("delaySeconds") ?? 0)}",
+            "power.restart" => $"Перезагрузка ПК через {FormatDelay(Num("delaySeconds") ?? 0)}",
+            "power.sleep" => "Сон",
+            "power.lock" => "Блокировка экрана",
+            "power.cancel" => "Отмена выключения",
+            "apps.launch" => $"Запуск программы «{Arg("appId")}»",
+            "apps.close" => $"Закрытие программы «{Arg("appId")}»",
+            "profiles.run" => $"Профиль «{Arg("profileId")}»",
+            "profiles.upsert" => "Профиль программ изменён",
+            "profiles.delete" => $"Профиль «{Arg("profileId")}» удалён",
+            "rgb.apply" => "Подсветка изменена",
+            "rgb.profiles.apply" => $"Профиль подсветки «{Arg("profileId")}»",
+            "rgb.profiles.upsert" => "Профиль подсветки сохранён",
+            "rgb.profiles.delete" => $"Профиль подсветки «{Arg("profileId")}» удалён",
+            "alerts.test" => "Тестовое уведомление",
+            "files.upload.finish" => "Файл получен с телефона",
+            "files.hash" => "Файл отправлен на телефон",
+            "clipboard.get" => "Телефон прочитал буфер обмена ПК",
+            "clipboard.set" => "Телефон положил текст в буфер обмена ПК",
+            "automations.upsert" => "Автоматизация сохранена",
+            "automations.delete" => $"Автоматизация «{Arg("automationId")}» удалена",
+            "automations.run" => $"Автоматизация «{Arg("automationId")}» запущена вручную",
+            "automations.stop" => $"Автоматизация «{Arg("automationId")}» остановлена",
+            _ when type.StartsWith("input.", StringComparison.Ordinal) => "Управление мышью и клавиатурой с телефона",
+            _ => null,
+        };
+        if (title is null || (type == "pair.request" && !result.Ok))
+        {
+            return;
+        }
+        string? device = null;
+        if (Guid.TryParse(deviceId, out var guid))
+        {
+            device = services.Devices.Find(guid)?.Name;
+        }
+        services.History.Record("command", title, result.Ok, result.Ok ? null : ResultMessage(result), device);
+    }
+
+    private static string FormatDelay(int seconds) => seconds switch
+    {
+        < 60 => $"{seconds} с",
+        < 3600 => $"{seconds / 60} мин",
+        _ => $"{seconds / 3600} ч {seconds % 3600 / 60} мин",
+    };
+
+    private static string? ResultMessage(HandlerResult result)
+    {
+        try
+        {
+            return JsonNode.Parse(result.Response)?["error"]?["message"]?.GetValue<string>();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private JsonObject PowerResponse(string verb, int delaySeconds, string via) => new()
     {
         ["action"] = verb,
@@ -405,9 +544,9 @@ internal sealed class CommandDispatcher(AgentServices services)
 }
 
 /// <summary>At most one audit line per device per minute for successful input events.</summary>
-internal sealed class InputAuditThrottle(TimeProvider time)
+internal sealed class InputAuditThrottle(TimeProvider time, TimeSpan? interval = null)
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    private readonly TimeSpan _interval = interval ?? TimeSpan.FromMinutes(1);
     private readonly Dictionary<string, DateTimeOffset> _last = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
 
@@ -417,7 +556,7 @@ internal sealed class InputAuditThrottle(TimeProvider time)
         var now = time.GetUtcNow();
         lock (_lock)
         {
-            if (_last.TryGetValue(key, out var last) && now - last < Interval)
+            if (_last.TryGetValue(key, out var last) && now - last < _interval)
             {
                 return false;
             }

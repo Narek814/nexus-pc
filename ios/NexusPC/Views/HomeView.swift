@@ -79,6 +79,12 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if controller.can("automations.list") {
+                            homeLink("Автоматизации", icon: "gearshape.2.fill") { AutomationsView(controller: controller) }
+                        }
+                        if controller.can("history.list") {
+                            homeLink("История", icon: "clock.arrow.circlepath") { HistoryView(controller: controller) }
+                        }
                         if controller.can("rgb.status") {
                             NavigationLink {
                                 RgbView(controller: controller)
@@ -207,6 +213,22 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    private func homeLink<Destination: View>(_ title: String, icon: String, @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            GlassCard {
+                HStack {
+                    Label(title, systemImage: icon)
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var monitoringLink: some View {

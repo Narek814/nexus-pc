@@ -100,6 +100,18 @@ internal sealed partial class AlertService : BackgroundService
         await RaiseAsync(_engine.PowerEvent("power.off", $"{_pcName} выключается", "Nexus PC Agent остановлен (выключение или перезагрузка ПК).", Settings), quick.Token).ConfigureAwait(false);
     }
 
+    /// <summary>A message from an automation (ntfy, if the owner enabled it).</summary>
+    public async Task<bool> NotifyAsync(string title, string message, CancellationToken cancellationToken)
+    {
+        var alert = new AlertEvent("automation", $"{_pcName}: {title}", message, AlertSeverity.Info);
+        var delivered = await _notifier.SendAsync(alert, Settings, cancellationToken).ConfigureAwait(false);
+        Recent.Add(_time.GetUtcNow(), alert, delivered);
+        return delivered;
+    }
+
+    /// <summary>Set by the host: alerts also appear in the PC history.</summary>
+    public Nexus.Agent.Storage.HistoryStore? History { get; set; }
+
     public async Task<bool> SendTestAsync(CancellationToken cancellationToken)
     {
         var alert = new AlertEvent("test", $"{_pcName}: тестовое уведомление", "Если вы видите это на iPhone, уведомления Nexus PC работают.", AlertSeverity.Info);
@@ -185,6 +197,7 @@ internal sealed partial class AlertService : BackgroundService
         }
         var delivered = await _notifier.SendAsync(alert, Settings, cancellationToken).ConfigureAwait(false);
         Recent.Add(_time.GetUtcNow(), alert, delivered);
+        History?.Record("alert", alert.Title, ok: true, detail: alert.Message);
         LogAlert(_logger, alert.Key, delivered);
     }
 

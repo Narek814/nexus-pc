@@ -29,6 +29,9 @@ internal sealed record AgentHostOptions
     public IReadOnlyList<IPAddress>? BindAddresses { get; init; }
     public IPowerController? Power { get; init; }
     public TimeProvider Time { get; init; } = TimeProvider.System;
+
+    /// <summary>Time zone for scheduled automations (tests use UTC).</summary>
+    public TimeZoneInfo TimeZone { get; init; } = TimeZoneInfo.Local;
     public string AdminPipeName { get; init; } = AdminPipeServer.DefaultPipeName;
     public bool EnableAdminPipe { get; init; } = true;
     public string SessionPipeName { get; init; } = TraySessionServer.DefaultPipeName;
@@ -109,6 +112,8 @@ internal static class AgentHost
         var notifier = options.Notifier ?? new NtfyNotifier(new HttpClient());
         builder.Services.AddSingleton(sp => new AlertService(services.Metrics, notifier, options.DataDirectory, identity.PcName, options.Time, sp.GetRequiredService<ILogger<AlertService>>()));
         builder.Services.AddHostedService(sp => sp.GetRequiredService<AlertService>());
+        builder.Services.AddSingleton(sp => new AutomationService(services, options.DataDirectory, options.TimeZone, sp.GetRequiredService<ILogger<AutomationService>>()));
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<AutomationService>());
         if (options.EnableSessionPipe)
         {
             var trayPath = options.TrayPath ?? config.TrayPath ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Tray", "Nexus.Tray.exe"));
@@ -121,6 +126,8 @@ internal static class AgentHost
 
         var app = builder.Build();
         services.Alerts = app.Services.GetRequiredService<AlertService>();
+        services.Alerts.History = services.History;
+        services.Automations = app.Services.GetRequiredService<AutomationService>();
         services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort);
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });

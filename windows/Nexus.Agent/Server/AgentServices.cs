@@ -23,6 +23,7 @@ internal sealed class AgentServices
         Pairing = new PairingManager(devices, time);
         Validator = CommandValidator.CreateDefault(time);
         Trays = new TrayRegistry();
+        History = new HistoryStore(Path.GetDirectoryName(audit.FilePath)!, time);
         Metrics = new MetricsSampler(metricsSource ?? new PortableMetricsSource(), time);
         Dispatcher = new CommandDispatcher(this);
     }
@@ -42,4 +43,6 @@ internal sealed class AgentServices
     /// <summary>Set once by AgentHost after the host is built.</summary>
     public AlertService? Alerts { get; set; }
     public RgbService? Rgb { get; set; }
+    public AutomationService? Automations { get; set; }
+    public HistoryStore History { get; }
 }

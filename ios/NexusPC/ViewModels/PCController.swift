@@ -170,13 +170,13 @@ final class PCController {
     }
 
     /// Read-only request for other screens (Monitoring). Reconnects once if authentication expired.
-    func fetch(_ type: String, payload: [String: Any] = [:], timeout: TimeInterval = 15) async throws -> [String: Any] {
+    func fetch(_ type: String, payload: [String: Any] = [:], confirmed: Bool = false, timeout: TimeInterval = 15) async throws -> [String: Any] {
         do {
-            var response = try await ensureConnection().request(type, payload: payload, timeout: timeout)
+            var response = try await ensureConnection().request(type, payload: payload, confirmed: confirmed, timeout: timeout)
             if response.errorCode == "auth.required" {
                 connection?.close()
                 connection = nil
-                response = try await ensureConnection().request(type, payload: payload, timeout: timeout)
+                response = try await ensureConnection().request(type, payload: payload, confirmed: confirmed, timeout: timeout)
             }
             return try response.unwrap()
         } catch let error as NexusError {

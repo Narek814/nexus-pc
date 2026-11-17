@@ -42,6 +42,9 @@ public static class ErrorCodes
     public const string FilesUploadNotFound = "files.uploadNotFound";
     public const string FilesFailed = "files.failed";
     public const string ClipboardFailed = "clipboard.failed";
+    public const string AutomationNotFound = "automations.notFound";
+    public const string AutomationLimit = "automations.limit";
+    public const string AutomationBusy = "automations.running";
     public const string Internal = "internal";
 }
 

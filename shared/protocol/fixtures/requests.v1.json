@@ -2919,6 +2919,586 @@
         "error": "auth.permissionDenied"
       },
       "schemaValid": true
+    },
+    {
+      "name": "automations.list",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000701",
+        "kind": "request",
+        "type": "automations.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.upsert night",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000702",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "night",
+            "name": "Ночь",
+            "enabled": true,
+            "trigger": {
+              "type": "time",
+              "time": "23:00",
+              "days": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7
+              ]
+            },
+            "actions": [
+              {
+                "type": "profile",
+                "profileId": "night"
+              },
+              {
+                "type": "rgb",
+                "color": "#000000",
+                "brightness": 0,
+                "effect": "off"
+              },
+              {
+                "type": "wait",
+                "seconds": 3600
+              },
+              {
+                "type": "sleep"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.upsert gpu hot",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000703",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "gpu-hot",
+            "name": "Перегрев",
+            "trigger": {
+              "type": "metric",
+              "metric": "gpuTemperature",
+              "above": 85,
+              "forSeconds": 30
+            },
+            "onlyBetween": {
+              "from": "22:00",
+              "to": "07:00"
+            },
+            "actions": [
+              {
+                "type": "notify",
+                "message": "Видеокарта горячая"
+              },
+              {
+                "type": "rgb",
+                "color": "#FF0000",
+                "brightness": 100,
+                "effect": "static"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.upsert on sign in",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000704",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "morning",
+            "name": "Утро",
+            "trigger": {
+              "type": "userSignedIn"
+            },
+            "actions": [
+              {
+                "type": "app",
+                "appId": "steam"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.upsert shutdown confirmed",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000705",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "bedtime",
+            "name": "Сон",
+            "trigger": {
+              "type": "time",
+              "time": "01:30"
+            },
+            "actions": [
+              {
+                "type": "shutdown",
+                "delaySeconds": 600
+              }
+            ]
+          }
+        },
+        "confirmed": true
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.upsert bad time",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000706",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "x",
+            "name": "X",
+            "trigger": {
+              "type": "time",
+              "time": "25:00"
+            },
+            "actions": [
+              {
+                "type": "lock"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "automations.upsert shutdown without countdown",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000707",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "x",
+            "name": "X",
+            "trigger": {
+              "type": "pcStarted"
+            },
+            "actions": [
+              {
+                "type": "shutdown",
+                "delaySeconds": 5
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "automations.upsert command line",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000708",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "x",
+            "name": "X",
+            "trigger": {
+              "type": "pcStarted"
+            },
+            "actions": [
+              {
+                "type": "run",
+                "command": "cmd.exe /c del"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "automations.upsert too many actions",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000709",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "x",
+            "name": "X",
+            "trigger": {
+              "type": "pcStarted"
+            },
+            "actions": [
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              },
+              {
+                "type": "lock"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "automations.delete",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000710",
+        "kind": "request",
+        "type": "automations.delete",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automationId": "night"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.run",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000711",
+        "kind": "request",
+        "type": "automations.run",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automationId": "night"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.stop",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000712",
+        "kind": "request",
+        "type": "automations.stop",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automationId": "night"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "history.list",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000713",
+        "kind": "request",
+        "type": "history.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "limit": 50,
+          "before": "2026-11-14T09:00:00Z"
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "history.list too many",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000714",
+        "kind": "request",
+        "type": "history.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "limit": 500
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
+    },
+    {
+      "name": "automations need automation permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "power",
+          "apps",
+          "monitoring",
+          "rgb"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000715",
+        "kind": "request",
+        "type": "automations.list",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.permissionDenied"
+      },
+      "schemaValid": true
     }
   ]
 }

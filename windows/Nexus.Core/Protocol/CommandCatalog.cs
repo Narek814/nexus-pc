@@ -74,6 +74,13 @@ public sealed class CommandCatalog
         // Clipboard (P7): text only, on explicit request; not granted by pairing.
         new("clipboard.get", Permission.Clipboard, RiskClass.Normal, true, PayloadParsers.Empty),
         new("clipboard.set", Permission.Clipboard, RiskClass.Normal, true, Files.FileParsers.ClipboardSet),
+        // Automations (P6): rules that run on the PC; creating one also needs the permissions of its actions.
+        new("automations.list", Permission.Automation, RiskClass.Read, true, PayloadParsers.Empty),
+        new("automations.upsert", Permission.Automation, RiskClass.Normal, true, Automation.AutomationJson.Upsert),
+        new("automations.delete", Permission.Automation, RiskClass.Normal, true, Automation.AutomationJson.Ref),
+        new("automations.run", Permission.Automation, RiskClass.Normal, true, Automation.AutomationJson.Ref),
+        new("automations.stop", Permission.Automation, RiskClass.Normal, true, Automation.AutomationJson.Ref),
+        new("history.list", Permission.Monitoring, RiskClass.Read, true, Automation.AutomationJson.HistoryList),
     ]);
 
     private readonly FrozenDictionary<string, CommandSpec> _commands;

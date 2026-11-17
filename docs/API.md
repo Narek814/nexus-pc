@@ -109,6 +109,10 @@
 | `files.hash` | files | read | `{ name }` → `{ sha256, size }` |
 | `clipboard.get` | clipboard | normal | `{}` → `{ text }` (`null`, если в буфере не текст) |
 | `clipboard.set` | clipboard | normal | `{ text: 1..100 000 символов }` |
+| `automations.list` | automation | read | `{}` → `{ automations: [ …, running, lastRun?, createdByName ], timeZone }` |
+| `automations.upsert` | automation (+ разрешения действий) | normal (с выключением — `confirmed`) | `{ automation: { id, name, enabled?, trigger, onlyBetween?, actions[1..8] } }` |
+| `automations.delete` / `automations.run` / `automations.stop` | automation | normal | `{ automationId }` |
+| `history.list` | monitoring | read | `{ limit?: 1..200, before?: ISO-время }` → `{ entries: [{ ts, kind, title, ok, detail?, device? }] }` |
 | `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
 | `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
 | `rgb.profiles.upsert` | rgb | normal | `{ profile: { id: slug, name, color, brightness, effect } }` (≤ 32 профилей) |
@@ -156,6 +160,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 | `rgb.unavailable` | OpenRGB не запущен или SDK Server выключен |
 | `files.notFound` / `files.offsetMismatch` / `files.hashMismatch` / `files.noSpace` / `files.uploadNotFound` / `files.failed` | файлы |
 | `clipboard.failed` | буфер обмена занят другой программой |
+| `automations.notFound` / `automations.limit` / `automations.running` | автоматизации |
 | `input.blocked` | экран ПК заблокирован, открыт UAC, или управление запрещено в меню трея |
 | `internal` | ошибка агента |
 
@@ -236,4 +241,22 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 **Буфер обмена** — только текст и только по нажатию на телефоне; автоматической синхронизации нет. ПК показывает уведомление, когда телефон читает или меняет буфер.
 
 В журнал аудита не попадают имена и содержимое файлов и текст буфера; успешные `files.upload.chunk` и `files.read` — не чаще раза в минуту на устройство.
+
+## Автоматизации и история (P6)
+
+Автоматизации выполняет агент на ПК — телефон для этого не нужен. Хранятся в `C:\ProgramData\NexusPC\automations.json` (до 32 правил, до 8 шагов).
+
+**Когда (`trigger`)**
+- `{ type: "time", time: "HH:mm", days?: [1..7] }` — по времени ПК (1 = понедельник); срабатывает один раз в день в течение 2 минут после указанного времени. Если ПК в это время спал или был выключен, правило пропускается (не догоняет).
+- `{ type: "metric", metric: "gpuTemperature" | "cpuUsage" | "memoryUsage", above, forSeconds? }` — значение держится на уровне `above` или выше `forSeconds` секунд; повторно — только после снижения на 5 единиц. Недоступный датчик ничего не запускает.
+- `{ type: "pcStarted" }` — через 15 с после запуска службы (до входа в Windows программы и профили не запускаются).
+- `{ type: "userSignedIn" }` — когда подключается Nexus.Tray (вход в Windows), не чаще раза в 10 минут.
+
+`onlyBetween: { from, to }` — дополнительное условие по времени, может переходить через полночь (22:00–07:00).
+
+**Что сделать (`actions`, по порядку)**: `profile` (profileId; связанный профиль подсветки тоже включается), `app` (appId), `rgb` (color, brightness, effect), `rgbProfile` (profileId), `lock`, `sleep`, `shutdown` / `restart` (`delaySeconds` ≥ 60 — Windows показывает отсчёт, отмена `power.cancel`), `notify` (message ≤ 200, через ntfy, если включён), `wait` (seconds ≤ 4 ч). Других действий нет: автоматизация не может запустить командную строку или путь.
+
+**Безопасность.** Сохранить правило может только устройство, у которого есть `automation` **и** разрешения на все его действия (`apps`, `rgb`, `power`, `monitoring` для уведомлений) — иначе `auth.permissionDenied` с перечнем недостающих. Правило с выключением/перезагрузкой требует `confirmed`. Правило запоминает создавшее устройство; перед каждым шагом агент проверяет, что устройство не отозвано и разрешения не отняты, — иначе шаг не выполняется, а в истории остаётся объяснение. Одно правило не запускается повторно, пока выполняется (`automations.running`); `automations.stop` прерывает ожидание.
+
+**История** — `C:\ProgramData\NexusPC\history.log` (до 2 МБ + предыдущий файл): команды с телефона, которые что-то меняют (название устройства и действие, без содержимого: без имён файлов, текста буфера и набранного текста; тачпад — не чаще раза в 10 минут), запуски автоматизаций с итогом, предупреждения и события питания. Чтение (`metrics.*`, списки) в историю не пишется.
 

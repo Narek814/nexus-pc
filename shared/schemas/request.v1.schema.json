@@ -60,7 +60,8 @@
               "alerts.test",
               "rgb.status",
               "files.list",
-              "clipboard.get"
+              "clipboard.get",
+              "automations.list"
             ]
           }
         }
@@ -456,6 +457,58 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "automations.upsert"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/automationUpsert"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "automations.delete",
+              "automations.run",
+              "automations.stop"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/automationRef"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "history.list"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/historyList"
+          }
+        }
+      }
+    },
+    {
       "properties": {
         "type": {
           "enum": [
@@ -500,7 +553,13 @@
             "files.read",
             "files.hash",
             "clipboard.get",
-            "clipboard.set"
+            "clipboard.set",
+            "automations.list",
+            "automations.upsert",
+            "automations.delete",
+            "automations.run",
+            "automations.stop",
+            "history.list"
           ]
         }
       }
@@ -1117,6 +1176,304 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 100000
+        }
+      }
+    },
+    "automationUpsert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automation"
+      ],
+      "properties": {
+        "automation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "name",
+            "trigger",
+            "actions"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/slug"
+            },
+            "name": {
+              "$ref": "#/$defs/displayName"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "trigger": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "time"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "time"
+                    },
+                    "time": {
+                      "type": "string",
+                      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                    },
+                    "days": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 7,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 7
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "metric",
+                    "above"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "metric"
+                    },
+                    "metric": {
+                      "enum": [
+                        "gpuTemperature",
+                        "cpuUsage",
+                        "memoryUsage"
+                      ]
+                    },
+                    "above": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 120
+                    },
+                    "forSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 3600
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "pcStarted",
+                        "userSignedIn"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "onlyBetween": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "to"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "to": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                }
+              }
+            },
+            "actions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "profileId"
+                    ],
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "profile",
+                          "rgbProfile"
+                        ]
+                      },
+                      "profileId": {
+                        "$ref": "#/$defs/slug"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "appId"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "app"
+                      },
+                      "appId": {
+                        "$ref": "#/$defs/slug"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "color",
+                      "brightness",
+                      "effect"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "rgb"
+                      },
+                      "color": {
+                        "type": "string",
+                        "pattern": "^#[0-9A-Fa-f]{6}$"
+                      },
+                      "brightness": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "effect": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "lock",
+                          "sleep"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "delaySeconds"
+                    ],
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "shutdown",
+                          "restart"
+                        ]
+                      },
+                      "delaySeconds": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 86400
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "message"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "notify"
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "seconds"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "wait"
+                      },
+                      "seconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 14400
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "automationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automationId"
+      ],
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/slug"
+        }
+      }
+    },
+    "historyList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "before": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     }
