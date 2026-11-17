@@ -51,3 +51,65 @@ jobs:
       # Independent decoder, used only to verify our encoder; never shipped.
       - run: pip install "zxing-cpp>=2.2,<3" "pillow>=10"
       - run: python -I tools/check_qr.py
+
+  installer:
+    name: Installer (build + install/upgrade/uninstall on Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build Agent and Tray into payload.zip
+        shell: pwsh
+        run: |
+          $v = "0.2.${{ github.run_number }}"
+          dotnet publish windows/Nexus.Agent -c Release -r win-x64 --self-contained false -p:Version=$v -o staging/Agent
+          if ($LASTEXITCODE) { exit 1 }
+          dotnet publish windows/Nexus.Tray -c Release -r win-x64 --self-contained false -p:Version=$v -o staging/Tray
+          if ($LASTEXITCODE) { exit 1 }
+          Set-Content -Path staging/version.txt -Value $v -NoNewline
+          Compress-Archive -Path staging/* -DestinationPath windows/Nexus.Setup/payload.zip
+      - name: Build NexusPC-Setup.exe
+        shell: pwsh
+        run: |
+          dotnet publish windows/Nexus.Setup -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Version=0.2.${{ github.run_number }} -o out
+          if ($LASTEXITCODE) { exit 1 }
+          Get-Item out/NexusPC-Setup.exe | Format-List Name, Length
+      - name: Install, check, upgrade, uninstall
+        shell: pwsh
+        run: |
+          function Check($ok, $what) { if (-not $ok) { Write-Error "FAILED: $what"; Get-Content $env:TEMP\NexusPC-Setup.log -ErrorAction SilentlyContinue; exit 1 } else { "ok: $what" } }
+          function Running { (Get-Service NexusPCAgent -ErrorAction SilentlyContinue).Status -eq 'Running' }
+          function Listening { for ($i = 0; $i -lt 30; $i++) { if (Get-NetTCPConnection -LocalPort 47800 -State Listen -ErrorAction SilentlyContinue) { return $true }; Start-Sleep 1 }; $false }
+          $agent = "$env:ProgramFiles\NexusPC\Agent\Nexus.Agent.exe"
+
+          & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "fresh install exit code"
+          Check (Running) "service running"
+          Check (Listening) "agent listens on 47800"
+          & $agent status; Check ($LASTEXITCODE -eq 0) "agent answers the admin pipe"
+          $rule = Get-NetFirewallRule -DisplayName "Nexus PC Agent"
+          Check ($rule.Profile -eq 'Private') "firewall rule is Private only"
+          Check ((Get-CimInstance Win32_Service -Filter "Name='NexusPCAgent'").StartMode -eq 'Auto') "service starts automatically"
+          Check (Test-Path "$env:ProgramFiles\NexusPC\Tray\Nexus.Tray.exe") "tray installed"
+
+          & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "upgrade over itself"
+          Check (Running) "service running after upgrade"
+          Check (@(Get-NetFirewallRule -DisplayName "Nexus PC Agent").Count -eq 1) "still exactly one firewall rule"
+          Check (Test-Path "$env:ProgramData\NexusPC") "data kept"
+
+          & .\out\NexusPC-Setup.exe --uninstall --quiet; Check ($LASTEXITCODE -eq 0) "uninstall exit code"
+          Check (-not (Get-Service NexusPCAgent -ErrorAction SilentlyContinue)) "service removed"
+          Check (-not (Test-Path "$env:ProgramFiles\NexusPC")) "program files removed"
+          Check (-not (Get-NetFirewallRule -DisplayName "Nexus PC Agent" -ErrorAction SilentlyContinue)) "firewall rule removed"
+          Check (Test-Path "$env:ProgramData\NexusPC") "data kept after uninstall"
+
+          & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "reinstall"
+          & .\out\NexusPC-Setup.exe --purge --quiet; Check ($LASTEXITCODE -eq 0) "purge exit code"
+          Check (-not (Test-Path "$env:ProgramData\NexusPC")) "data removed by purge"
+          Check (-not (Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -like 'CN=Nexus PC Agent *')) "certificate removed by purge"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NexusPC-Setup
+          path: out/NexusPC-Setup.exe
+          if-no-files-found: error

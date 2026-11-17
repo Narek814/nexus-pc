@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    NexusPC-Setup.exe: installs or updates the agent service and the tray, or removes them.
+    No installer framework: plain .NET plus Windows' own sc.exe / netsh / PowerShell (absolute System32 paths).
+    The Agent and Tray builds are embedded as payload.zip by CI (.github/workflows/ci.yml, job "installer").
+    Targets plain net10.0 so its planning logic is tested on Linux too; Windows-only parts are guarded.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Nexus.Setup</RootNamespace>
+    <AssemblyName>NexusPC-Setup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('payload.zip')">
+    <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nexus.Tests" />
+  </ItemGroup>
+</Project>

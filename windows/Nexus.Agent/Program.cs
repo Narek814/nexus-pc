@@ -17,7 +17,7 @@ internal static class Program
           Nexus.Agent devices revoke <id>   remove a device; its connections lose access at once
           Nexus.Agent devices permissions <id> <p1,p2,...>
                                             set permissions: power, apps, monitoring, input, screen,
-                                            files, clipboard, rgb, automation, ai
+                                            files, clipboard, rgb, automation, ai (or "none")
           Nexus.Agent status                show agent status
 
         Admin commands talk to the running agent and need an elevated (Administrator) prompt.
@@ -52,7 +52,7 @@ internal static class Program
                     {
                         ["op"] = "devices.permissions",
                         ["deviceId"] = args[2],
-                        ["permissions"] = new JsonArray([.. args[3].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => (JsonNode)p)]),
+                        ["permissions"] = args[3] == "none" ? new JsonArray() : new JsonArray([.. args[3].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => (JsonNode)p)]),
                     }).ConfigureAwait(false),
                 "status" => await PrintAsync(new JsonObject { ["op"] = "status" }).ConfigureAwait(false),
                 _ => PrintUsage(),

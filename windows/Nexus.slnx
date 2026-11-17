@@ -7,5 +7,6 @@
   <Project Path="Nexus.RGB/Nexus.RGB.csproj" />
   <Project Path="Nexus.Tests/Nexus.Tests.csproj" />
   <Project Path="Nexus.Tray/Nexus.Tray.csproj" />
+  <Project Path="Nexus.Setup/Nexus.Setup.csproj" />
   <Project Path="Nexus.Windows/Nexus.Windows.csproj" />
 </Solution>

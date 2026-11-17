@@ -67,6 +67,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
         menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
+        menu.Items.Add("Устройства и разрешения…", null, (_, _) => Show(() => new DevicesForm(_agent, agentPath)));
         var stopInput = new ToolStripMenuItem("Запретить управление мышью и клавиатурой с телефона");
         stopInput.Click += (_, _) =>
         {
