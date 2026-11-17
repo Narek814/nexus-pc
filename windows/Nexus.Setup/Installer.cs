@@ -58,6 +58,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         {
             StopTray();
             StopService();
+            StopLeftoverAgents();
         });
 
         Step("Копирую файлы в " + Root, () =>
@@ -137,6 +138,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             StopTray();
             StopService();
         });
+        Step("Закрываю оставшиеся процессы агента", StopLeftoverAgents);
         Step("Удаляю службу", () => RunQuiet(SetupPlan.ScDelete(_system32)));
         Step("Удаляю правило брандмауэра", () => RunQuiet(SetupPlan.FirewallDelete(_system32)));
         Step("Отключаю автозапуск", () =>
@@ -221,6 +223,37 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
     }
 
+    /// <summary>
+    /// Nexus.Agent.exe processes still running from the install folder after the service stopped: an admin
+    /// console ("Nexus.Agent.exe pair"/"status") or a service process that has not exited yet. They keep the
+    /// DLLs locked, so files cannot be replaced (found on the owner's PC).
+    /// </summary>
+    private void StopLeftoverAgents()
+    {
+        var folder = Path.Combine(Root, "Agent") + Path.DirectorySeparatorChar;
+        foreach (var process in Process.GetProcessesByName("Nexus.Agent"))
+        {
+            using (process)
+            {
+                try
+                {
+                    var path = process.MainModule?.FileName;
+                    if (path is null || !path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue; // a development build elsewhere: not ours to stop
+                    }
+                    log.WriteLine($"Stopping leftover Nexus.Agent.exe pid {process.Id}");
+                    process.Kill();
+                    process.WaitForExit(15_000);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // already exited
+                }
+            }
+        }
+    }
+
     private void StopService()
     {
         var query = RunQuiet(SetupPlan.ScQuery(_system32));
@@ -280,9 +313,13 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
                 action();
                 return;
             }
-            catch (Exception ex) when (attempt < 10 && ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (attempt < 20 && ex is IOException or UnauthorizedAccessException)
             {
                 Thread.Sleep(1000); // a file still held by a process that is exiting
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new IOException(ex.Message + " Файл занят другой программой. Закройте окна PowerShell, где запущен Nexus.Agent.exe, и запустите установщик ещё раз.", ex);
             }
         }
     }

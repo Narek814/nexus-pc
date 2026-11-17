@@ -93,7 +93,11 @@ jobs:
           Check ((Get-CimInstance Win32_Service -Filter "Name='NexusPCAgent'").StartMode -eq 'Auto') "service starts automatically"
           Check (Test-Path "$env:ProgramFiles\NexusPC\Tray\Nexus.Tray.exe") "tray installed"
 
-          & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "upgrade over itself"
+          # Found on the owner's PC: an admin console still running Nexus.Agent.exe keeps the DLLs locked.
+          $leftover = Start-Process -FilePath $agent -ArgumentList pair -PassThru -WindowStyle Hidden
+          Start-Sleep 3
+          Check (-not $leftover.HasExited) "leftover 'Nexus.Agent.exe pair' is running before the upgrade"
+          & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "upgrade over itself while a leftover agent process runs"
           Check (Running) "service running after upgrade"
           Check (@(Get-NetFirewallRule -DisplayName "Nexus PC Agent").Count -eq 1) "still exactly one firewall rule"
           Check (Test-Path "$env:ProgramData\NexusPC") "data kept"
