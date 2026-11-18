@@ -14,6 +14,10 @@ internal sealed partial class WindowsDesktop : IDesktop
 
     public DesktopResult Launch(AppEntry app)
     {
+        if (app.Kind == AppLaunchKind.PackagedApp && !PackagedAppIds.IsValid(app.Target))
+        {
+            return new DesktopResult(false, $"{app.DisplayName}: invalid Store app id.");
+        }
         var start = app.Kind switch
         {
             // Packaged (Store) apps start through the shell by AppUserModelID.

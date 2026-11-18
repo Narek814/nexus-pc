@@ -27,8 +27,8 @@ internal sealed class AppsForm : Form
         _store = store;
         Text = "Nexus PC — приложения и профили";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(760, 480);
-        MinimumSize = new Size(700, 420);
+        ClientSize = new Size(900, 480);
+        MinimumSize = new Size(880, 420);
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         Theme.StyleTabs(tabs);
@@ -57,9 +57,11 @@ internal sealed class AppsForm : Form
             Dock = DockStyle.Top, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(4),
         };
         var fromStart = new Button { Text = "Из меню «Пуск»…", Width = 170, Height = 34 };
+        var fromStore = new Button { Text = "Приложения Store…", Width = 180, Height = 34 };
         var fromExe = new Button { Text = "Выбрать .exe…", Width = 150, Height = 34 };
         var remove = new Button { Text = "Удалить", Width = 110, Height = 34 };
         fromStart.Click += (_, _) => AddFromStartMenu();
+        fromStore.Click += (_, _) => AddPackagedApp();
         fromExe.Click += (_, _) => AddExecutable();
         remove.Click += (_, _) =>
         {
@@ -69,7 +71,7 @@ internal sealed class AppsForm : Form
             }
         };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(4) };
-        buttons.Controls.AddRange([fromStart, fromExe, remove, _allowClose]);
+        buttons.Controls.AddRange([fromStart, fromStore, fromExe, remove, _allowClose]);
         page.Controls.Add(_apps);
         page.Controls.Add(note);
         page.Controls.Add(buttons);
@@ -213,13 +215,39 @@ internal sealed class AppsForm : Form
 
     private void AddFromStartMenu()
     {
-        using var picker = new StartMenuPicker();
+        using var picker = new StartMenuPicker("Меню «Пуск»", ShellLinks.StartMenu());
         if (picker.ShowDialog(this) != DialogResult.OK || picker.Selected is not { } item)
         {
             return;
         }
         var processPath = ShellLinks.ResolveExecutable(item.Path);
         Add(item.Name, AppLaunchKind.Shortcut, item.Path, processPath);
+    }
+
+    private void AddPackagedApp()
+    {
+        IReadOnlyList<ShellLinks.StartMenuItem> apps;
+        Cursor = Cursors.WaitCursor;
+        try
+        {
+            apps = ShellLinks.PackagedApps();
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+        }
+        if (apps.Count == 0)
+        {
+            MessageBox.Show(this, "Не удалось найти приложения Microsoft Store на этом ПК.", "Nexus PC", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        using var picker = new StartMenuPicker("Приложения Microsoft Store", apps);
+        if (picker.ShowDialog(this) != DialogResult.OK || picker.Selected is not { } item)
+        {
+            return;
+        }
+        // Started by AppUserModelID through the shell; no .exe is known, so closing from the phone is not offered.
+        Add(item.Name, AppLaunchKind.PackagedApp, item.Path, processPath: null);
     }
 
     private void AddExecutable()
@@ -256,16 +284,17 @@ internal sealed class AppsForm : Form
     }
 }
 
-/// <summary>Searchable list of Start menu shortcuts.</summary>
+/// <summary>Searchable list of Start menu shortcuts or Store apps.</summary>
 internal sealed class StartMenuPicker : Form
 {
-    private readonly IReadOnlyList<ShellLinks.StartMenuItem> _all = ShellLinks.StartMenu();
+    private readonly IReadOnlyList<ShellLinks.StartMenuItem> _all;
     private readonly TextBox _search = new() { Dock = DockStyle.Top, PlaceholderText = "Поиск…" };
     private readonly ListBox _list = new() { Dock = DockStyle.Fill, IntegralHeight = false };
 
-    public StartMenuPicker()
+    public StartMenuPicker(string title, IReadOnlyList<ShellLinks.StartMenuItem> items)
     {
-        Text = "Меню «Пуск»";
+        _all = items;
+        Text = title;
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(420, 520);
         var ok = new Button { Text = "Добавить", Dock = DockStyle.Bottom, Height = 38, DialogResult = DialogResult.OK };

@@ -268,6 +268,30 @@ public sealed class UserAppStoreTests : IDisposable
         Assert.Equal(["steam", "telegram"], reloaded.FindProfile("gaming")!.AppIds);
     }
 
+    [Theory]
+    [InlineData("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", true)]
+    [InlineData("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", true)]
+    [InlineData("5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App", true)]
+    [InlineData("Microsoft.WindowsCalculator_8wekyb3d8bbwe", false)]          // no app id
+    [InlineData("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App\n", false)]   // trailing newline
+    [InlineData("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App x", false)]   // extra argument
+    [InlineData("..\\..\\cmd_8wekyb3d8bbwe!App", false)]
+    [InlineData("a_SHORT!App", false)]
+    [InlineData("C:\\Windows\\notepad.exe", false)]
+    [InlineData("", false)]
+    public void Store_app_ids_have_a_strict_shape(string aumid, bool valid) =>
+        Assert.Equal(valid, PackagedAppIds.IsValid(aumid));
+
+    [Fact]
+    public void Store_app_with_invalid_id_is_rejected()
+    {
+        var store = new UserAppStore(_dir);
+        Assert.Throws<ArgumentException>(() => store.AddApp("Calc", AppLaunchKind.PackagedApp, "calc.exe /c evil", false, null));
+        var calc = store.AddApp("Calculator", AppLaunchKind.PackagedApp, "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", false, null);
+        Assert.Equal(AppLaunchKind.PackagedApp, new UserAppStore(_dir).FindApp(calc.Id)!.Kind);
+        Assert.Single(store.Apps);
+    }
+
     [Fact]
     public void Profile_with_unknown_apps_is_rejected_and_not_saved()
     {

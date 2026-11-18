@@ -95,6 +95,10 @@ public sealed class UserAppStore
         {
             throw new ArgumentException("App name must be 1..64 visible characters.", nameof(displayName));
         }
+        if (kind == AppLaunchKind.PackagedApp && !PackagedAppIds.IsValid(target))
+        {
+            throw new ArgumentException("Not a valid Store app id (PackageFamilyName!AppId).", nameof(target));
+        }
         lock (_lock)
         {
             if (_apps.All.Count >= 128)

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Nexus.Core.Protocol;
 
 namespace Nexus.Core.Apps;
@@ -18,6 +19,23 @@ public enum AppLaunchKind
 /// </summary>
 /// <param name="ProcessPath">Executable used to find the running app when closing it (null: closing unsupported).</param>
 public sealed record AppEntry(string Id, string DisplayName, AppLaunchKind Kind, string Target, bool CloseAllowed, string? ProcessPath = null);
+
+/// <summary>
+/// AppUserModelID of a packaged (Store/MSIX) app: <c>PackageFamilyName!AppId</c>, e.g.
+/// <c>Microsoft.WindowsCalculator_8wekyb3d8bbwe!App</c>. It is passed to explorer.exe, so only this
+/// exact shape is accepted: no spaces, quotes, slashes or other shell syntax.
+/// </summary>
+public static partial class PackagedAppIds
+{
+    public const int MaxLength = 200;
+
+    public static bool IsValid(string? aumid) =>
+        aumid is { Length: > 0 and <= MaxLength } && Pattern().IsMatch(aumid);
+
+    // Package name (letters, digits, '.', '-'), '_', 13-character publisher id, '!', application id.
+    [GeneratedRegex(@"^[A-Za-z0-9.\-]{1,64}_[a-z0-9]{13}![A-Za-z][A-Za-z0-9._\-]{0,63}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex Pattern();
+}
 
 public sealed record ProfileDefinition(string Id, string Name, IReadOnlyList<string> AppIds);
 

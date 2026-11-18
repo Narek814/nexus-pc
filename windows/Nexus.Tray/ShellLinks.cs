@@ -37,6 +37,69 @@ internal static class ShellLinks
         return [.. items.Values.OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase)];
     }
 
+    /// <summary>
+    /// Packaged (Store/MSIX) apps from the shell's "All apps" folder (shell:AppsFolder): name and
+    /// AppUserModelID. Uses the Shell.Application automation object, so call it on an STA (UI) thread.
+    /// </summary>
+    public static IReadOnlyList<StartMenuItem> PackagedApps()
+    {
+        var items = new Dictionary<string, StartMenuItem>(StringComparer.OrdinalIgnoreCase);
+        object? shell = null, folder = null, folderItems = null;
+        try
+        {
+            var type = Type.GetTypeFromProgID("Shell.Application");
+            if (type is null)
+            {
+                return [];
+            }
+            shell = Activator.CreateInstance(type);
+            folder = shell is null ? null : Call(shell, "NameSpace", "shell:AppsFolder");
+            folderItems = folder is null ? null : Call(folder, "Items");
+            var count = folderItems is null ? 0 : Convert.ToInt32(Get(folderItems, "Count"), System.Globalization.CultureInfo.InvariantCulture);
+            for (var i = 0; i < count; i++)
+            {
+                var item = Call(folderItems!, "Item", i);
+                if (item is null)
+                {
+                    continue;
+                }
+                try
+                {
+                    if (Get(item, "Name") is string name && Get(item, "Path") is string aumid
+                        && !string.IsNullOrWhiteSpace(name) && Nexus.Core.Apps.PackagedAppIds.IsValid(aumid))
+                    {
+                        items.TryAdd(aumid, new StartMenuItem(name.Trim(), aumid));
+                    }
+                }
+                finally
+                {
+                    Marshal.FinalReleaseComObject(item);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is COMException or System.Reflection.TargetInvocationException or InvalidCastException or MissingMethodException)
+        {
+            // Listing failed: show what was found so far.
+        }
+        finally
+        {
+            foreach (var com in new[] { folderItems, folder, shell })
+            {
+                if (com is not null && Marshal.IsComObject(com))
+                {
+                    Marshal.FinalReleaseComObject(com);
+                }
+            }
+        }
+        return [.. items.Values.OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase)];
+    }
+
+    private static object? Call(object target, string method, params object[] args) =>
+        target.GetType().InvokeMember(method, System.Reflection.BindingFlags.InvokeMethod, null, target, args, System.Globalization.CultureInfo.InvariantCulture);
+
+    private static object? Get(object target, string property) =>
+        target.GetType().InvokeMember(property, System.Reflection.BindingFlags.GetProperty, null, target, null, System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>The .exe a .lnk points to, or null (for .url files, or links to non-executables).</summary>
     public static string? ResolveExecutable(string shortcutPath)
     {
