@@ -268,11 +268,21 @@ def bash_targets(command: str, cwd: str) -> list[str]:
             targets.append(resolve(args[-1]))
         elif cmd in {"sed", "perl"} and any(re.match(r"^-[a-zA-Z]*i", a) for a in seg[1:]):
             targets.extend(resolve(a) for a in args if os.path.exists(resolve(a)))
-        elif cmd in {"unzip", "tar"}:
-            if "-d" in seg:
-                targets.append(resolve(seg[seg.index("-d") + 1]) if seg.index("-d") + 1 < len(seg) else here)
-            elif cmd == "unzip" or any("x" in a for a in seg[1:2]):
-                targets.append(os.path.join(here, "_extract_"))
+        elif cmd == "unzip":
+            # unzip -d DIR extracts into DIR, otherwise into the current directory.
+            d = seg.index("-d") + 1 if "-d" in seg else 0
+            targets.append(resolve(seg[d]) if 0 < d < len(seg) else os.path.join(here, "_extract_"))
+        elif cmd == "tar":
+            mode = next((a for a in seg[1:] if not a.startswith("--")), "")
+            if "x" in mode.lstrip("-"):
+                # tar -x writes into -C DIR / --directory=DIR, otherwise into the current directory.
+                dest = here
+                for k, a in enumerate(seg):
+                    if a == "-C" and k + 1 < len(seg):
+                        dest = resolve(seg[k + 1])
+                    elif a.startswith("--directory="):
+                        dest = resolve(a.split("=", 1)[1])
+                targets.append(os.path.join(dest, "_extract_"))
 
     while i < len(toks):
         t = toks[i]

@@ -22,7 +22,7 @@ color: cyan
 | `Nexus.Tray` | WinExe | окна WinForms, `Theme.cs`, `WindowsDesktop`, `ScreenVideo` |
 | `Nexus.Setup` | single-file exe | `Installer.cs`, `SetupPlan.cs`; `payload.zip` собирает CI |
 | `Nexus.Windows`, `Nexus.Monitoring`, `Nexus.RGB` | библиотеки | питание и сеансы, Media Foundation H.264, датчики (NVML, LibreHardwareMonitor + PawnIO), OpenRGB SDK |
-| `Nexus.Tests` | xUnit | около 475 тестов, контракт по `shared/protocol/fixtures` |
+| `Nexus.Tests` | xUnit | 478 тестов, контракт по `shared/protocol/fixtures` |
 
 ## Правила
 - **D1:** служба не запускает GUI; всё, что касается рабочего стола, делает Tray через `NexusPC.Session`.
@@ -51,7 +51,7 @@ color: cyan
 - Без новых NuGet-пакетов без одобрения (D10). Каждый пакет — запись в разделе 9 `ARCHITECTURE.md`.
 
 ## Проверки
-- `dotnet test windows/Nexus.slnx -c Release`. .NET 10 SDK ставится скриптом настройки облачной среды. Если `command -v dotnet` пуст, поставь его вне репозитория (`.claude/AGENT_RULES.md`, раздел 4); если не вышло, напиши «не запускалось» и не утверждай, что тесты прошли. Известный нестабильный тест `OpenRgbHostTests.Pausing_needs_the_bundled_copy` — гонка, см. `qa-engineer.md`.
+- `dotnet test windows/Nexus.slnx -c Release`. .NET 10 SDK ставится скриптом настройки облачной среды. Если `command -v dotnet` пуст, поставь его вне репозитория (`.claude/AGENT_RULES.md`, раздел 4); если не вышло, напиши «не запускалось» и не утверждай, что тесты прошли. Учти: в .NET 10 `BackgroundService` выполняет весь `ExecuteAsync` в фоне, поэтому состояние, которое должно быть известно сразу после старта, вычисляй при создании объекта (так исправлена гонка в `OpenRgbHost`).
 - Windows-специфичные тесты и сценарий установщика выполняются только в CI `windows-latest`. Укажи это в отчёте.
 - Каждое изменение поведения покрывай тестом в `Nexus.Tests`. Существующие тесты не удаляй и не ослабляй.
 

@@ -73,6 +73,15 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(self.bash(a, "rm -rf windows/Nexus.Tests/bin"), "allow", a)
             self.assertEqual(self.bash(a, "python3 - <<'EOF'\nimport json\nprint(1 > 0)\nEOF"), "allow", a)
 
+    def test_archives_extract_only_where_allowed(self):
+        a = "qa-engineer"
+        self.assertEqual(self.bash(a, "git archive HEAD | tar -x -C /tmp/qa-head"), "allow")
+        self.assertEqual(self.bash(a, "tar -xf x.tar --directory=/tmp/qa-head"), "allow")
+        self.assertEqual(self.bash(a, "tar -xf x.tar"), "deny")
+        self.assertEqual(self.bash(a, "unzip -q x.zip -d /tmp/qa-zip"), "allow")
+        self.assertEqual(self.bash(a, "unzip x.zip"), "deny")
+        self.assertEqual(self.bash(a, "tar -tf x.tar"), "allow")
+
     def test_writers_stay_in_their_zone(self):
         self.assertEqual(self.write("ios-developer", "ios/NexusPC/A.swift"), "allow")
         run(self.root, "Edit", {}, agent="ios-developer", release=True)
