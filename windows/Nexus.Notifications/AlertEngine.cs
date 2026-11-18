@@ -48,6 +48,11 @@ public sealed class AlertEngine
                     v => new AlertEvent($"gpu.temperature:{gpu.Name}", $"{pcName}: видеокарта горячая", $"{gpu.Name}: {v:0}°C (порог {settings.GpuTemperatureC}°C).", AlertSeverity.Warning));
             }
         }
+        if (settings.CpuTemperatureEnabled)
+        {
+            Check("cpu.temperature", snapshot.Cpu.Temperature, settings.CpuTemperatureC, GpuHold, now, settings, events,
+                v => new AlertEvent("cpu.temperature", $"{pcName}: процессор горячий", $"{v:0}°C (порог {settings.CpuTemperatureC}°C).", AlertSeverity.Warning));
+        }
         if (settings.CpuUsageEnabled)
         {
             Check("cpu.usage", snapshot.Cpu.Usage, settings.CpuUsagePercent, UsageHold, now, settings, events,

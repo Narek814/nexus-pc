@@ -93,7 +93,7 @@ internal sealed partial class AutomationService : BackgroundService
         {
             _lastEvaluated = s.Timestamp;
             var gpu = s.Gpus.Select(g => g.Temperature).Where(t => t is not null).Max();
-            readings = new AutomationReadings(gpu, s.Cpu.Usage, s.Memory.Usage);
+            readings = new AutomationReadings(gpu, s.Cpu.Usage, s.Memory.Usage, s.Cpu.Temperature);
         }
         foreach (var rule in _engine.Due(Rules, _services.Time.GetUtcNow(), readings))
         {

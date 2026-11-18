@@ -8,6 +8,9 @@ public sealed record AlertSettings
 {
     public bool GpuTemperatureEnabled { get; init; } = true;
     public int GpuTemperatureC { get; init; } = 85;
+    /// <summary>Needs the CPU sensor (LibreHardwareMonitor + PawnIO); without it nothing fires.</summary>
+    public bool CpuTemperatureEnabled { get; init; } = true;
+    public int CpuTemperatureC { get; init; } = 90;
     public bool CpuUsageEnabled { get; init; } = true;
     public int CpuUsagePercent { get; init; } = 95;
     public bool MemoryUsageEnabled { get; init; } = true;
@@ -35,6 +38,7 @@ public sealed record AlertSettings
     {
         static bool In(int v, (int Min, int Max) r) => v >= r.Min && v <= r.Max;
         if (!In(GpuTemperatureC, GpuTemperatureRange)) return $"GPU temperature threshold must be {GpuTemperatureRange.Min}..{GpuTemperatureRange.Max} °C.";
+        if (!In(CpuTemperatureC, GpuTemperatureRange)) return $"CPU temperature threshold must be {GpuTemperatureRange.Min}..{GpuTemperatureRange.Max} °C.";
         if (!In(CpuUsagePercent, PercentRange) || !In(MemoryUsagePercent, PercentRange)) return $"Usage thresholds must be {PercentRange.Min}..{PercentRange.Max} %.";
         if (!In(DiskFreePercent, DiskFreeRange)) return $"Disk free threshold must be {DiskFreeRange.Min}..{DiskFreeRange.Max} %.";
         if (!In(CooldownMinutes, CooldownRange)) return $"Cooldown must be {CooldownRange.Min}..{CooldownRange.Max} minutes.";

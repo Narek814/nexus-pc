@@ -46,6 +46,7 @@ struct AutomationsView: View {
                     Divider()
                     Button("Шаблон «Ночь»") { editing = AutomationDraft.night() }
                     Button("Шаблон «Перегрев видеокарты»") { editing = AutomationDraft.hotGpu() }
+                    Button("Шаблон «Перегрев процессора»") { editing = AutomationDraft.hotCpu() }
                     Button("Шаблон «При входе в Windows»") { editing = AutomationDraft.signIn(controller) }
                 } label: {
                     Image(systemName: "plus")
@@ -224,10 +225,11 @@ struct AutomationEditor: View {
             case .metric:
                 Picker("Датчик", selection: $draft.metric) {
                     Text("Температура видеокарты").tag("gpuTemperature")
+                    Text("Температура процессора").tag("cpuTemperature")
                     Text("Загрузка процессора").tag("cpuUsage")
                     Text("Занятая память").tag("memoryUsage")
                 }
-                Stepper("Выше \(draft.above)\(draft.metric == "gpuTemperature" ? " °C" : " %")", value: $draft.above, in: 1...120)
+                Stepper("Выше \(draft.above)\(draft.metric.hasSuffix("Temperature") ? " °C" : " %")", value: $draft.above, in: 1...120)
                 Stepper("Дольше \(draft.forSeconds) с", value: $draft.forSeconds, in: 0...3600, step: 10)
             case .pcStarted:
                 Text("Через 15 секунд после запуска службы Nexus PC (до входа в Windows программы не запускаются — для них выберите «Вход в Windows»).")
@@ -521,8 +523,8 @@ struct AutomationDraft: Identifiable {
             let dayText = days.count == 7 ? "каждый день" : days.sorted().map { Self.dayNames[$0 - 1] }.joined(separator: ", ")
             text = "В \(Self.format(time)), \(dayText)"
         case .metric:
-            let names = ["gpuTemperature": "Видеокарта", "cpuUsage": "Процессор", "memoryUsage": "Память"]
-            text = "\(names[metric] ?? metric) выше \(above)\(metric == "gpuTemperature" ? " °C" : " %")" + (forSeconds > 0 ? " дольше \(forSeconds) с" : "")
+            let names = ["gpuTemperature": "Видеокарта", "cpuTemperature": "Процессор", "cpuUsage": "Загрузка процессора", "memoryUsage": "Память"]
+            text = "\(names[metric] ?? metric) выше \(above)\(metric.hasSuffix("Temperature") ? " °C" : " %")" + (forSeconds > 0 ? " дольше \(forSeconds) с" : "")
         case .pcStarted:
             text = "Когда ПК включился"
         case .userSignedIn:
@@ -562,6 +564,20 @@ struct AutomationDraft: Identifiable {
         draft.trigger = .metric
         var notify = Action(kind: .notify)
         notify.message = "Видеокарта горячая — проверьте охлаждение"
+        var red = Action(kind: .rgb)
+        red.color = .red
+        draft.actions = [notify, red]
+        return draft
+    }
+
+    static func hotCpu() -> AutomationDraft {
+        var draft = AutomationDraft(name: "Перегрев процессора")
+        draft.trigger = .metric
+        draft.metric = "cpuTemperature"
+        draft.above = 90
+        draft.forSeconds = 60
+        var notify = Action(kind: .notify)
+        notify.message = "Процессор горячий — проверьте охлаждение"
         var red = Action(kind: .rgb)
         red.color = .red
         draft.actions = [notify, red]

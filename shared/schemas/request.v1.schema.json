@@ -796,12 +796,18 @@
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
-      "description": "Any subset. Ranges are checked by the agent (gpuTemperatureC 50..110, *Percent 50..100, diskFreePercent 1..50, cooldownMinutes 5..1440).",
+      "description": "Any subset. Ranges are checked by the agent (gpuTemperatureC and cpuTemperatureC 50..110, *Percent 50..100, diskFreePercent 1..50, cooldownMinutes 5..1440).",
       "properties": {
         "gpuTemperatureEnabled": {
           "type": "boolean"
         },
         "gpuTemperatureC": {
+          "type": "integer"
+        },
+        "cpuTemperatureEnabled": {
+          "type": "boolean"
+        },
+        "cpuTemperatureC": {
           "type": "integer"
         },
         "cpuUsageEnabled": {
@@ -1305,6 +1311,7 @@
                     "metric": {
                       "enum": [
                         "gpuTemperature",
+                        "cpuTemperature",
                         "cpuUsage",
                         "memoryUsage"
                       ]

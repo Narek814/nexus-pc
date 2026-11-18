@@ -81,6 +81,7 @@ struct AlertsView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
                 rule("Видеокарта горячее", isOn: $settings.gpuTemperatureEnabled, value: $settings.gpuTemperatureC, range: 50...110, unit: "°C", note: "дольше 30 с")
+                rule("Процессор горячее", isOn: $settings.cpuTemperatureEnabled, value: $settings.cpuTemperatureC, range: 50...110, unit: "°C", note: "дольше 30 с, нужен PawnIO")
                 rule("Процессор загружен больше", isOn: $settings.cpuUsageEnabled, value: $settings.cpuUsagePercent, range: 50...100, unit: "%", note: "дольше 5 мин")
                 rule("Память занята больше", isOn: $settings.memoryUsageEnabled, value: $settings.memoryUsagePercent, range: 50...100, unit: "%", note: "дольше 5 мин")
                 rule("На диске свободно меньше", isOn: $settings.diskFreeEnabled, value: $settings.diskFreePercent, range: 1...50, unit: "%", note: nil)
@@ -187,6 +188,8 @@ struct AlertsView: View {
 struct AlertSettingsModel: Equatable {
     var gpuTemperatureEnabled = true
     var gpuTemperatureC = 85
+    var cpuTemperatureEnabled = true
+    var cpuTemperatureC = 90
     var cpuUsageEnabled = true
     var cpuUsagePercent = 95
     var memoryUsageEnabled = true
@@ -201,6 +204,8 @@ struct AlertSettingsModel: Equatable {
     init(_ p: [String: Any]) {
         gpuTemperatureEnabled = p["gpuTemperatureEnabled"] as? Bool ?? true
         gpuTemperatureC = p["gpuTemperatureC"] as? Int ?? 85
+        cpuTemperatureEnabled = p["cpuTemperatureEnabled"] as? Bool ?? true
+        cpuTemperatureC = p["cpuTemperatureC"] as? Int ?? 90
         cpuUsageEnabled = p["cpuUsageEnabled"] as? Bool ?? true
         cpuUsagePercent = p["cpuUsagePercent"] as? Int ?? 95
         memoryUsageEnabled = p["memoryUsageEnabled"] as? Bool ?? true
@@ -214,6 +219,7 @@ struct AlertSettingsModel: Equatable {
     var payload: [String: Any] {
         [
             "gpuTemperatureEnabled": gpuTemperatureEnabled, "gpuTemperatureC": gpuTemperatureC,
+            "cpuTemperatureEnabled": cpuTemperatureEnabled, "cpuTemperatureC": cpuTemperatureC,
             "cpuUsageEnabled": cpuUsageEnabled, "cpuUsagePercent": cpuUsagePercent,
             "memoryUsageEnabled": memoryUsageEnabled, "memoryUsagePercent": memoryUsagePercent,
             "diskFreeEnabled": diskFreeEnabled, "diskFreePercent": diskFreePercent,

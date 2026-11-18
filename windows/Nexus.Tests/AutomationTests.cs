@@ -71,6 +71,17 @@ public sealed class AutomationEngineTests
     }
 
     [Fact]
+    public void Cpu_temperature_can_trigger_a_rule()
+    {
+        var engine = new AutomationEngine(Moscow);
+        var rule = Rule("""{"id":"cpu","name":"CPU","trigger":{"type":"metric","metric":"cpuTemperature","above":90,"forSeconds":60},"actions":[{"type":"notify","message":"hot"}]}""");
+        var t = Local(16, 12, 0);
+        Assert.Empty(engine.Due([rule], t, new AutomationReadings(40, 10, 10, CpuTemperature: 95)));
+        Assert.Single(engine.Due([rule], t.AddSeconds(60), new AutomationReadings(40, 10, 10, CpuTemperature: 95)));
+        Assert.Empty(new AutomationEngine(Moscow).Due([rule], t, new AutomationReadings(99, 10, 10, CpuTemperature: null)));
+    }
+
+    [Fact]
     public void Only_between_wraps_past_midnight()
     {
         var engine = new AutomationEngine(Moscow);

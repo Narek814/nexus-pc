@@ -43,6 +43,30 @@ public class AlertEngineTests
     }
 
     [Fact]
+    public void Cpu_temperature_alert_holds_30_seconds_and_stays_silent_without_a_sensor()
+    {
+        var time = new FixedTimeProvider(Shared.Now);
+        var engine = new AlertEngine(time);
+        var settings = new AlertSettings { CpuTemperatureC = 90 };
+        MetricsSnapshot Cpu(double? temperature) => new() { Timestamp = time.Now, Cpu = new CpuMetrics { Temperature = temperature } };
+        var events = new List<AlertEvent>();
+        foreach (var (seconds, temp) in new (int, double?)[] { (0, 95), (20, 96), (25, null), (29, 99), (40, 95), (60, 95), (75, 97) })
+        {
+            time.Now = Shared.Now.AddSeconds(seconds);
+            events.AddRange(engine.Evaluate(Cpu(temp), settings, "PC"));
+        }
+        // A missing reading (25 s) neither fires nor resets, like every alert: 0 → 40 s is the 30 s hold.
+        var alert = Assert.Single(events);
+        Assert.Equal("cpu.temperature", alert.Key);
+        Assert.Contains("95°C", alert.Message, StringComparison.Ordinal);
+        Assert.Contains("процессор горячий", alert.Title, StringComparison.Ordinal);
+
+        var quiet = new AlertEngine(time);
+        Assert.Empty(quiet.Evaluate(Cpu(null), settings, "PC")); // no PawnIO: nothing, ever
+        Assert.Empty(new AlertEngine(time).Evaluate(Cpu(120), settings with { CpuTemperatureEnabled = false }, "PC"));
+    }
+
+    [Fact]
     public void Re_arms_only_after_a_clear_drop_and_respects_the_cooldown()
     {
         var time = new FixedTimeProvider(Shared.Now);

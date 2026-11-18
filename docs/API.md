@@ -79,7 +79,7 @@
 | `pc.status` | monitoring | read | `{}` → `{ pcId, pcName, os, uptimeSeconds, agentVersion, userSession }` |
 | `metrics.snapshot` | monitoring | read | `{}` → снимок, см. «Мониторинг» |
 | `alerts.get` | monitoring | read | `{}` → пороги, `ntfy { enabled, server, topic }`, `recent` |
-| `alerts.set` | monitoring | normal | любые из: `gpuTemperatureEnabled`, `gpuTemperatureC` (50–110), `cpuUsageEnabled`, `cpuUsagePercent` (50–100), `memoryUsageEnabled`, `memoryUsagePercent` (50–100), `diskFreeEnabled`, `diskFreePercent` (1–50), `powerEventsEnabled`, `cooldownMinutes` (5–1440), `ntfyEnabled`, `ntfyServer` (https), `regenerateTopic` |
+| `alerts.set` | monitoring | normal | любые из: `gpuTemperatureEnabled`, `gpuTemperatureC` (50–110), `cpuTemperatureEnabled`, `cpuTemperatureC` (50–110), `cpuUsageEnabled`, `cpuUsagePercent` (50–100), `memoryUsageEnabled`, `memoryUsagePercent` (50–100), `diskFreeEnabled`, `diskFreePercent` (1–50), `powerEventsEnabled`, `cooldownMinutes` (5–1440), `ntfyEnabled`, `ntfyServer` (https), `regenerateTopic` |
 | `alerts.test` | monitoring | normal | `{}` → `{ delivered, ntfyEnabled }` |
 | `metrics.history` | monitoring | read | `{ range: "10m" \| "1h" \| "24h" }` |
 | `power.shutdown` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
@@ -205,7 +205,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 ## Предупреждения и уведомления (P4b)
 
-Правила (на ПК, `Nexus.Notifications.AlertEngine`): видеокарта ≥ порога **30 с**; CPU и память ≥ порога **5 мин**; свободное место на диске < порога — сразу. Повторно то же предупреждение — только после явного спада (на 5 единиц ниже порога) **и** не раньше, чем через `cooldownMinutes`. Недоступные значения ничего не включают и не сбрасывают.
+Правила (на ПК, `Nexus.Notifications.AlertEngine`): видеокарта и процессор ≥ порога температуры **30 с** (процессор — только с датчиком, т.е. с драйвером PawnIO); CPU и память ≥ порога **5 мин**; свободное место на диске < порога — сразу. Повторно то же предупреждение — только после явного спада (на 5 единиц ниже порога) **и** не раньше, чем через `cooldownMinutes`. Недоступные значения ничего не включают и не сбрасывают.
 
 События питания: «ПК включился» (старт службы), «ПК выключается» (остановка службы, лучшая попытка), «ПК был выключен неожиданно» — если при старте остался файл-метка прошлого запуска (обновляется раз в минуту, удаляется при чистой остановке).
 
@@ -255,7 +255,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 **Когда (`trigger`)**
 - `{ type: "time", time: "HH:mm", days?: [1..7] }` — по времени ПК (1 = понедельник); срабатывает один раз в день в течение 2 минут после указанного времени. Если ПК в это время спал или был выключен, правило пропускается (не догоняет).
-- `{ type: "metric", metric: "gpuTemperature" | "cpuUsage" | "memoryUsage", above, forSeconds? }` — значение держится на уровне `above` или выше `forSeconds` секунд; повторно — только после снижения на 5 единиц. Недоступный датчик ничего не запускает.
+- `{ type: "metric", metric: "gpuTemperature" | "cpuTemperature" | "cpuUsage" | "memoryUsage", above, forSeconds? }` — значение держится на уровне `above` или выше `forSeconds` секунд; повторно — только после снижения на 5 единиц. Недоступный датчик ничего не запускает.
 - `{ type: "pcStarted" }` — через 15 с после запуска службы (до входа в Windows программы и профили не запускаются).
 - `{ type: "userSignedIn" }` — когда подключается Nexus.Tray (вход в Windows), не чаще раза в 10 минут.
 

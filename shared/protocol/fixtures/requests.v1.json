@@ -3851,6 +3851,78 @@
         "error": "command.invalidPayload"
       },
       "schemaValid": false
+    },
+    {
+      "name": "alerts.set cpu temperature",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000901",
+        "kind": "request",
+        "type": "alerts.set",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "cpuTemperatureEnabled": true,
+          "cpuTemperatureC": 88
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "automations.upsert hot cpu",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "monitoring",
+          "rgb",
+          "automation"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000902",
+        "kind": "request",
+        "type": "automations.upsert",
+        "ts": "2026-11-14T10:00:00Z",
+        "payload": {
+          "automation": {
+            "id": "cpu-hot",
+            "name": "Горячий процессор",
+            "trigger": {
+              "type": "metric",
+              "metric": "cpuTemperature",
+              "above": 90,
+              "forSeconds": 60
+            },
+            "actions": [
+              {
+                "type": "notify",
+                "message": "Процессор горячий"
+              },
+              {
+                "type": "rgb",
+                "color": "#FF0000",
+                "brightness": 100,
+                "effect": "static"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
     }
   ]
 }

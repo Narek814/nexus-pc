@@ -133,6 +133,8 @@ internal sealed partial class AlertService : BackgroundService
             {
                 GpuTemperatureEnabled = Flag("gpuTemperatureEnabled", s.GpuTemperatureEnabled),
                 GpuTemperatureC = Number("gpuTemperatureC", s.GpuTemperatureC),
+                CpuTemperatureEnabled = Flag("cpuTemperatureEnabled", s.CpuTemperatureEnabled),
+                CpuTemperatureC = Number("cpuTemperatureC", s.CpuTemperatureC),
                 CpuUsageEnabled = Flag("cpuUsageEnabled", s.CpuUsageEnabled),
                 CpuUsagePercent = Number("cpuUsagePercent", s.CpuUsagePercent),
                 MemoryUsageEnabled = Flag("memoryUsageEnabled", s.MemoryUsageEnabled),
@@ -165,6 +167,8 @@ internal sealed partial class AlertService : BackgroundService
         {
             ["gpuTemperatureEnabled"] = s.GpuTemperatureEnabled,
             ["gpuTemperatureC"] = s.GpuTemperatureC,
+            ["cpuTemperatureEnabled"] = s.CpuTemperatureEnabled,
+            ["cpuTemperatureC"] = s.CpuTemperatureC,
             ["cpuUsageEnabled"] = s.CpuUsageEnabled,
             ["cpuUsagePercent"] = s.CpuUsagePercent,
             ["memoryUsageEnabled"] = s.MemoryUsageEnabled,

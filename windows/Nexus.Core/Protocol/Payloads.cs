@@ -196,8 +196,8 @@ public static class PayloadParsers
             : PayloadResult.Invalid("'range' must be 10m, 1h or 24h.");
     }
 
-    private static readonly string[] AlertFlags = ["gpuTemperatureEnabled", "cpuUsageEnabled", "memoryUsageEnabled", "diskFreeEnabled", "powerEventsEnabled", "ntfyEnabled", "regenerateTopic"];
-    private static readonly string[] AlertNumbers = ["gpuTemperatureC", "cpuUsagePercent", "memoryUsagePercent", "diskFreePercent", "cooldownMinutes"];
+    private static readonly string[] AlertFlags = ["gpuTemperatureEnabled", "cpuTemperatureEnabled", "cpuUsageEnabled", "memoryUsageEnabled", "diskFreeEnabled", "powerEventsEnabled", "ntfyEnabled", "regenerateTopic"];
+    private static readonly string[] AlertNumbers = ["gpuTemperatureC", "cpuTemperatureC", "cpuUsagePercent", "memoryUsagePercent", "diskFreePercent", "cooldownMinutes"];
 
     public static PayloadResult AlertsSet(JsonElement payload)
     {

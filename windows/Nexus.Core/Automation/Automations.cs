@@ -50,7 +50,7 @@ public static class AutomationRules
     public const int MaxWaitSeconds = 4 * 3600;
     public const int Hysteresis = 5;
 
-    public static readonly IReadOnlyList<string> Metrics = ["gpuTemperature", "cpuUsage", "memoryUsage"];
+    public static readonly IReadOnlyList<string> Metrics = ["gpuTemperature", "cpuTemperature", "cpuUsage", "memoryUsage"];
 
     public static readonly IReadOnlyList<string> ActionKinds =
         ["profile", "app", "rgb", "rgbProfile", "lock", "sleep", "shutdown", "restart", "notify", "wait"];
@@ -381,11 +381,12 @@ public static class AutomationJson
 }
 
 /// <summary>Current readings a metric trigger can watch; null = sensor unavailable.</summary>
-public sealed record AutomationReadings(double? GpuTemperature, double? CpuUsage, double? MemoryUsage)
+public sealed record AutomationReadings(double? GpuTemperature, double? CpuUsage, double? MemoryUsage, double? CpuTemperature = null)
 {
     public double? Get(string metric) => metric switch
     {
         "gpuTemperature" => GpuTemperature,
+        "cpuTemperature" => CpuTemperature,
         "cpuUsage" => CpuUsage,
         "memoryUsage" => MemoryUsage,
         _ => null,
