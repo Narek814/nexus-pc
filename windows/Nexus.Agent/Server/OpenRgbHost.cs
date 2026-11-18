@@ -20,8 +20,17 @@ internal sealed partial class OpenRgbHost(string? executable, string configDirec
     private CancellationTokenSource? _run;
     private DateTimeOffset _pausedUntil;
 
+    // Decided when the host is created, not in ExecuteAsync: since .NET 10 all of ExecuteAsync runs in the
+    // background, so a caller right after start could otherwise see "starting" for a copy that is not there.
+    private readonly bool _installed = executable is not null && OperatingSystem.IsWindows() && File.Exists(executable);
+    private string? _state;
+
     /// <summary>notInstalled, starting, running, external (another OpenRGB server), paused, restarting.</summary>
-    public string State { get; private set; } = "starting";
+    public string State
+    {
+        get => _state ?? (_installed ? "starting" : "notInstalled");
+        private set => _state = value;
+    }
 
     public static string DefaultExecutable =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "OpenRGB", "OpenRGB.exe"));
@@ -55,10 +64,9 @@ internal sealed partial class OpenRgbHost(string? executable, string configDirec
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (executable is null || !OperatingSystem.IsWindows() || !File.Exists(executable))
+        if (!_installed || executable is null)
         {
-            State = "notInstalled";
-            return;
+            return; // State already reads notInstalled
         }
         Directory.CreateDirectory(configDirectory); // inherits the data folder's SYSTEM/Administrators-only access
         StopStale(executable);

@@ -429,6 +429,33 @@ public sealed class OpenRgbHostTests
         Assert.Equal("--gui", Nexus.Agent.Server.OpenRgbHost.GuiArguments("c", 6742)[0]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Missing_copy_is_known_before_the_host_starts(bool withPath)
+    {
+        string? executable = withPath ? Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "OpenRGB.exe") : null;
+        var host = new Nexus.Agent.Server.OpenRgbHost(executable, Path.GetTempPath(), 6742, Microsoft.Extensions.Logging.Abstractions.NullLogger<Nexus.Agent.Server.OpenRgbHost>.Instance);
+        Assert.Equal("notInstalled", host.State);
+    }
+
+    [Fact]
+    public void Present_copy_reads_starting_until_the_host_runs()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var exe = Path.Combine(dir, "OpenRGB.exe");
+            File.WriteAllBytes(exe, []);
+            var host = new Nexus.Agent.Server.OpenRgbHost(exe, dir, 6742, Microsoft.Extensions.Logging.Abstractions.NullLogger<Nexus.Agent.Server.OpenRgbHost>.Instance);
+            Assert.Equal(OperatingSystem.IsWindows() ? "starting" : "notInstalled", host.State);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Pausing_needs_the_bundled_copy()
     {
