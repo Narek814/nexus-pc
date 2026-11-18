@@ -58,7 +58,7 @@ struct RgbView: View {
                 Text(reason ?? "Загрузка…")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textMuted)
-                Text("На ПК: запустите OpenRGB, вкладка «SDK Server» → «Start Server». Armoury Crate при этом лучше закрыть — он перехватывает подсветку.")
+                Text("OpenRGB входит в Nexus PC и запускается вместе с ПК. Если подсветка не отвечает: закройте Armoury Crate (он перехватывает подсветку) и перезагрузите ПК. Устройства настраиваются на ПК: значок «N» → «Настроить подсветку (OpenRGB)…».")
                     .font(.caption)
                     .foregroundStyle(Theme.textMuted)
                 NeonButton(title: "Проверить снова", systemImage: "arrow.clockwise") {

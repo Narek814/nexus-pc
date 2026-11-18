@@ -36,6 +36,8 @@ internal sealed class AdminService(AgentServices services)
                 "devices.list" => DevicesList(),
                 "devices.revoke" => DevicesRevoke(request),
                 "devices.permissions" => DevicesPermissions(request),
+                "openrgb.pause" => OpenRgbPause(true),
+                "openrgb.resume" => OpenRgbPause(false),
                 _ => Error("unknown operation"),
             };
         }
@@ -43,6 +45,24 @@ internal sealed class AdminService(AgentServices services)
         {
             return Error(ex.Message);
         }
+    }
+
+    /// <summary>Lets the OpenRGB window (opened from the tray, elevated) take the SDK port, then gives it back.</summary>
+    private JsonObject OpenRgbPause(bool pause)
+    {
+        if (services.OpenRgb is not { State: not "notInstalled" } host)
+        {
+            return Error("OpenRGB не установлен вместе с Nexus PC");
+        }
+        if (pause)
+        {
+            host.Pause(TimeSpan.FromSeconds(60));
+        }
+        else
+        {
+            host.Resume();
+        }
+        return new JsonObject { ["ok"] = true, ["state"] = host.State };
     }
 
     public void ConnectionClosed(AdminConnectionState state)

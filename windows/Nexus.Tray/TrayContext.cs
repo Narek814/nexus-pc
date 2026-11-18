@@ -84,6 +84,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
         menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
         menu.Items.Add("Устройства и разрешения…", null, (_, _) => Show(() => new DevicesForm(_agent, agentPath)));
+        menu.Items.Add("Настроить подсветку (OpenRGB)…", null, (_, _) => OpenRgbWindow(agentPath));
         var stopInput = new ToolStripMenuItem("Запретить управление мышью и клавиатурой с телефона");
         stopInput.Click += (_, _) =>
         {
@@ -168,6 +169,32 @@ internal sealed class TrayContext : ApplicationContext
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey);
         return key?.GetValue(RunValue) is string;
+    }
+
+    /// <summary>
+    /// The OpenRGB window installed with Nexus PC (to set zone sizes, check devices). Needs administrator
+    /// rights like OpenRGB itself, so it goes through the agent's admin command (Windows asks once).
+    /// </summary>
+    private void OpenRgbWindow(string agentPath)
+    {
+        if (!File.Exists(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "OpenRGB", "OpenRGB.exe"))))
+        {
+            Notify("OpenRGB не установлен вместе с Nexus PC. Запустите NexusPC-Setup.exe ещё раз.");
+            return;
+        }
+        try
+        {
+            using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(agentPath, "openrgb")
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // the person declined the administrator prompt
+        }
     }
 
     private void ToggleAutostart()

@@ -84,6 +84,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
             // On Windows the agent only accepts the installed Nexus.Tray.exe; the fake tray lives in this test process.
             TrayPath = trayPath ?? Environment.ProcessPath,
             MetricsSource = metrics ?? new FakeMetricsSource(),
+            OpenRgbExecutable = null, // the real OpenRGB is never started by tests
             OpenRgbPort = openRgbPort ?? 1, // port 1: nothing listens, OpenRGB "not running" unless a test provides one
         });
         await app.StartAsync();

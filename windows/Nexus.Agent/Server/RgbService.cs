@@ -154,7 +154,7 @@ internal sealed class RgbService(string dataDirectory, int openRgbPort)
         }
         catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
-            throw new RgbUnavailableException("OpenRGB не запущен или в нём не включён SDK Server (вкладка «SDK Server» → Start Server).");
+            throw new RgbUnavailableException("OpenRGB не отвечает. Он запускается вместе с Nexus PC через несколько секунд после включения ПК; если не помогло — перезагрузите ПК.");
         }
     }
 

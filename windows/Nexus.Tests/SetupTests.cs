@@ -51,13 +51,6 @@ public sealed class SetupPlanTests
     }
 
     [Theory]
-    [InlineData("Microsoft.AspNetCore.App 10.0.15 [C:\\x]\nMicrosoft.NETCore.App 10.0.15 [C:\\x]\nMicrosoft.WindowsDesktop.App 10.0.15 [C:\\x]\n", "")]
-    [InlineData("Microsoft.NETCore.App 10.0.15 [C:\\x]\nMicrosoft.WindowsDesktop.App 10.0.15 [C:\\x]\n", "Microsoft.AspNetCore.App")]
-    [InlineData("Microsoft.AspNetCore.App 8.0.1 [C:\\x]\nMicrosoft.WindowsDesktop.App 8.0.1 [C:\\x]\n", "Microsoft.AspNetCore.App,Microsoft.WindowsDesktop.App")]
-    public void Runtime_check(string output, string missing) =>
-        Assert.Equal(missing, string.Join(',', SetupPlan.MissingRuntimes(output.Replace("\n", "\r\n", StringComparison.Ordinal))));
-
-    [Theory]
     [InlineData(0, "SERVICE_NAME: NexusPCAgent\n        TYPE               : 10  WIN32_OWN_PROCESS\n        STATE              : 4  RUNNING\n", 4)]
     [InlineData(0, "        STATE              : 1  STOPPED\n", 1)]
     [InlineData(1060, "[SC] EnumQueryServicesStatus:OpenService FAILED 1060", null)]
@@ -114,5 +107,41 @@ public sealed class SetupPlanTests
         Assert.NotNull(SetupPlan.CheckPayload(traversal));
         using var extra = Zip("Agent/Nexus.Agent.exe", "Tray/Nexus.Tray.exe", "autorun.inf");
         Assert.NotNull(SetupPlan.CheckPayload(extra));
+        using var bundled = Zip("Agent/Nexus.Agent.exe", "Tray/Nexus.Tray.exe", "OpenRGB/OpenRGB.exe", "OpenRGB/platforms/qwindows.dll", "PawnIO/PawnIO_setup.exe", "version.txt");
+        Assert.Null(SetupPlan.CheckPayload(bundled));
+        using var otherSetup = Zip("Agent/Nexus.Agent.exe", "Tray/Nexus.Tray.exe", "PawnIO/other.exe");
+        Assert.NotNull(SetupPlan.CheckPayload(otherSetup));
+    }
+
+    [Fact]
+    public void PawnIo_is_installed_silently_from_the_unpacked_file()
+    {
+        var command = SetupPlan.InstallPawnIo(@"C:\Temp\NexusPC-Setup-1\PawnIO\PawnIO_setup.exe");
+        Assert.Equal(["-install", "-silent"], command.Args);
+    }
+
+    [Fact]
+    public void Standalone_OpenRGB_settings_are_imported_without_plugins_once()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "nexus-orgb-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "AppData", "OpenRGB");
+        var target = Path.Combine(root, "NexusPC", "OpenRGB");
+        try
+        {
+            foreach (var file in new[] { "OpenRGB.json", "sizes.ors", "Gaming.orp", Path.Combine("plugins", "evil.dll"), Path.Combine("logs", "a.log"), "x.dll" })
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(source, file))!);
+                File.WriteAllText(Path.Combine(source, file), "{}");
+            }
+            Assert.Equal(["Gaming.orp", "OpenRGB.json", "sizes.ors"], SetupPlan.OpenRgbFilesToImport(source, target));
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(target, "OpenRGB.json"), "{}");
+            Assert.Empty(SetupPlan.OpenRgbFilesToImport(source, target));
+            Assert.Empty(SetupPlan.OpenRgbFilesToImport(Path.Combine(root, "none"), Path.Combine(root, "t2")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

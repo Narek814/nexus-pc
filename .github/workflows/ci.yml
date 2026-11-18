@@ -60,20 +60,42 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Build Agent and Tray into payload.zip
+      - name: Build Agent and Tray (with .NET inside) into payload.zip, add OpenRGB and PawnIO
         shell: pwsh
         run: |
           $v = "0.2.${{ github.run_number }}"
-          dotnet publish windows/Nexus.Agent -c Release -r win-x64 --self-contained false -p:Version=$v -o staging/Agent
+          # Self-contained: the PC needs no separate .NET installation.
+          dotnet publish windows/Nexus.Agent -c Release -r win-x64 --self-contained true -p:Version=$v -o staging/Agent
           if ($LASTEXITCODE) { exit 1 }
-          dotnet publish windows/Nexus.Tray -c Release -r win-x64 --self-contained false -p:Version=$v -o staging/Tray
+          dotnet publish windows/Nexus.Tray -c Release -r win-x64 --self-contained true -p:Version=$v -o staging/Tray
           if ($LASTEXITCODE) { exit 1 }
+
+          # Third-party programs, unmodified, pinned by SHA-256 (windows/ThirdParty/README.md).
+          function Fetch($url, $sha, $out) {
+            Invoke-WebRequest -Uri $url -OutFile $out -MaximumRetryCount 4 -RetryIntervalSec 10
+            $actual = (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $sha) { Write-Error "SHA-256 mismatch for $url : $actual"; exit 1 }
+            "ok: $out $actual"
+          }
+          Fetch "https://codeberg.org/OpenRGB/OpenRGB/releases/download/release_1.1/OpenRGB_1.1_Windows_64_8e16de2.zip" "63291726c6fc84eb479ef2ee752e97e1187f6ce9c49fd27eee40ded588a8172a" "$env:RUNNER_TEMP/openrgb.zip"
+          Expand-Archive "$env:RUNNER_TEMP/openrgb.zip" -DestinationPath "$env:RUNNER_TEMP/openrgb"
+          Move-Item "$env:RUNNER_TEMP/openrgb/OpenRGB Windows 64-bit" staging/OpenRGB
+          Copy-Item windows/ThirdParty/OpenRGB/LICENSE staging/OpenRGB/LICENSE.txt
+          Copy-Item windows/ThirdParty/README.md staging/OpenRGB/NEXUS-PC-NOTICE.md
+          if (-not (Test-Path staging/OpenRGB/OpenRGB.exe)) { Write-Error "OpenRGB.exe missing"; exit 1 }
+
+          New-Item -ItemType Directory staging/PawnIO | Out-Null
+          Fetch "https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe" "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032" staging/PawnIO/PawnIO_setup.exe
+          $sig = Get-AuthenticodeSignature staging/PawnIO/PawnIO_setup.exe
+          "PawnIO signature: $($sig.Status) $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { Write-Error "PawnIO_setup.exe signature is not valid"; exit 1 }
+
           Set-Content -Path staging/version.txt -Value $v -NoNewline
           Compress-Archive -Path staging/* -DestinationPath windows/Nexus.Setup/payload.zip
       - name: Build NexusPC-Setup.exe
         shell: pwsh
         run: |
-          dotnet publish windows/Nexus.Setup -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:Version=0.2.${{ github.run_number }} -o out
+          dotnet publish windows/Nexus.Setup -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=0.2.${{ github.run_number }} -o out
           if ($LASTEXITCODE) { exit 1 }
           Get-Item out/NexusPC-Setup.exe | Format-List Name, Length
       - name: Install, check, upgrade, uninstall
@@ -95,6 +117,22 @@ jobs:
           $shortcut = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk"
           Check (Test-Path $shortcut) "Start menu shortcut"
           Check ((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath -eq "$env:ProgramFiles\NexusPC\Tray\Nexus.Tray.exe") "shortcut points to the tray"
+          Check (Test-Path "$env:ProgramFiles\NexusPC\Agent\hostfxr.dll") "agent carries its own .NET"
+
+          # The service starts the bundled OpenRGB as its SDK server, on loopback only.
+          $openrgb = "$env:ProgramFiles\NexusPC\OpenRGB\OpenRGB.exe"
+          Check (Test-Path $openrgb) "OpenRGB installed"
+          function OpenRgbListening { for ($i = 0; $i -lt 90; $i++) { $c = Get-NetTCPConnection -LocalPort 6742 -State Listen -ErrorAction SilentlyContinue; if ($c) { return $c }; Start-Sleep 1 }; $null }
+          $listen = OpenRgbListening
+          Check ($null -ne $listen) "OpenRGB SDK server listens on 6742"
+          "OpenRGB listens on: $(@($listen).LocalAddress -join ', ')"
+          Check (@($listen | Where-Object LocalAddress -ne '127.0.0.1').Count -eq 0) "OpenRGB listens on 127.0.0.1 only"
+          $proc = Get-Process OpenRGB -ErrorAction SilentlyContinue | Where-Object Path -eq $openrgb
+          Check ($null -ne $proc) "OpenRGB runs from Program Files"
+          Check (@(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object DisplayName -like '*OpenRGB*').Count -eq 0) "no firewall rule for OpenRGB"
+          $pawnio = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
+          "PawnIO installed on the runner: $pawnio"
+          Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'PawnIO|OpenRGB' -Context 0,2
 
           # Found on the owner's PC: an admin console still running Nexus.Agent.exe keeps the DLLs locked.
           $leftover = Start-Process -FilePath $agent -ArgumentList pair -PassThru -WindowStyle Hidden
@@ -102,11 +140,13 @@ jobs:
           Check (-not $leftover.HasExited) "leftover 'Nexus.Agent.exe pair' is running before the upgrade"
           & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "upgrade over itself while a leftover agent process runs"
           Check (Running) "service running after upgrade"
+          Check ($null -ne (OpenRgbListening)) "OpenRGB back after the upgrade (it was running, its files were replaced)"
           Check (@(Get-NetFirewallRule -DisplayName "Nexus PC Agent").Count -eq 1) "still exactly one firewall rule"
           Check (Test-Path "$env:ProgramData\NexusPC") "data kept"
 
           & .\out\NexusPC-Setup.exe --uninstall --quiet; Check ($LASTEXITCODE -eq 0) "uninstall exit code"
           Check (-not (Get-Service NexusPCAgent -ErrorAction SilentlyContinue)) "service removed"
+          Check (-not (Get-Process OpenRGB -ErrorAction SilentlyContinue | Where-Object Path -like "$env:ProgramFiles\NexusPC\*")) "bundled OpenRGB stopped"
           Check (-not (Test-Path "$env:ProgramFiles\NexusPC")) "program files removed"
           Check (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk")) "Start menu shortcut removed"
           Check (-not (Get-NetFirewallRule -DisplayName "Nexus PC Agent" -ErrorAction SilentlyContinue)) "firewall rule removed"

@@ -19,6 +19,8 @@ internal static class Program
                                             set permissions: power, apps, monitoring, input, screen,
                                             files, clipboard, rgb, automation, ai (or "none")
           Nexus.Agent status                show agent status
+          Nexus.Agent openrgb               open the OpenRGB window installed with Nexus PC (device set-up);
+                                            lighting from the phone keeps working while it is open
 
         Admin commands talk to the running agent and need an elevated (Administrator) prompt.
         """;
@@ -55,6 +57,7 @@ internal static class Program
                         ["permissions"] = args[3] == "none" ? new JsonArray() : new JsonArray([.. args[3].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => (JsonNode)p)]),
                     }).ConfigureAwait(false),
                 "status" => await PrintAsync(new JsonObject { ["op"] = "status" }).ConfigureAwait(false),
+                "openrgb" when args.Length == 1 => await OpenRgbWindowAsync().ConfigureAwait(false),
                 _ => PrintUsage(),
             };
         }
@@ -97,6 +100,50 @@ internal static class Program
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// The service's OpenRGB server steps aside, the window opens with the same settings folder (and serves
+    /// the phone meanwhile); when it is closed the service starts its own server again.
+    /// </summary>
+    private static async Task<int> OpenRgbWindowAsync()
+    {
+        var exe = Nexus.Agent.Server.OpenRgbHost.DefaultExecutable;
+        if (!File.Exists(exe))
+        {
+            await Console.Error.WriteLineAsync("OpenRGB is not installed with Nexus PC: " + exe).ConfigureAwait(false);
+            return 1;
+        }
+        await using var client = await AdminClient.ConnectAsync(AdminPipeServer.DefaultPipeName, CancellationToken.None).ConfigureAwait(false);
+        var paused = await client.SendAsync(new JsonObject { ["op"] = "openrgb.pause" }, CancellationToken.None).ConfigureAwait(false);
+        if (paused["ok"]?.GetValue<bool>() != true)
+        {
+            await Console.Error.WriteLineAsync(paused["error"]?.ToString()).ConfigureAwait(false);
+            return 1;
+        }
+        var start = new System.Diagnostics.ProcessStartInfo(exe)
+        {
+            UseShellExecute = false,
+            WorkingDirectory = Path.GetDirectoryName(exe)!,
+        };
+        var config = Nexus.Agent.Server.OpenRgbHost.ConfigDirectory(AgentPaths.DefaultDataDirectory());
+        foreach (var argument in Nexus.Agent.Server.OpenRgbHost.GuiArguments(config, Nexus.Agent.Server.RgbService.DefaultPort))
+        {
+            start.ArgumentList.Add(argument);
+        }
+        try
+        {
+            using var window = System.Diagnostics.Process.Start(start);
+            if (window is not null)
+            {
+                await window.WaitForExitAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await client.SendAsync(new JsonObject { ["op"] = "openrgb.resume" }, CancellationToken.None).ConfigureAwait(false);
+        }
+        return 0;
     }
 
     private static async Task<int> PrintAsync(JsonObject request)

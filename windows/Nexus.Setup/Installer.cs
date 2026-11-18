@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 using Microsoft.Win32;
@@ -10,7 +11,6 @@ namespace Nexus.Setup;
 [SupportedOSPlatform("windows")]
 internal sealed class Installer(SetupOptions options, TextWriter log)
 {
-    private static readonly string[] Parts = ["Agent", "Tray"];
     private readonly string _system32 = Environment.SystemDirectory;
     private readonly string _programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
     private string Root => SetupPlan.InstallRoot(_programFiles);
@@ -45,15 +45,6 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         var newVersion = ReadVersion(payload);
 
-        var runtimes = RunQuiet(SetupPlan.ListRuntimes(_programFiles));
-        var missing = runtimes.Exit == 0 ? SetupPlan.MissingRuntimes(runtimes.Output) : ["Microsoft.AspNetCore.App", "Microsoft.WindowsDesktop.App"];
-        if (missing.Count > 0)
-        {
-            Say($"Не установлена среда .NET 10: {string.Join(", ", missing)}.");
-            Say("Скачайте «.NET Desktop Runtime 10» и «ASP.NET Core Runtime 10» (Windows x64) на https://dotnet.microsoft.com/download/dotnet/10.0 и запустите установщик снова.");
-            return 4;
-        }
-
         var agentExe = SetupPlan.AgentExe(Root);
         var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion?.Split('+')[0] : null;
         Say(oldVersion is null ? $"Устанавливаю версию {newVersion}." : $"Обновляю {oldVersion} → {newVersion}. Сопряжённые устройства, автоматизации и настройки сохраняются.");
@@ -63,7 +54,9 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             StopTray();
             StopService();
             StopLeftoverAgents();
+            StopBundledOpenRgb();
         });
+        WarnAboutStandaloneOpenRgb();
 
         Step("Копирую файлы в " + Root, () =>
         {
@@ -71,7 +64,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             payload.ExtractToDirectory(staging);
             try
             {
-                foreach (var part in Parts)
+                foreach (var part in SetupPlan.Parts.Where(p => Directory.Exists(Path.Combine(staging, p))))
                 {
                     var target = Path.Combine(Root, part);
                     Retry(() =>
@@ -89,6 +82,15 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
                 Directory.Delete(staging, recursive: true);
             }
         });
+
+        if (payload.GetEntry(SetupPlan.PawnIoSetup) is { } pawnIo)
+        {
+            Step("Драйвер PawnIO (температура процессора, подсветка платы и памяти)", () => InstallPawnIo(pawnIo));
+        }
+        if (File.Exists(SetupPlan.OpenRgbExe(Root)))
+        {
+            Step("Настройки подсветки (OpenRGB)", ImportOpenRgbSettings);
+        }
 
         Step("Настраиваю службу Windows", () =>
         {
@@ -144,7 +146,11 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             StopTray();
             StopService();
         });
-        Step("Закрываю оставшиеся процессы агента", StopLeftoverAgents);
+        Step("Закрываю оставшиеся процессы агента", () =>
+        {
+            StopLeftoverAgents();
+            StopBundledOpenRgb();
+        });
         Step("Удаляю службу", () => RunQuiet(SetupPlan.ScDelete(_system32)));
         Step("Удаляю правило брандмауэра", () => RunQuiet(SetupPlan.FirewallDelete(_system32)));
         Step("Отключаю автозапуск", () =>
@@ -186,6 +192,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             });
             Say("Ваш список программ и профилей остаётся в %LOCALAPPDATA%\\NexusPC — удалите папку вручную, если не нужен.");
         }
+        Say("Драйвер PawnIO не удаляется: им могут пользоваться другие программы. Удалить: Параметры → Приложения → PawnIO.");
         Say("Готово.");
         return 0;
     }
@@ -216,6 +223,143 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         {
             log.WriteLine("Start menu shortcut not created: " + ex.Message); // optional: the tray autostarts anyway
         }
+    }
+
+    private static string DataDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NexusPC");
+
+    /// <summary>Silent install of the driver, unless it is already there (its installer refuses a second install).</summary>
+    private void InstallPawnIo(ZipArchiveEntry entry)
+    {
+        using (var key = Registry.LocalMachine.OpenSubKey(SetupPlan.PawnIoUninstallKey))
+        {
+            if (key is not null)
+            {
+                Write("уже установлен — ", ConsoleColor.DarkGray);
+                return;
+            }
+        }
+        var folder = Path.Combine(Path.GetTempPath(), "NexusPC-PawnIO-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var setup = Path.Combine(folder, "PawnIO_setup.exe");
+            entry.ExtractToFile(setup);
+            var result = RunQuiet(SetupPlan.InstallPawnIo(setup));
+            if (result.Exit != 0)
+            {
+                // Not fatal: everything else works; CPU temperature and some lighting show "unavailable".
+                Write($"не установился (код {result.Exit}); температура процессора и подсветка платы будут недоступны — ", ConsoleColor.Yellow);
+            }
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Zone sizes, settings and profiles from a standalone OpenRGB of the person running the installer
+    /// (%APPDATA%\OpenRGB) go to the copy the service runs, once; plugins never do.
+    /// </summary>
+    private void ImportOpenRgbSettings()
+    {
+        EnsureSecureDataDirectory();
+        var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenRGB");
+        var target = Path.Combine(DataDirectory, "OpenRGB");
+        var files = SetupPlan.OpenRgbFilesToImport(source, target);
+        foreach (var relative in files)
+        {
+            var destination = Path.Combine(target, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(Path.Combine(source, relative), destination, overwrite: true);
+        }
+        log.WriteLine($"OpenRGB settings imported: {files.Count} file(s) from {source}");
+        if (files.Count > 0)
+        {
+            Write("перенесены из вашего OpenRGB — ", ConsoleColor.DarkGray);
+        }
+    }
+
+    /// <summary>Same protection the agent gives its data folder: SYSTEM and Administrators only.</summary>
+    private static void EnsureSecureDataDirectory()
+    {
+        var directory = Directory.CreateDirectory(DataDirectory);
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        foreach (var sid in new[] { WellKnownSidType.LocalSystemSid, WellKnownSidType.BuiltinAdministratorsSid })
+        {
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        }
+        directory.SetAccessControl(security);
+    }
+
+    /// <summary>The OpenRGB copy in Program Files\NexusPC (the service's server, or a window left open): its DLLs would be locked.</summary>
+    private void StopBundledOpenRgb()
+    {
+        foreach (var process in OpenRgbProcesses(ours: true))
+        {
+            using (process)
+            {
+                try
+                {
+                    log.WriteLine($"Stopping bundled OpenRGB pid {process.Id}");
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(10_000);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // already exited
+                }
+            }
+        }
+    }
+
+    /// <summary>A separately installed OpenRGB would take the lighting devices and the SDK port.</summary>
+    private void WarnAboutStandaloneOpenRgb()
+    {
+        var others = OpenRgbProcesses(ours: false);
+        if (others.Count == 0)
+        {
+            return;
+        }
+        foreach (var process in others)
+        {
+            process.Dispose();
+        }
+        Say("");
+        Say("Запущен отдельно установленный OpenRGB. Теперь OpenRGB входит в Nexus PC и запускается сам,");
+        Say("поэтому закройте свой OpenRGB, уберите его из автозапуска или удалите (Параметры → Приложения).");
+        Say("Пока он работает, Nexus PC пользуется им.");
+        Say("");
+    }
+
+    private List<Process> OpenRgbProcesses(bool ours)
+    {
+        var folder = Path.Combine(Root, "OpenRGB") + Path.DirectorySeparatorChar;
+        var found = new List<Process>();
+        foreach (var process in Process.GetProcessesByName("OpenRGB"))
+        {
+            string? path = null;
+            try
+            {
+                path = process.MainModule?.FileName;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // exited or inaccessible
+            }
+            if (path is not null && path.StartsWith(folder, StringComparison.OrdinalIgnoreCase) == ours)
+            {
+                found.Add(process);
+            }
+            else
+            {
+                process.Dispose();
+            }
+        }
+        return found;
     }
 
     private void CheckNetworks()

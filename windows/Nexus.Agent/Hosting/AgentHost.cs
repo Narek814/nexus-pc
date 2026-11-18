@@ -39,6 +39,8 @@ internal sealed record AgentHostOptions
     public IMetricsSource? MetricsSource { get; init; }
     /// <summary>OpenRGB SDK server port on this PC (tests point it at a fake server).</summary>
     public int OpenRgbPort { get; init; } = RgbService.DefaultPort;
+    /// <summary>OpenRGB installed with Nexus PC, run as the SDK server; null disables it (tests).</summary>
+    public string? OpenRgbExecutable { get; init; } = OpenRgbHost.DefaultExecutable;
     /// <summary>Overrides the executable allowed on the session pipe (tests).</summary>
     public string? TrayPath { get; init; }
     public TimeSpan? PairingLifetime { get; init; }
@@ -106,6 +108,8 @@ internal static class AgentHost
         builder.Services.AddSingleton(services);
         builder.Services.AddSingleton<AdminService>();
         builder.Services.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
+        builder.Services.AddSingleton(sp => new OpenRgbHost(options.OpenRgbExecutable, OpenRgbHost.ConfigDirectory(options.DataDirectory), options.OpenRgbPort, sp.GetRequiredService<ILogger<OpenRgbHost>>()));
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<OpenRgbHost>());
         builder.Services.AddSingleton(sp => new AutomationService(services, options.DataDirectory, options.TimeZone, sp.GetRequiredService<ILogger<AutomationService>>()));
         builder.Services.AddHostedService(sp => sp.GetRequiredService<AutomationService>());
         if (options.EnableSessionPipe)
@@ -121,6 +125,7 @@ internal static class AgentHost
         var app = builder.Build();
         services.Automations = app.Services.GetRequiredService<AutomationService>();
         services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort);
+        services.OpenRgb = app.Services.GetRequiredService<OpenRgbHost>();
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         app.Map(WebSocketPath, async context =>

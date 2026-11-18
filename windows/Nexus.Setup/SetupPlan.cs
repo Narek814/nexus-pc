@@ -26,7 +26,7 @@ internal sealed record SetupOptions(bool Uninstall, bool Purge, bool Quiet, bool
     }
 }
 
-/// <summary>A program to run: always an absolute path under System32, never resolved through PATH or the current folder.</summary>
+/// <summary>A program to run: always an absolute path (System32, or a file the installer itself unpacked), never resolved through PATH or the current folder.</summary>
 internal sealed record Command(string File, IReadOnlyList<string> Args)
 {
     public override string ToString() => $"{Path.GetFileName(File)} {string.Join(' ', Args)}";
@@ -83,9 +83,6 @@ internal static partial class SetupPlan
         new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "add", "rule", $"name={FirewallRuleName}", "dir=in", "action=allow",
             $"program={agentExe}", "protocol=TCP", $"localport={Port.ToString(CultureInfo.InvariantCulture)}", "profile=private", "enable=yes"]);
 
-    public static Command ListRuntimes(string programFiles) =>
-        new(Path.Combine(programFiles, "dotnet", "dotnet.exe"), ["--list-runtimes"]);
-
     public static Command ListNetworks(string system32) =>
         new(Path.Combine(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
             ["-NoProfile", "-NonInteractive", "-Command", "Get-NetConnectionProfile | ForEach-Object { \"$($_.InterfaceIndex)|$($_.NetworkCategory)|$($_.Name)|$($_.InterfaceAlias)\" }"]);
@@ -94,11 +91,32 @@ internal static partial class SetupPlan
         new(Path.Combine(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
             ["-NoProfile", "-NonInteractive", "-Command", $"Set-NetConnectionProfile -InterfaceIndex {interfaceIndex.ToString(CultureInfo.InvariantCulture)} -NetworkCategory Private"]);
 
-    /// <summary>Runtimes the agent (ASP.NET Core) and the tray (Windows Desktop) need, missing from `dotnet --list-runtimes`.</summary>
-    public static IReadOnlyList<string> MissingRuntimes(string listRuntimesOutput)
+    public static string OpenRgbExe(string root) => Path.Combine(root, "OpenRGB", "OpenRGB.exe");
+
+    /// <summary>PawnIO's own installer, shipped unmodified ("This installer can be redistributed unmodified").</summary>
+    public const string PawnIoSetup = "PawnIO/PawnIO_setup.exe";
+
+    public const string PawnIoUninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO";
+
+    public static Command InstallPawnIo(string unpackedSetup) => new(unpackedSetup, ["-install", "-silent"]);
+
+    /// <summary>
+    /// Files of a standalone OpenRGB's settings (%APPDATA%\OpenRGB) to carry over to the copy Nexus PC runs:
+    /// settings, zone sizes, profiles. Never plugins (code that would run with the service's rights) or logs.
+    /// Nothing when the bundled copy already has its own settings.
+    /// </summary>
+    public static IReadOnlyList<string> OpenRgbFilesToImport(string source, string target)
     {
-        string[] needed = ["Microsoft.AspNetCore.App", "Microsoft.WindowsDesktop.App"];
-        return [.. needed.Where(name => !listRuntimesOutput.Split('\n').Any(line => line.StartsWith(name + " 10.", StringComparison.Ordinal)))];
+        if (!Directory.Exists(source) || File.Exists(Path.Combine(target, "OpenRGB.json")))
+        {
+            return [];
+        }
+        string[] skipped = ["plugins", "logs"];
+        return [.. Directory.GetFiles(source, "*", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(source, file))
+            .Where(relative => !skipped.Contains(relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0], StringComparer.OrdinalIgnoreCase))
+            .Where(relative => !relative.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && !relative.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Order(StringComparer.Ordinal)];
     }
 
     /// <summary>sc query STATE code: 1 stopped, 2 start pending, 3 stop pending, 4 running; null if the service does not exist.</summary>
@@ -120,7 +138,10 @@ internal static partial class SetupPlan
             .Where(p => p.Length == 4 && int.TryParse(p[0], NumberStyles.None, CultureInfo.InvariantCulture, out _))
             .Select(p => new Network(int.Parse(p[0], CultureInfo.InvariantCulture), p[1], p[2], p[3]))];
 
-    /// <summary>The payload must contain exactly the two programs we install, and nothing outside its folders.</summary>
+    /// <summary>Folders of the payload copied to Program Files\NexusPC (OpenRGB is absent from development builds).</summary>
+    public static readonly IReadOnlyList<string> Parts = ["Agent", "Tray", "OpenRGB"];
+
+    /// <summary>The payload must contain the agent and the tray, and nothing outside its known folders.</summary>
     public static string? CheckPayload(ZipArchive zip)
     {
         var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).ToList();
@@ -132,7 +153,7 @@ internal static partial class SetupPlan
         {
             return "Повреждённый установщик: нет Nexus.Agent.exe или Nexus.Tray.exe.";
         }
-        if (names.Any(n => !n.StartsWith("Agent/", StringComparison.Ordinal) && !n.StartsWith("Tray/", StringComparison.Ordinal) && n != "version.txt"))
+        if (names.Any(n => !Parts.Any(p => n.StartsWith(p + "/", StringComparison.Ordinal)) && n != "version.txt" && n != PawnIoSetup))
         {
             return "Повреждённый установщик: лишние файлы.";
         }

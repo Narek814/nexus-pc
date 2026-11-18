@@ -418,3 +418,23 @@ public sealed class RgbUnavailableTests
         }
     }
 }
+
+public sealed class OpenRgbHostTests
+{
+    [Fact]
+    public void Bundled_server_listens_on_loopback_only_with_its_own_settings_folder()
+    {
+        var args = Nexus.Agent.Server.OpenRgbHost.ServerArguments(@"C:\ProgramData\NexusPC\OpenRGB", 6742);
+        Assert.Equal(["--server", "--server-host", "127.0.0.1", "--server-port", "6742", "--noautoconnect", "--config", @"C:\ProgramData\NexusPC\OpenRGB"], args);
+        Assert.Equal("--gui", Nexus.Agent.Server.OpenRgbHost.GuiArguments("c", 6742)[0]);
+    }
+
+    [Fact]
+    public async Task Pausing_needs_the_bundled_copy()
+    {
+        await using var host = await AgentTestHost.StartAsync();
+        var reply = await host.Admin.HandleAsync(new System.Text.Json.Nodes.JsonObject { ["op"] = "openrgb.pause" }, new Nexus.Agent.Admin.AdminConnectionState(), CancellationToken.None);
+        Assert.False(reply["ok"]!.GetValue<bool>());
+        Assert.Equal("notInstalled", host.Services.OpenRgb!.State);
+    }
+}

@@ -41,6 +41,7 @@ internal sealed class AgentServices
     public TrayRegistry Trays { get; }
     public MetricsSampler Metrics { get; }
     public RgbService? Rgb { get; set; }
+    public OpenRgbHost? OpenRgb { get; set; }
     public AutomationService? Automations { get; set; }
     public HistoryStore History { get; }
 }

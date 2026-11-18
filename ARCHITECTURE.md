@@ -171,5 +171,6 @@ ios/NexusPC/
 | WebRTC (iOS) | iOS | BSD | P5 (спайк) |
 | ~~ntfy~~ | — | убран 2026-11-18 | — |
 | Ollama (HTTP API на localhost, без пакета) | AI | MIT | P9 |
-| OpenRGB SDK (сетевой протокол, без пакета) | RGB | своя реализация протокола (версия 0) в `Nexus.RGB`; OpenRGB (GPL-2) — отдельная программа, которую ставит владелец. Пакет openrgb-python скачан только в облачную песочницу как справочник по формату пакетов, в проект не входит | P10 |
+| OpenRGB SDK (сетевой протокол, без пакета) | RGB | своя реализация протокола (версия 0) в `Nexus.RGB`; OpenRGB 1.1 (GPL-2) — отдельная программа без изменений, входит в установщик, запускается службой как SDK-сервер на 127.0.0.1 (`windows/ThirdParty/README.md`). Пакет openrgb-python скачан только в облачную песочницу как справочник по формату пакетов, в проект не входит | P10 |
+| PawnIO setup 2.2.0 (подписанный установщик драйвера, без изменений) | Setup | GPL-2.0; «can be redistributed unmodified» | доводка |
 | LibreHardwareMonitorLib 0.9.6 (NuGet) и его зависимости: HidSharp, DiskInfoToolkit, RAMSPDToolkit-NDD, BlackSharp.Core, System.Management, System.IO.Ports, Mono.Posix.NETStandard, System.CodeDom, System.IO.FileSystem.AccessControl | Температура и частота CPU в `Nexus.Monitoring` (включена только часть CPU) | MPL-2.0 (LHM); зависимости — MIT/Apache-2.0/MPL. Датчики процессора читает через драйвер PawnIO (ставит OpenRGB или pawnio.eu), а не через WinRing0 | P4, разрешено владельцем 2026-11-17 |

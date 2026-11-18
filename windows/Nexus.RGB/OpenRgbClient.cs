@@ -6,7 +6,7 @@ namespace Nexus.RGB;
 
 /// <summary>
 /// OpenRGB SDK network client (protocol version 0: the server answers older clients in the old format).
-/// OpenRGB must run with its SDK server on 127.0.0.1:6742 ("SDK Server" tab). Packet header:
+/// OpenRGB runs its SDK server on 127.0.0.1:6742 (started by the agent, Server/OpenRgbHost.cs). Packet header:
 /// "ORGB", device index, packet id, data size — all little-endian uint32.
 /// </summary>
 public sealed class OpenRgbClient : IRgbAdapter
