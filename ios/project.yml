@@ -1,6 +1,7 @@
 # XcodeGen spec: the Xcode project is generated in CI (no Mac needed). See docs/IOS.md.
 name: NexusPC
 options:
+  developmentLanguage: en
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -29,6 +30,13 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSSupportsLiveActivities: true
+        # Russian Siri phrases and answers (AppShortcuts.xcstrings, Localizable.xcstrings).
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ru]
+        # Siri may not catch "Nexus PC" in Russian speech: other names that start the same shortcuts.
+        INAlternativeAppNames:
+          - INAlternativeAppName: "Нексус"
+          - INAlternativeAppName: "Нексус ПК"
         CFBundleURLTypes:
           - CFBundleURLName: io.github.narek814.nexuspc
             CFBundleURLSchemes: [nexuspc]

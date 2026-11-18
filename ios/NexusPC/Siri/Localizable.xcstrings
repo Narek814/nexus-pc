@@ -1,0 +1,266 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "PC Status": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Состояние ПК"
+          }
+        }
+      }
+    },
+    "Turn On PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включить ПК"
+          }
+        }
+      }
+    },
+    "Lock PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заблокировать ПК"
+          }
+        }
+      }
+    },
+    "Put PC to Sleep": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перевести ПК в сон"
+          }
+        }
+      }
+    },
+    "Shut Down PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить ПК"
+          }
+        }
+      }
+    },
+    "Restart PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить ПК"
+          }
+        }
+      }
+    },
+    "Cancel PC Shutdown": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить выключение ПК"
+          }
+        }
+      }
+    },
+    "Run Profile": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить профиль"
+          }
+        }
+      }
+    },
+    "Open App on PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть программу на ПК"
+          }
+        }
+      }
+    },
+    "In minutes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через минут"
+          }
+        }
+      }
+    },
+    "Profile": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Профиль"
+          }
+        }
+      }
+    },
+    "App": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа"
+          }
+        }
+      }
+    },
+    "PC App": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа на ПК"
+          }
+        }
+      }
+    },
+    "%@ is online, running for %lld h %lld min.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ включён и работает %2$lld ч %3$lld мин."
+          }
+        }
+      }
+    },
+    "Open Nexus PC once while %@ is on, so it can learn how to wake it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте Nexus PC, пока %@ включён, — так приложение узнает, как его будить."
+          }
+        }
+      }
+    },
+    "Sent the wake signal to %@. It usually starts in 30 to 60 seconds.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сигнал включения отправлен на %@. Обычно он включается за 30–60 секунд."
+          }
+        }
+      }
+    },
+    "Could not send the wake signal. Is your iPhone on the same network as %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось отправить сигнал включения. iPhone в той же сети, что и %@?"
+          }
+        }
+      }
+    },
+    "%@ is locked.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ заблокирован."
+          }
+        }
+      }
+    },
+    "%@ is going to sleep.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ переходит в сон."
+          }
+        }
+      }
+    },
+    "Shut down %@ in %lld min?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить %1$@ через %2$lld мин?"
+          }
+        }
+      }
+    },
+    "%@ will shut down in %lld min. Say “Cancel PC shutdown” to stop it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ выключится через %2$lld мин. Скажите «Отмени выключение в Nexus PC», чтобы отменить."
+          }
+        }
+      }
+    },
+    "Restart %@ in %lld min?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить %1$@ через %2$lld мин?"
+          }
+        }
+      }
+    },
+    "%@ will restart in %lld min.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ перезагрузится через %2$lld мин."
+          }
+        }
+      }
+    },
+    "Shutdown of %@ is cancelled.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключение %@ отменено."
+          }
+        }
+      }
+    },
+    "%@: started %lld apps.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: запущено программ — %2$lld."
+          }
+        }
+      }
+    },
+    "Opened %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыто: %@."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

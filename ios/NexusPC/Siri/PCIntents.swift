@@ -11,13 +11,14 @@ struct PCStatusIntent: AppIntent {
     static var description = IntentDescription("Tells whether your PC is online and how long it has been running.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let text = try await PCSession.withPC { pc, connection -> String in
+        let (name, uptime) = try await PCSession.withPC { pc, connection -> (String, Int) in
             let status = try await connection.request("pc.status").unwrap()
-            let uptime = status["uptimeSeconds"] as? Int ?? 0
-            let name = status["pcName"] as? String ?? pc.name
-            return "\(name) is online, running for \(uptime / 3600) h \(uptime % 3600 / 60) min."
+            return (status["pcName"] as? String ?? pc.name, status["uptimeSeconds"] as? Int ?? 0)
         }
-        return .result(dialog: "\(text)")
+        let hours = uptime / 3600
+        let minutes = uptime % 3600 / 60
+        // Interpolated directly so the sentence can be translated (Localizable.xcstrings).
+        return .result(dialog: "\(name) is online, running for \(hours) h \(minutes) min.")
     }
 }
 
@@ -33,9 +34,10 @@ struct WakePCIntent: AppIntent {
             return .result(dialog: "Open Nexus PC once while \(pc.name) is on, so it can learn how to wake it.")
         }
         let sent = await WakeService.send(to: pc)
-        return .result(dialog: sent > 0
-            ? "Sent the wake signal to \(pc.name). It usually starts in 30 to 60 seconds."
-            : "Could not send the wake signal. Is your iPhone on the same network as \(pc.name)?")
+        if sent > 0 {
+            return .result(dialog: "Sent the wake signal to \(pc.name). It usually starts in 30 to 60 seconds.")
+        }
+        return .result(dialog: "Could not send the wake signal. Is your iPhone on the same network as \(pc.name)?")
     }
 }
 
@@ -218,7 +220,8 @@ struct PCAppQuery: EntityStringQuery {
     }
 }
 
-// MARK: - Siri phrases (English: the owner's iPhone language; Russian can be added via AppShortcuts.xcstrings)
+// MARK: - Siri phrases. English here; Russian ones are in AppShortcuts.xcstrings (Siri uses the phrases of
+// the Siri language, so with Siri set to Russian these work even on an English iPhone).
 
 struct NexusShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -258,17 +261,17 @@ struct NexusShortcuts: AppShortcutsProvider {
             systemImageName: "desktopcomputer")
         AppShortcut(
             intent: SleepPCIntent(),
-            phrases: ["Put my PC to sleep with \(.applicationName)"],
+            phrases: ["Put my PC to sleep with \(.applicationName)", "Sleep my PC with \(.applicationName)"],
             shortTitle: "Sleep PC",
             systemImageName: "moon.fill")
         AppShortcut(
             intent: RestartPCIntent(),
-            phrases: ["Restart my PC with \(.applicationName)"],
+            phrases: ["Restart my PC with \(.applicationName)", "Reboot my PC with \(.applicationName)"],
             shortTitle: "Restart PC",
             systemImageName: "arrow.clockwise")
         AppShortcut(
             intent: LaunchAppIntent(),
-            phrases: ["Open \(\.$app) on my PC with \(.applicationName)"],
+            phrases: ["Open \(\.$app) on my PC with \(.applicationName)", "Launch \(\.$app) with \(.applicationName)"],
             shortTitle: "Open App on PC",
             systemImageName: "app.badge")
     }

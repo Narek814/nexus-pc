@@ -1,0 +1,286 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Start ${profile} in ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запусти ${profile} в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Run ${profile} with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} запусти ${profile}"
+          }
+        }
+      }
+    },
+    "Start ${profile} mode in ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включи режим ${profile} в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Turn on my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включи компьютер в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Wake my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} включи компьютер"
+          }
+        }
+      }
+    },
+    "Lock my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заблокируй компьютер в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Lock PC in ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} заблокируй компьютер"
+          }
+        }
+      }
+    },
+    "Shut down my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключи компьютер в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Turn off my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} выключи компьютер"
+          }
+        }
+      }
+    },
+    "Cancel PC shutdown in ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмени выключение в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Cancel shutdown with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} отмени выключение"
+          }
+        }
+      }
+    },
+    "How is my PC in ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как мой компьютер в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Check my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} проверь компьютер"
+          }
+        }
+      }
+    },
+    "Put my PC to sleep with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усыпи компьютер в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Sleep my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} переведи компьютер в сон"
+          }
+        }
+      }
+    },
+    "Restart my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузи компьютер в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Reboot my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} перезагрузи компьютер"
+          }
+        }
+      }
+    },
+    "Open ${app} on my PC with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открой ${app} на компьютере в ${applicationName}"
+          }
+        }
+      }
+    },
+    "Launch ${app} with ${applicationName}": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} открой ${app}"
+          }
+        }
+      }
+    },
+    "Run Profile": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить профиль"
+          }
+        }
+      }
+    },
+    "Turn On PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включить ПК"
+          }
+        }
+      }
+    },
+    "Lock PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заблокировать ПК"
+          }
+        }
+      }
+    },
+    "Shut Down PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить ПК"
+          }
+        }
+      }
+    },
+    "Cancel Shutdown": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить выключение"
+          }
+        }
+      }
+    },
+    "PC Status": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Состояние ПК"
+          }
+        }
+      }
+    },
+    "Sleep PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сон ПК"
+          }
+        }
+      }
+    },
+    "Restart PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить ПК"
+          }
+        }
+      }
+    },
+    "Open App on PC": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть программу на ПК"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
