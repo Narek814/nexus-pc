@@ -324,11 +324,22 @@ struct HomeView: View {
     }
 
     private var forgetButton: some View {
-        Button(role: .destructive) {
-            controller.forget()
-        } label: {
-            Label("Забыть этот ПК", systemImage: "trash")
-                .font(.footnote)
+        VStack(spacing: 14) {
+            // If the PC moved to another address and was not found automatically: scan its QR again.
+            Button {
+                pairingLink = nil
+                showingPairing = true
+            } label: {
+                Label("Обновить адрес ПК по QR-коду", systemImage: "qrcode.viewfinder")
+                    .font(.footnote)
+            }
+            .tint(Theme.cyan)
+            Button(role: .destructive) {
+                controller.forget()
+            } label: {
+                Label("Забыть этот ПК", systemImage: "trash")
+                    .font(.footnote)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 12)

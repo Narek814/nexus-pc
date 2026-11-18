@@ -52,6 +52,19 @@ final class PairingFlowModel {
     }
 
     private func pair(with link: PairingLink) async {
+        // Same PC (id and certificate) already paired: only its address changed. Update it, keep the
+        // pairing, permissions and automations; nothing is sent to the PC.
+        if var known = PairingStore.load().first(where: { $0.pcId == link.pcId && $0.fingerprint == link.certificateFingerprint }) {
+            var merged: [String] = []
+            for host in link.hosts + known.hosts where !merged.contains(host) {
+                merged.append(host)
+            }
+            known.hosts = Array(merged.prefix(8))
+            known.port = link.port
+            PairingStore.update(known)
+            step = .done(known)
+            return
+        }
         step = .connecting(link)
         do {
             let (signer, stored) = try DeviceIdentity.create()

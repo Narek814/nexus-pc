@@ -4,7 +4,39 @@ import NexusKit
 /// Connect + authenticate to the paired PC. Shared by the Command Center and Siri/Shortcuts intents.
 enum PCSession {
     /// Tries every known address at once (home Wi-Fi, Tailscale, …) and keeps the first that answers.
+    /// If none answers, looks for the PC in its home network: the router may have given it a new address.
     static func connect(_ pc: PairedPC) async throws -> NexusConnection {
+        do {
+            return try await connectKnown(pc)
+        } catch let error as NexusError {
+            if case .server = error {
+                throw error // the PC answered (e.g. revoked): searching elsewhere will not help
+            }
+            if let found = await discover(pc) {
+                return found
+            }
+            throw error
+        }
+    }
+
+    /// Probes the PC's home /24 network for the agent port; a candidate counts only if its certificate
+    /// matches the pinned fingerprint and the device signs in. The new address is remembered.
+    private static func discover(_ pc: PairedPC) async -> NexusConnection? {
+        let candidates = LanDiscovery.candidates(near: pc.hosts)
+        guard !candidates.isEmpty else { return nil }
+        for host in await LanProbe.open(candidates, port: pc.port) {
+            var moved = pc
+            moved.hosts = [host]
+            guard let connection = try? await connectKnown(moved) else { continue }
+            var updated = pc
+            updated.hosts = Array(([host] + pc.hosts).prefix(8))
+            PairingStore.update(updated)
+            return connection
+        }
+        return nil
+    }
+
+    private static func connectKnown(_ pc: PairedPC) async throws -> NexusConnection {
         let signer = try PairingStore.signer(for: pc)
         guard !pc.hosts.isEmpty else {
             throw NexusError.connection("Нет адресов ПК. Подключите ПК заново.")
