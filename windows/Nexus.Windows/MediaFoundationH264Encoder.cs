@@ -32,6 +32,7 @@ public sealed unsafe class MediaFoundationH264Encoder : IDisposable
     private static readonly Guid LowLatencyMode = new("9c27891a-ed7a-40e1-88e8-b22727a024ee");
     private static readonly Guid GopSize = new("95f31b26-95a4-41aa-9303-246a7fc6eef1");
     private static readonly Guid ForceKeyFrame = new("398c1b98-8353-475a-9ef2-8f265d260345");
+    private static readonly Guid BPictureCount = new("8d390aac-dc5c-4200-b57f-814d04babab2");
 
     private const int NeedMoreInput = unchecked((int)0xc00d6d72);
     private const int StreamChange = unchecked((int)0xc00d6d61);
@@ -71,6 +72,16 @@ public sealed unsafe class MediaFoundationH264Encoder : IDisposable
             Check(CoCreateInstance(&clsid, 0, 1 /* CLSCTX_INPROC_SERVER */, &iid, &transform), "кодировщик H.264 не найден в Windows");
             _transform = transform;
 
+            // Low-latency settings before the media types: the encoder decides how many frames to hold back
+            // when the types are set (found on the owner's PC: frames waited inside the encoder, a long delay).
+            var codecIid = IidCodecApi;
+            nint codecApi;
+            if (QueryInterface(_transform, &codecIid, &codecApi) >= 0)
+            {
+                _codecApi = codecApi;
+                ApplyLowLatency();
+            }
+
             // Output first (the encoder requires it), then input.
             var output = NewMediaType();
             try
@@ -105,14 +116,10 @@ public sealed unsafe class MediaFoundationH264Encoder : IDisposable
                 Release(input);
             }
 
-            // Optional tuning; older Windows may not support every setting.
-            var codecIid = IidCodecApi;
-            nint codecApi;
-            if (QueryInterface(_transform, &codecIid, &codecApi) >= 0)
+            // Again after the types: some Windows versions accept these settings only then.
+            if (_codecApi != 0)
             {
-                _codecApi = codecApi;
-                SetCodecValue(LowLatencyMode, Variant.Bool(true));
-                SetCodecValue(GopSize, Variant.UInt32((uint)(fps * 2)));
+                ApplyLowLatency();
             }
 
             ReadSequenceHeader();
@@ -290,6 +297,14 @@ public sealed unsafe class MediaFoundationH264Encoder : IDisposable
         {
             Release(type);
         }
+    }
+
+    /// <summary>No frames held back: low-latency mode, no B-frames, a keyframe every 2 s. Optional on old Windows.</summary>
+    private void ApplyLowLatency()
+    {
+        SetCodecValue(LowLatencyMode, Variant.Bool(true));
+        SetCodecValue(BPictureCount, Variant.UInt32(0));
+        SetCodecValue(GopSize, Variant.UInt32((uint)(_fps * 2)));
     }
 
     private void SetCodecValue(Guid api, Variant value)

@@ -194,6 +194,8 @@ public sealed class MediaFoundationEncoderTests(ITestOutputHelper output)
             }
             output.WriteLine($"{frames.Count} access units, {frames.Sum(f => f.Data.Length)} bytes, keyframes at {string.Join(",", frames.Select((f, i) => (f, i)).Where(x => x.f.Key).Select(x => x.i))}");
             Assert.NotEmpty(frames);
+            // Low latency: (almost) one output per input, nothing held back (it was 16 of 20 before the fix).
+            Assert.True(frames.Count >= 19, $"encoder held back {20 - frames.Count} frames");
             Assert.True(frames[0].Key, "the first frame must be a keyframe");
             Assert.All(frames, f => Assert.True(Nexus.Windows.H264.StartsWithStartCode(f.Data), "Annex-B start code"));
             var types = Nexus.Windows.H264.NalTypes(frames[0].Data).ToList();

@@ -14,6 +14,9 @@ internal sealed class ScreenVideoStream : IScreenVideo
 {
     public const int Fps = 30;
 
+    /// <summary>A phone further behind than this skips to the newest keyframe instead of replaying old frames.</summary>
+    public const int MaxBacklog = 6;
+
     private readonly VideoFrameBuffer _buffer = new();
     private readonly ManualResetEventSlim _ready = new();
     private readonly Thread _thread;
@@ -64,6 +67,18 @@ internal sealed class ScreenVideoStream : IScreenVideo
         {
             _keyframe = true;
         }
+        if (frames.Count > MaxBacklog)
+        {
+            // Showing every old frame would only add delay: jump to the newest keyframe (or ask for one).
+            var list = frames.ToList();
+            var key = list.FindLastIndex(f => f.Key);
+            if (key < 0)
+            {
+                _keyframe = true;
+                return [];
+            }
+            return list[key..];
+        }
         return frames;
     }
 
@@ -89,6 +104,8 @@ internal sealed class ScreenVideoStream : IScreenVideo
         var bounds = Screen.PrimaryScreen?.Bounds ?? Rectangle.Empty;
         var nv12 = new byte[Nv12.Size(Width, Height)];
         byte[]? lastHash = null;
+        // After a change keep feeding frames for a second, so nothing waits inside the encoder.
+        var flushFrames = 0;
         var interval = TimeSpan.FromSeconds(1.0 / Fps);
         try
         {
@@ -117,7 +134,12 @@ internal sealed class ScreenVideoStream : IScreenVideo
                             var pixels = new ReadOnlySpan<byte>((void*)data.Scan0, data.Stride * Height);
                             var hash = System.Security.Cryptography.SHA256.HashData(pixels);
                             var force = _keyframe;
-                            if (force || lastHash is null || !hash.AsSpan().SequenceEqual(lastHash))
+                            var changed = lastHash is null || !hash.AsSpan().SequenceEqual(lastHash);
+                            if (changed)
+                            {
+                                flushFrames = Fps;
+                            }
+                            if (force || changed || flushFrames-- > 0)
                             {
                                 lastHash = hash;
                                 Nv12.FromBgra(pixels, data.Stride, Width, Height, nv12);
