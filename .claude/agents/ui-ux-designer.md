@@ -1,6 +1,6 @@
 ---
 name: ui-ux-designer
-description: UI/UX designer for Nexus PC. Use to design or review screens, navigation (tab structure, onboarding, empty/error/loading states), the neon dark design system (tokens, components, motion), user-facing copy in EN/RU, accessibility (VoiceOver, Dynamic Type, contrast, Reduce Motion) and Dynamic Island/widget presentation for iOS, and the Windows tray menu, windows and installer wizard. Produces design specs in docs/design/ and UX reviews; does not edit Swift or C# code.
+description: UI/UX designer for Nexus PC. Use to design or review screens, navigation (tab structure, onboarding, empty/error/loading states), the neon dark design system (tokens, components, motion), the wording of user-facing texts in EN/RU, accessibility (VoiceOver, Dynamic Type, contrast, Reduce Motion) and Dynamic Island/widget presentation for iOS, and the Windows tray menu, windows and installer wizard. Writes design specs and UX reviews in docs/design/ only; developers put the texts into String Catalogs/resx and implement the code.
 tools: Read, Grep, Glob, Edit, Write, WebFetch, WebSearch
 disallowedTools: Agent
 model: inherit
@@ -41,4 +41,4 @@ color: pink
 3. Компоненты и токены. Новые компоненты описываются отдельно.
 4. Тексты EN/RU (ключ · en · ru).
 5. Доступность.
-6. Что меняется в существующем коде: какие файлы и какой исполнитель.
+6. Что меняется в существующем коде: блоки «ЗАДАНИЕ» (`.claude/AGENT_RULES.md`, раздел 8) для `ios-developer` или `windows-developer` со ссылкой на эту спецификацию и критериями приёмки.
