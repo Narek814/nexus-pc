@@ -65,7 +65,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
     public static async Task<AgentTestHost> StartAsync(
         string? dataDirectory = null, IPowerController? power = null, bool fakePower = true,
         string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null,
-        IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, FakeNotifier? notifier = null, int? openRgbPort = null)
+        IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, int? openRgbPort = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         power ??= fakePower ? new FakePowerController() : null;
@@ -84,7 +84,6 @@ internal sealed class AgentTestHost : IAsyncDisposable
             // On Windows the agent only accepts the installed Nexus.Tray.exe; the fake tray lives in this test process.
             TrayPath = trayPath ?? Environment.ProcessPath,
             MetricsSource = metrics ?? new FakeMetricsSource(),
-            Notifier = notifier ?? new FakeNotifier(),
             OpenRgbPort = openRgbPort ?? 1, // port 1: nothing listens, OpenRGB "not running" unless a test provides one
         });
         await app.StartAsync();
@@ -237,16 +236,5 @@ internal sealed class FakeMetricsSource : Nexus.Monitoring.IMetricsSource
             Network = new Nexus.Monitoring.NetworkMetrics { ReceiveBytesPerSecond = 1000, SendBytesPerSecond = 500 },
             Unavailable = new Dictionary<string, string> { ["cpu.temperature"] = "no sensor driver" },
         };
-    }
-}
-
-internal sealed class FakeNotifier : Nexus.Notifications.INotifier
-{
-    public System.Collections.Concurrent.ConcurrentQueue<Nexus.Notifications.AlertEvent> Sent { get; } = new();
-
-    public Task<bool> SendAsync(Nexus.Notifications.AlertEvent alert, Nexus.Notifications.AlertSettings settings, CancellationToken cancellationToken)
-    {
-        Sent.Enqueue(alert);
-        return Task.FromResult(settings.NtfyEnabled);
     }
 }

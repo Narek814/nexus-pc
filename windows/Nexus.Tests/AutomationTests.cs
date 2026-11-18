@@ -54,7 +54,7 @@ public sealed class AutomationEngineTests
     public void Metric_rule_needs_the_hold_time_and_drops_before_repeating()
     {
         var engine = new AutomationEngine(Moscow);
-        var rule = Rule("""{"id":"hot","name":"Hot","trigger":{"type":"metric","metric":"gpuTemperature","above":85,"forSeconds":30},"actions":[{"type":"notify","message":"hot"}]}""");
+        var rule = Rule("""{"id":"hot","name":"Hot","trigger":{"type":"metric","metric":"gpuTemperature","above":85,"forSeconds":30},"actions":[{"type":"lock"}]}""");
         var t = Local(16, 12, 0);
         AutomationReadings Gpu(double? c) => new(c, 10, 10);
 
@@ -74,7 +74,7 @@ public sealed class AutomationEngineTests
     public void Cpu_temperature_can_trigger_a_rule()
     {
         var engine = new AutomationEngine(Moscow);
-        var rule = Rule("""{"id":"cpu","name":"CPU","trigger":{"type":"metric","metric":"cpuTemperature","above":90,"forSeconds":60},"actions":[{"type":"notify","message":"hot"}]}""");
+        var rule = Rule("""{"id":"cpu","name":"CPU","trigger":{"type":"metric","metric":"cpuTemperature","above":90,"forSeconds":60},"actions":[{"type":"lock"}]}""");
         var t = Local(16, 12, 0);
         Assert.Empty(engine.Due([rule], t, new AutomationReadings(40, 10, 10, CpuTemperature: 95)));
         Assert.Single(engine.Due([rule], t.AddSeconds(60), new AutomationReadings(40, 10, 10, CpuTemperature: 95)));
@@ -108,7 +108,7 @@ public sealed class AutomationEngineTests
             {"id":"night","name":"Ночь","enabled":true,"onlyBetween":{"from":"22:00","to":"02:00"},
              "trigger":{"type":"time","time":"23:00","days":[5,6]},
              "actions":[{"type":"profile","profileId":"night"},{"type":"rgb","color":"#ff0000","brightness":40,"effect":"static"},
-                        {"type":"wait","seconds":600},{"type":"shutdown","delaySeconds":300},{"type":"notify","message":"Спокойной ночи"}]}
+                        {"type":"wait","seconds":600},{"type":"shutdown","delaySeconds":300},{"type":"lock"}]}
             """);
         var again = Rule(AutomationJson.ToJson(rule).ToJsonString());
         Assert.Equal(AutomationJson.ToJson(rule).ToJsonString(), AutomationJson.ToJson(again).ToJsonString());
@@ -128,18 +128,28 @@ public sealed class AutomationEngineTests
     [InlineData("""{"id":"x","name":"X","trigger":{"type":"pcStarted","time":"10:00"},"actions":[{"type":"lock"}]}""")]
     [InlineData("""{"id":"x","name":"X","trigger":{"type":"time","time":"10:00","days":[0]},"actions":[{"type":"lock"}]}""")]
     [InlineData("""{"id":"x","name":"X","trigger":{"type":"metric","metric":"diskFree","above":5},"actions":[{"type":"lock"}]}""")]
-    [InlineData("""{"id":"x","name":"X","trigger":{"type":"pcStarted"},"actions":[{"type":"notify","message":"a\nb"}]}""")]
+    [InlineData("""{"id":"x","name":"X","trigger":{"type":"pcStarted"},"actions":[{"type":"notify","message":"removed"}]}""")]
     [InlineData("""{"id":"x","name":"X","trigger":{"type":"pcStarted"},"actions":[{"type":"app","appId":"C:\\evil.exe"}]}""")]
     [InlineData("""{"id":"x","name":"X","trigger":{"type":"pcStarted"},"onlyBetween":{"from":"10:00","to":"10:00"},"actions":[{"type":"lock"}]}""")]
     public void Rejects(string json) => Assert.False(AutomationJson.Parse(JsonElement.Parse(json), "dev", out _, out _));
+
+    [Fact]
+    public void Stored_notification_steps_are_dropped()
+    {
+        using var kept = AutomationJson.WithoutLegacySteps(JsonElement.Parse(
+            """{"id":"hot","name":"Hot","trigger":{"type":"pcStarted"},"actions":[{"type":"notify","message":"hot"},{"type":"lock"}]}"""));
+        Assert.True(AutomationJson.Parse(kept!.RootElement, null, out var rule, out _));
+        Assert.Equal(["lock"], rule!.Actions.Select(a => a.Kind));
+        Assert.Null(AutomationJson.WithoutLegacySteps(JsonElement.Parse(
+            """{"id":"n","name":"N","trigger":{"type":"pcStarted"},"actions":[{"type":"notify","message":"only"}]}""")));
+    }
 }
 
 public sealed class AutomationProtocolTests : IAsyncLifetime
 {
-    private readonly FakeNotifier _notifier = new();
     private AgentTestHost _host = null!;
 
-    public async Task InitializeAsync() => _host = await AgentTestHost.StartAsync(metrics: new FakeMetricsSource(), notifier: _notifier);
+    public async Task InitializeAsync() => _host = await AgentTestHost.StartAsync(metrics: new FakeMetricsSource());
 
     public async Task DisposeAsync()
     {
@@ -191,7 +201,7 @@ public sealed class AutomationProtocolTests : IAsyncLifetime
 
         var saved = await client.RequestAsync("automations.upsert", Upsert("""
             {"id":"play","name":"Игра","trigger":{"type":"time","time":"20:00"},
-             "actions":[{"type":"profile","profileId":"gaming"},{"type":"wait","seconds":1},{"type":"notify","message":"Готово к игре"},{"type":"lock"}]}
+             "actions":[{"type":"profile","profileId":"gaming"},{"type":"wait","seconds":1},{"type":"lock"}]}
             """));
         Assert.True(saved.IsOk(), saved.ToJsonString());
         Assert.True((await client.RequestAsync("automations.run", new JsonObject { ["automationId"] = "play" })).IsOk());
@@ -200,13 +210,9 @@ public sealed class AutomationProtocolTests : IAsyncLifetime
 
         Assert.Contains("launch:steam", tray.Desktop.Calls);
         Assert.Contains("lock", tray.Desktop.Calls);
-        Assert.Contains(_notifier.Sent, a => a.Message == "Готово к игре");
 
         var list = await client.RequestAsync("automations.list");
-        var lastRun = list["payload"]!["automations"]![0]!["lastRun"]!;
-        // ntfy is off by default: the notification step is reported, the rest ran.
-        Assert.False(lastRun["ok"]!.GetValue<bool>());
-        Assert.Contains("уведомление", lastRun["summary"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.True(list["payload"]!["automations"]![0]!["lastRun"]!["ok"]!.GetValue<bool>());
 
         var history = await client.RequestAsync("history.list", new JsonObject { ["limit"] = 20 });
         var titles = history["payload"]!["entries"]!.AsArray().Select(e => e!["title"]!.GetValue<string>()).ToList();
@@ -255,18 +261,19 @@ public sealed class AutomationProtocolTests : IAsyncLifetime
         var (client, _, key) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
         await using var _ = client;
         using var __ = key;
-        await client.RequestAsync("automations.upsert", Upsert("""{"id":"hello","name":"Hello","trigger":{"type":"userSignedIn"},"actions":[{"type":"notify","message":"вход"}]}"""));
-        await client.RequestAsync("automations.upsert", Upsert("""{"id":"hot","name":"Hot","trigger":{"type":"metric","metric":"gpuTemperature","above":55},"actions":[{"type":"notify","message":"горячо"}]}"""));
+        await client.RequestAsync("automations.upsert", Upsert("""{"id":"hello","name":"Hello","trigger":{"type":"userSignedIn"},"actions":[{"type":"lock"}]}"""));
+        await client.RequestAsync("automations.upsert", Upsert("""{"id":"hot","name":"Hot","trigger":{"type":"metric","metric":"gpuTemperature","above":55},"actions":[{"type":"app","appId":"steam"}]}"""));
 
-        await using (await _host.ConnectTrayAsync())
-        {
-            await AgentIntegrationTests.WaitUntil(() => _notifier.Sent.Any(a => a.Message == "вход"));
-        }
+        await using var tray = await _host.ConnectTrayAsync();
+        tray.Store.AddApp("Steam", Nexus.Core.Apps.AppLaunchKind.Executable, "steam.exe", false, null);
+        await AgentIntegrationTests.WaitUntil(() => tray.Desktop.Calls.Contains("lock"));
 
         _host.Services.Metrics.SampleNow(); // the fake GPU reports 60 °C
         _host.Services.Automations!.Tick();
-        await AgentIntegrationTests.WaitUntil(() => _notifier.Sent.Any(a => a.Message == "горячо"));
-        Assert.Single(_notifier.Sent, a => a.Message == "горячо");
+        await AgentIntegrationTests.WaitUntil(() => tray.Desktop.Calls.Contains("launch:steam"));
+        _host.Services.Automations.Tick();
+        await _host.Services.Automations.IdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Single(tray.Desktop.Calls, c => c == "launch:steam");
     }
 
     [Fact]
@@ -280,7 +287,7 @@ public sealed class AutomationProtocolTests : IAsyncLifetime
         }
         var dir = _host.DataDirectory;
         await _host.DisposeAsync();
-        _host = await AgentTestHost.StartAsync(dataDirectory: dir, metrics: new FakeMetricsSource(), notifier: _notifier);
+        _host = await AgentTestHost.StartAsync(dataDirectory: dir, metrics: new FakeMetricsSource());
         var rule = Assert.Single(_host.Services.Automations!.Rules);
         Assert.Equal(420 + 15, rule.Trigger.MinuteOfDay);
     }

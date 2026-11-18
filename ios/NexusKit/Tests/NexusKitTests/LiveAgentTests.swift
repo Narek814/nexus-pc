@@ -65,12 +65,6 @@ final class LiveAgentTests: XCTestCase {
         XCTAssertEqual(history["intervalSeconds"] as? Int, 2)
         XCTAssertNotNil(history["points"] as? [Any])
 
-        // Alerts: ntfy is off by default; enabling gives a random topic. (No delivery: CI must not post to ntfy.sh.)
-        let alerts = try await connection.request("alerts.get").unwrap()
-        XCTAssertEqual((alerts["ntfy"] as? [String: Any])?["enabled"] as? Bool, false)
-        let badThreshold = try await connection.request("alerts.set", payload: ["gpuTemperatureC": 300])
-        XCTAssertEqual(badThreshold.errorCode, "command.invalidPayload")
-
         // No tray on the CI machine.
         let apps = try await connection.request("apps.list")
         XCTAssertEqual(apps.errorCode, "session.unavailable")

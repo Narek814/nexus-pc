@@ -24,8 +24,7 @@ public sealed record AutomationAction(
     string? Color = null,
     int? Brightness = null,
     string? Effect = null,
-    int? Seconds = null,
-    string? Message = null);
+    int? Seconds = null);
 
 public sealed record AutomationDefinition(
     string Id,
@@ -53,7 +52,7 @@ public static class AutomationRules
     public static readonly IReadOnlyList<string> Metrics = ["gpuTemperature", "cpuTemperature", "cpuUsage", "memoryUsage"];
 
     public static readonly IReadOnlyList<string> ActionKinds =
-        ["profile", "app", "rgb", "rgbProfile", "lock", "sleep", "shutdown", "restart", "notify", "wait"];
+        ["profile", "app", "rgb", "rgbProfile", "lock", "sleep", "shutdown", "restart", "wait"];
 
     /// <summary>What a device must itself be allowed to do to create (and keep running) an action: no escalation.</summary>
     public static Permission RequiredFor(AutomationAction action) => action.Kind switch
@@ -61,7 +60,6 @@ public static class AutomationRules
         "profile" or "app" => Permission.Apps,
         "rgb" or "rgbProfile" => Permission.Rgb,
         "lock" or "sleep" or "shutdown" or "restart" => Permission.Power,
-        "notify" => Permission.Monitoring,
         _ => Permission.None,
     };
 
@@ -75,6 +73,25 @@ public static class AutomationRules
 /// <summary>Wire/storage format (docs/API.md «Автоматизации»).</summary>
 public static class AutomationJson
 {
+    /// <summary>
+    /// A stored rule without "notify" steps (notifications were removed). Null when no step is left.
+    /// </summary>
+    public static JsonDocument? WithoutLegacySteps(JsonElement stored)
+    {
+        if (stored.ValueKind != JsonValueKind.Object || JsonNode.Parse(stored.GetRawText()) is not JsonObject rule
+            || rule["actions"] is not JsonArray actions)
+        {
+            return JsonDocument.Parse(stored.GetRawText());
+        }
+        var legacy = actions.Where(a => a is JsonObject o && o["type"]?.GetValueKind() == JsonValueKind.String
+            && o["type"]!.GetValue<string>() == "notify").ToList();
+        foreach (var step in legacy)
+        {
+            actions.Remove(step);
+        }
+        return actions.Count == 0 ? null : JsonDocument.Parse(rule.ToJsonString());
+    }
+
     public static PayloadResult Upsert(JsonElement payload)
     {
         if (payload.ValueKind != JsonValueKind.Object || payload.EnumerateObject().Any(p => p.Name != "automation")
@@ -267,9 +284,6 @@ public static class AutomationJson
                 // At least a minute: Windows shows the countdown and anyone at the PC (or the phone) can cancel.
                 return Only("delaySeconds") && Int(x, "delaySeconds", AutomationRules.MinPowerDelaySeconds, 86400, out var delay)
                     ? new AutomationAction(type, Seconds: delay) : null;
-            case "notify":
-                return Only("message") && Str(x, "message", out var message) && message.Length is > 0 and <= 200 && !message.Any(char.IsControl)
-                    ? new AutomationAction(type, Message: message) : null;
             case "wait":
                 return Only("seconds") && Int(x, "seconds", 1, AutomationRules.MaxWaitSeconds, out var seconds)
                     ? new AutomationAction(type, Seconds: seconds) : null;
@@ -338,9 +352,6 @@ public static class AutomationJson
                 break;
             case "shutdown" or "restart":
                 json["delaySeconds"] = x.Seconds;
-                break;
-            case "notify":
-                json["message"] = x.Message;
                 break;
             case "wait":
                 json["seconds"] = x.Seconds;

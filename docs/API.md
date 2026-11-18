@@ -78,9 +78,6 @@
 | `auth.prove` | — (без авторизации) | read | `{ signature }` |
 | `pc.status` | monitoring | read | `{}` → `{ pcId, pcName, os, uptimeSeconds, agentVersion, userSession }` |
 | `metrics.snapshot` | monitoring | read | `{}` → снимок, см. «Мониторинг» |
-| `alerts.get` | monitoring | read | `{}` → пороги, `ntfy { enabled, server, topic }`, `recent` |
-| `alerts.set` | monitoring | normal | любые из: `gpuTemperatureEnabled`, `gpuTemperatureC` (50–110), `cpuTemperatureEnabled`, `cpuTemperatureC` (50–110), `cpuUsageEnabled`, `cpuUsagePercent` (50–100), `memoryUsageEnabled`, `memoryUsagePercent` (50–100), `diskFreeEnabled`, `diskFreePercent` (1–50), `powerEventsEnabled`, `cooldownMinutes` (5–1440), `ntfyEnabled`, `ntfyServer` (https), `regenerateTopic` |
-| `alerts.test` | monitoring | normal | `{}` → `{ delivered, ntfyEnabled }` |
 | `metrics.history` | monitoring | read | `{ range: "10m" \| "1h" \| "24h" }` |
 | `power.shutdown` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
 | `power.restart` | power | **critical** | `{ delaySeconds?: 0..86400, force?: bool }` |
@@ -203,13 +200,9 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 `metrics.history { range }` → `{ range, intervalSeconds, points: [{ t, cpu, memory, gpu, gpuTemperature, rx, tx }] }`. `10m` — точки каждые 2 с; `1h`, `24h` — средние за минуту. История хранится в памяти службы и начинается заново после её перезапуска (постоянная история — P6).
 
-## Предупреждения и уведомления (P4b)
+## Предупреждения и уведомления (P4b) — убраны
 
-Правила (на ПК, `Nexus.Notifications.AlertEngine`): видеокарта и процессор ≥ порога температуры **30 с** (процессор — только с датчиком, т.е. с драйвером PawnIO); CPU и память ≥ порога **5 мин**; свободное место на диске < порога — сразу. Повторно то же предупреждение — только после явного спада (на 5 единиц ниже порога) **и** не раньше, чем через `cooldownMinutes`. Недоступные значения ничего не включают и не сбрасывают.
-
-События питания: «ПК включился» (старт службы), «ПК выключается» (остановка службы, лучшая попытка), «ПК был выключен неожиданно» — если при старте остался файл-метка прошлого запуска (обновляется раз в минуту, удаляется при чистой остановке).
-
-Доставка: **ntfy** (`POST https://ntfy.sh/<канал>`, заголовки Title, Priority, Tags). Выключено по умолчанию; при включении создаётся случайный канал `nexuspc-<32 hex>`. Текст — только имя ПК, событие и числа.
+Команды `alerts.get`, `alerts.set`, `alerts.test` и шаг автоматизации `notify` удалены (2026-11-18). Старые правила с шагом `notify` загружаются без него; правило, где кроме него ничего не было, не загружается.
 
 ## Подсветка (P10)
 
@@ -261,7 +254,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 `onlyBetween: { from, to }` — дополнительное условие по времени, может переходить через полночь (22:00–07:00).
 
-**Что сделать (`actions`, по порядку)**: `profile` (profileId; связанный профиль подсветки тоже включается), `app` (appId), `rgb` (color, brightness, effect), `rgbProfile` (profileId), `lock`, `sleep`, `shutdown` / `restart` (`delaySeconds` ≥ 60 — Windows показывает отсчёт, отмена `power.cancel`), `notify` (message ≤ 200, через ntfy, если включён), `wait` (seconds ≤ 4 ч). Других действий нет: автоматизация не может запустить командную строку или путь.
+**Что сделать (`actions`, по порядку)**: `profile` (profileId; связанный профиль подсветки тоже включается), `app` (appId), `rgb` (color, brightness, effect), `rgbProfile` (profileId), `lock`, `sleep`, `shutdown` / `restart` (`delaySeconds` ≥ 60 — Windows показывает отсчёт, отмена `power.cancel`), `wait` (seconds ≤ 4 ч). Других действий нет: автоматизация не может запустить командную строку или путь.
 
 **Безопасность.** Сохранить правило может только устройство, у которого есть `automation` **и** разрешения на все его действия (`apps`, `rgb`, `power`, `monitoring` для уведомлений) — иначе `auth.permissionDenied` с перечнем недостающих. Правило с выключением/перезагрузкой требует `confirmed`. Правило запоминает создавшее устройство; перед каждым шагом агент проверяет, что устройство не отозвано и разрешения не отняты, — иначе шаг не выполняется, а в истории остаётся объяснение. Одно правило не запускается повторно, пока выполняется (`automations.running`); `automations.stop` прерывает ожидание.
 

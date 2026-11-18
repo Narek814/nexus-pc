@@ -23,7 +23,7 @@
 │   ├─ API: WebSocket + HTTPS (Kestrel)                  │
 │   ├─ Auth/Pairing, Permissions, Command Validator      │
 │   ├─ Nexus.Monitoring, Nexus.Automation,               │
-│   │  Nexus.Notifications, Nexus.Sync (файлы), History  │
+│   │  Nexus.Sync (файлы), History                       │
 │   └─ IPC-сервер: Named Pipe (ACL: только SID польз.)   │
 │                │                                       │
 │  Nexus.Tray  (приложение в сеансе пользователя)        │
@@ -84,7 +84,7 @@
 | `Nexus.RGB` | библиотека | `IRgbAdapter`; первые адаптеры — OpenRGB SDK и Windows Dynamic Lighting. |
 | `Nexus.Automation` | библиотека (в Agent) | Движок «Триггер → Условие → Действие», планировщик. |
 | `Nexus.Sync` | библиотека | Передача файлов (чанки, докачка, SHA-256), песочница папок; буфер обмена (через Tray). |
-| `Nexus.Notifications` | библиотека | Шина событий, дедупликация/троттлинг Smart Alerts, доставка (WS → iPhone; позже через Gateway → APNs). |
+| ~~`Nexus.Notifications`~~ | — | Удалён (2026-11-18) вместе с уведомлениями ntfy. |
 | `Nexus.Windows` | библиотека (Windows interop) | Питание (`WindowsPowerController`), проверка процесса на другом конце канала, сеансы. Общая для Agent и Tray. |
 | `Nexus.DevClient` | консоль (кроссплатформенно) | Тестовый клиент вместо iPhone до P2: сопряжение, вход, отправка команд. Эталон поведения для `NexusKit`. |
 | `Nexus.Tests` | xUnit | Юнит, контракт-тесты по фикстурам `shared/`, интеграционные тесты Agent ↔ DevClient. |
@@ -169,7 +169,7 @@ ios/NexusPC/
 | NVML (через P/Invoke, без пакета) | Monitoring | NVIDIA EULA (DLL с драйвером) | P4 |
 | SIPSorcery / libwebrtc | Remote | BSD-3 / BSD | P5 (спайк) |
 | WebRTC (iOS) | iOS | BSD | P5 (спайк) |
-| ntfy (HTTP API, без пакета) | Notifications | Apache-2.0 / GPL-2 (сервер) | P3 |
+| ~~ntfy~~ | — | убран 2026-11-18 | — |
 | Ollama (HTTP API на localhost, без пакета) | AI | MIT | P9 |
 | OpenRGB SDK (сетевой протокол, без пакета) | RGB | своя реализация протокола (версия 0) в `Nexus.RGB`; OpenRGB (GPL-2) — отдельная программа, которую ставит владелец. Пакет openrgb-python скачан только в облачную песочницу как справочник по формату пакетов, в проект не входит | P10 |
 | LibreHardwareMonitorLib 0.9.6 (NuGet) и его зависимости: HidSharp, DiskInfoToolkit, RAMSPDToolkit-NDD, BlackSharp.Core, System.Management, System.IO.Ports, Mono.Posix.NETStandard, System.CodeDom, System.IO.FileSystem.AccessControl | Температура и частота CPU в `Nexus.Monitoring` (включена только часть CPU) | MPL-2.0 (LHM); зависимости — MIT/Apache-2.0/MPL. Датчики процессора читает через драйвер PawnIO (ставит OpenRGB или pawnio.eu), а не через WinRing0 | P4, разрешено владельцем 2026-11-17 |

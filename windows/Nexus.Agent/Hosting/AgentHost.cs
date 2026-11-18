@@ -16,7 +16,6 @@ using Nexus.Agent.Server;
 using Nexus.Agent.Session;
 using Nexus.Agent.Storage;
 using Nexus.Monitoring;
-using Nexus.Notifications;
 
 namespace Nexus.Agent.Hosting;
 
@@ -40,8 +39,6 @@ internal sealed record AgentHostOptions
     public IMetricsSource? MetricsSource { get; init; }
     /// <summary>OpenRGB SDK server port on this PC (tests point it at a fake server).</summary>
     public int OpenRgbPort { get; init; } = RgbService.DefaultPort;
-    /// <summary>Overrides notification delivery (tests). Default: ntfy over HTTPS.</summary>
-    public INotifier? Notifier { get; init; }
     /// <summary>Overrides the executable allowed on the session pipe (tests).</summary>
     public string? TrayPath { get; init; }
     public TimeSpan? PairingLifetime { get; init; }
@@ -109,9 +106,6 @@ internal static class AgentHost
         builder.Services.AddSingleton(services);
         builder.Services.AddSingleton<AdminService>();
         builder.Services.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
-        var notifier = options.Notifier ?? new NtfyNotifier(new HttpClient());
-        builder.Services.AddSingleton(sp => new AlertService(services.Metrics, notifier, options.DataDirectory, identity.PcName, options.Time, sp.GetRequiredService<ILogger<AlertService>>()));
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<AlertService>());
         builder.Services.AddSingleton(sp => new AutomationService(services, options.DataDirectory, options.TimeZone, sp.GetRequiredService<ILogger<AutomationService>>()));
         builder.Services.AddHostedService(sp => sp.GetRequiredService<AutomationService>());
         if (options.EnableSessionPipe)
@@ -125,8 +119,6 @@ internal static class AgentHost
         }
 
         var app = builder.Build();
-        services.Alerts = app.Services.GetRequiredService<AlertService>();
-        services.Alerts.History = services.History;
         services.Automations = app.Services.GetRequiredService<AutomationService>();
         services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort);
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));

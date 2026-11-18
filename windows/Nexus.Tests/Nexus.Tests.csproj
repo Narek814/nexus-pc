@@ -15,7 +15,6 @@
     <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />
     <ProjectReference Include="..\Nexus.Agent\Nexus.Agent.csproj" />
     <ProjectReference Include="..\Nexus.DevClient\Nexus.DevClient.csproj" />
-    <ProjectReference Include="..\Nexus.Notifications\Nexus.Notifications.csproj" />
     <ProjectReference Include="..\Nexus.RGB\Nexus.RGB.csproj" />
     <ProjectReference Include="..\Nexus.Setup\Nexus.Setup.csproj" />
   </ItemGroup>

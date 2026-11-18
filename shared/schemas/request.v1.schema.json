@@ -56,8 +56,6 @@
               "apps.list",
               "profiles.list",
               "metrics.snapshot",
-              "alerts.get",
-              "alerts.test",
               "rgb.status",
               "files.list",
               "clipboard.get",
@@ -211,22 +209,6 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/metricsHistory"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "alerts.set"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/alertsSet"
           }
         }
       }
@@ -581,9 +563,6 @@
             "profiles.delete",
             "metrics.snapshot",
             "metrics.history",
-            "alerts.get",
-            "alerts.set",
-            "alerts.test",
             "rgb.status",
             "rgb.apply",
             "rgb.profiles.upsert",
@@ -789,61 +768,6 @@
             "1h",
             "24h"
           ]
-        }
-      }
-    },
-    "alertsSet": {
-      "type": "object",
-      "additionalProperties": false,
-      "minProperties": 1,
-      "description": "Any subset. Ranges are checked by the agent (gpuTemperatureC and cpuTemperatureC 50..110, *Percent 50..100, diskFreePercent 1..50, cooldownMinutes 5..1440).",
-      "properties": {
-        "gpuTemperatureEnabled": {
-          "type": "boolean"
-        },
-        "gpuTemperatureC": {
-          "type": "integer"
-        },
-        "cpuTemperatureEnabled": {
-          "type": "boolean"
-        },
-        "cpuTemperatureC": {
-          "type": "integer"
-        },
-        "cpuUsageEnabled": {
-          "type": "boolean"
-        },
-        "cpuUsagePercent": {
-          "type": "integer"
-        },
-        "memoryUsageEnabled": {
-          "type": "boolean"
-        },
-        "memoryUsagePercent": {
-          "type": "integer"
-        },
-        "diskFreeEnabled": {
-          "type": "boolean"
-        },
-        "diskFreePercent": {
-          "type": "integer"
-        },
-        "powerEventsEnabled": {
-          "type": "boolean"
-        },
-        "cooldownMinutes": {
-          "type": "integer"
-        },
-        "ntfyEnabled": {
-          "type": "boolean"
-        },
-        "ntfyServer": {
-          "type": "string",
-          "pattern": "^https://[^/?#\\s]+/?$",
-          "maxLength": 200
-        },
-        "regenerateTopic": {
-          "type": "boolean"
         }
       }
     },
@@ -1466,24 +1390,6 @@
                         "type": "integer",
                         "minimum": 60,
                         "maximum": 86400
-                      }
-                    }
-                  },
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "type",
-                      "message"
-                    ],
-                    "properties": {
-                      "type": {
-                        "const": "notify"
-                      },
-                      "message": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
                       }
                     }
                   },

@@ -288,8 +288,6 @@ struct AutomationEditor: View {
                 EmptyView()
             case .shutdown, .restart:
                 Stepper("Через \(action.wrappedValue.minutes) мин (с отсчётом Windows)", value: action.minutes, in: 1...1440)
-            case .notify:
-                TextField("Текст уведомления", text: action.message)
             case .wait:
                 Stepper("Подождать \(action.wrappedValue.minutes) мин", value: action.minutes, in: 1...240)
             }
@@ -336,7 +334,7 @@ struct AutomationDraft: Identifiable {
     }
 
     enum ActionKind: String, CaseIterable, Identifiable {
-        case profile, app, rgb, rgbProfile, rgbOff, lock, sleep, shutdown, restart, notify, wait
+        case profile, app, rgb, rgbProfile, rgbOff, lock, sleep, shutdown, restart, wait
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -349,7 +347,6 @@ struct AutomationDraft: Identifiable {
             case .sleep: "Сон"
             case .shutdown: "Выключить ПК"
             case .restart: "Перезагрузить ПК"
-            case .notify: "Уведомление (ntfy)"
             case .wait: "Пауза"
             }
         }
@@ -362,7 +359,6 @@ struct AutomationDraft: Identifiable {
         var color = Color(red: 0.6, green: 0.2, blue: 1)
         var brightness = 100
         var minutes = 10
-        var message = ""
 
         init(kind: ActionKind) {
             self.kind = kind
@@ -392,7 +388,6 @@ struct AutomationDraft: Identifiable {
             case .sleep: ["type": "sleep"]
             case .shutdown: ["type": "shutdown", "delaySeconds": minutes * 60]
             case .restart: ["type": "restart", "delaySeconds": minutes * 60]
-            case .notify: ["type": "notify", "message": message.isEmpty ? "Сработала автоматизация" : String(message.prefix(200))]
             case .wait: ["type": "wait", "seconds": minutes * 60]
             }
         }
@@ -415,7 +410,6 @@ struct AutomationDraft: Identifiable {
             case "sleep": kind = .sleep
             case "shutdown": kind = .shutdown; minutes = max(1, (p["delaySeconds"] as? Int ?? 300) / 60)
             case "restart": kind = .restart; minutes = max(1, (p["delaySeconds"] as? Int ?? 300) / 60)
-            case "notify": kind = .notify; message = p["message"] as? String ?? ""
             case "wait": kind = .wait; minutes = max(1, (p["seconds"] as? Int ?? 60) / 60)
             default: return nil
             }
@@ -432,7 +426,6 @@ struct AutomationDraft: Identifiable {
             case .sleep: "сон"
             case .shutdown: "выключение через \(minutes) мин"
             case .restart: "перезагрузка через \(minutes) мин"
-            case .notify: "уведомление"
             case .wait: "пауза \(minutes) мин"
             }
         }
@@ -543,7 +536,7 @@ struct AutomationDraft: Identifiable {
     @MainActor
     static func blank(_ controller: PCController) -> AutomationDraft {
         var draft = AutomationDraft(name: "")
-        draft.actions = [Action(kind: .notify)]
+        draft.actions = [Action(kind: .lock)]
         return draft
     }
 
@@ -551,22 +544,18 @@ struct AutomationDraft: Identifiable {
         var draft = AutomationDraft(name: "Ночь")
         draft.trigger = .time
         draft.time = date(23, 30)
-        var notify = Action(kind: .notify)
-        notify.message = "Через 30 минут ПК уснёт"
         var wait = Action(kind: .wait)
         wait.minutes = 30
-        draft.actions = [Action(kind: .rgbOff), notify, wait, Action(kind: .sleep)]
+        draft.actions = [Action(kind: .rgbOff), wait, Action(kind: .sleep)]
         return draft
     }
 
     static func hotGpu() -> AutomationDraft {
         var draft = AutomationDraft(name: "Перегрев видеокарты")
         draft.trigger = .metric
-        var notify = Action(kind: .notify)
-        notify.message = "Видеокарта горячая — проверьте охлаждение"
         var red = Action(kind: .rgb)
         red.color = .red
-        draft.actions = [notify, red]
+        draft.actions = [red]
         return draft
     }
 
@@ -576,11 +565,9 @@ struct AutomationDraft: Identifiable {
         draft.metric = "cpuTemperature"
         draft.above = 90
         draft.forSeconds = 60
-        var notify = Action(kind: .notify)
-        notify.message = "Процессор горячий — проверьте охлаждение"
         var red = Action(kind: .rgb)
         red.color = .red
-        draft.actions = [notify, red]
+        draft.actions = [red]
         return draft
     }
 
@@ -589,7 +576,7 @@ struct AutomationDraft: Identifiable {
         var draft = AutomationDraft(name: "При входе в Windows")
         draft.trigger = .userSignedIn
         draft.actions = [controller.profiles.isEmpty
-            ? Action(kind: .notify)
+            ? Action(kind: .rgb)
             : Action(kind: .profile, controller: controller, rgbProfiles: [])]
         return draft
     }

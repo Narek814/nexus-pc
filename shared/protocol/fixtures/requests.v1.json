@@ -1640,194 +1640,6 @@
       "schemaValid": false
     },
     {
-      "name": "alerts.get",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000301",
-        "kind": "request",
-        "type": "alerts.get",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {}
-      },
-      "expect": {
-        "ok": true
-      },
-      "schemaValid": true
-    },
-    {
-      "name": "alerts.test",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000302",
-        "kind": "request",
-        "type": "alerts.test",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {}
-      },
-      "expect": {
-        "ok": true
-      },
-      "schemaValid": true
-    },
-    {
-      "name": "alerts.set thresholds and ntfy",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000303",
-        "kind": "request",
-        "type": "alerts.set",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {
-          "gpuTemperatureC": 80,
-          "ntfyEnabled": true
-        }
-      },
-      "expect": {
-        "ok": true
-      },
-      "schemaValid": true
-    },
-    {
-      "name": "alerts.set unknown field",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000304",
-        "kind": "request",
-        "type": "alerts.set",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {
-          "shell": "x"
-        }
-      },
-      "expect": {
-        "ok": false,
-        "error": "command.invalidPayload"
-      },
-      "schemaValid": false
-    },
-    {
-      "name": "alerts.set wrong type",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000305",
-        "kind": "request",
-        "type": "alerts.set",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {
-          "gpuTemperatureC": "hot"
-        }
-      },
-      "expect": {
-        "ok": false,
-        "error": "command.invalidPayload"
-      },
-      "schemaValid": false
-    },
-    {
-      "name": "alerts.set empty",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000306",
-        "kind": "request",
-        "type": "alerts.set",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {}
-      },
-      "expect": {
-        "ok": false,
-        "error": "command.invalidPayload"
-      },
-      "schemaValid": false
-    },
-    {
-      "name": "alerts.set http server",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "power",
-          "apps",
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000307",
-        "kind": "request",
-        "type": "alerts.set",
-        "ts": "2026-11-14T10:00:00Z",
-        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
-        "payload": {
-          "ntfyServer": "http://ntfy.sh"
-        }
-      },
-      "expect": {
-        "ok": false,
-        "error": "command.invalidPayload"
-      },
-      "schemaValid": false
-    },
-    {
       "name": "rgb.status",
       "context": {
         "authenticated": true,
@@ -3045,10 +2857,6 @@
             },
             "actions": [
               {
-                "type": "notify",
-                "message": "Видеокарта горячая"
-              },
-              {
                 "type": "rgb",
                 "color": "#FF0000",
                 "brightness": 100,
@@ -3853,31 +3661,6 @@
       "schemaValid": false
     },
     {
-      "name": "alerts.set cpu temperature",
-      "context": {
-        "authenticated": true,
-        "permissions": [
-          "monitoring"
-        ],
-        "now": "2026-11-14T10:00:00Z"
-      },
-      "message": {
-        "v": 1,
-        "id": "00000000-0000-4000-8000-000000000901",
-        "kind": "request",
-        "type": "alerts.set",
-        "ts": "2026-11-14T10:00:00Z",
-        "payload": {
-          "cpuTemperatureEnabled": true,
-          "cpuTemperatureC": 88
-        }
-      },
-      "expect": {
-        "ok": true
-      },
-      "schemaValid": true
-    },
-    {
       "name": "automations.upsert hot cpu",
       "context": {
         "authenticated": true,
@@ -3905,10 +3688,6 @@
               "forSeconds": 60
             },
             "actions": [
-              {
-                "type": "notify",
-                "message": "Процессор горячий"
-              },
               {
                 "type": "rgb",
                 "color": "#FF0000",

@@ -7,7 +7,6 @@ using Nexus.Core.Power;
 using Nexus.Core.Protocol;
 using Nexus.Core.Security;
 using Nexus.Core.Session;
-using Nexus.Notifications;
 
 namespace Nexus.Agent.Server;
 
@@ -359,14 +358,6 @@ internal sealed partial class AutomationService : BackgroundService
                 return sleep.Ok ? null : sleep.Message;
             case "shutdown" or "restart":
                 return await PowerAsync(rule, action, ct).ConfigureAwait(false);
-            case "notify":
-                if (_services.Alerts is not { } alerts)
-                {
-                    return "уведомления недоступны";
-                }
-                return await alerts.NotifyAsync(rule.Name, action.Message!, ct).ConfigureAwait(false)
-                    ? null
-                    : "не доставлено (ntfy выключен или нет интернета)";
             default:
                 return "неизвестное действие";
         }
@@ -416,7 +407,6 @@ internal sealed partial class AutomationService : BackgroundService
         "sleep" => "сон",
         "shutdown" => "выключение",
         "restart" => "перезагрузка",
-        "notify" => "уведомление",
         _ => action.Kind,
     };
 
@@ -438,9 +428,11 @@ internal sealed partial class AutomationService : BackgroundService
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            foreach (var item in doc.RootElement.EnumerateArray())
+            foreach (var stored in doc.RootElement.EnumerateArray())
             {
-                if (AutomationJson.Parse(item, null, out var rule, out _))
+                // Notifications (ntfy) were removed: drop their steps from rules saved by older versions.
+                using var item = AutomationJson.WithoutLegacySteps(stored);
+                if (item is not null && AutomationJson.Parse(item.RootElement, null, out var rule, out _))
                 {
                     rules.Add(rule!);
                 }
