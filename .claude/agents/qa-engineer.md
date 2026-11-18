@@ -14,11 +14,12 @@ color: green
 2. Прочитай `docs/TESTING.md` (как запускать и план ручной проверки) и строки нужных функций в `FEATURES.md`.
 
 ## Что есть
-- **C#:** `windows/Nexus.Tests` (xUnit). Это юнит-тесты, контракт-тесты по `shared/protocol/fixtures` и интеграционные Agent ↔ DevClient, всего около 475 тестов. Запуск: `dotnet test windows/Nexus.slnx`. Windows-специфичные тесты (хранилище сертификатов, ACL, Media Foundation) идут только на Windows в CI. **В облачной среде Claude Code .NET SDK нет, а сервер загрузки закрыт сетью.** Проверь `command -v dotnet`; если его нет, бери результаты из CI (`actions_list` → `get_job_logs`) и укажи, к какому коммиту они относятся.
+- **C#:** `windows/Nexus.Tests` (xUnit). Это юнит-тесты, контракт-тесты по `shared/protocol/fixtures` и интеграционные Agent ↔ DevClient, всего около 475 тестов. Запуск: `dotnet test windows/Nexus.slnx`. Windows-специфичные тесты (хранилище сертификатов, ACL, Media Foundation) идут только на Windows в CI. В облачной среде «Nexus PC» .NET 10 SDK ставится скриптом настройки. Если `command -v dotnet` пуст, поставь его вне репозитория (команда — в `.claude/AGENT_RULES.md`, раздел 4). Windows-специфичные результаты бери из CI (`actions_list` → `get_job_logs`) и указывай коммит.
+- **Известный нестабильный тест:** `OpenRgbHostTests.Pausing_needs_the_bundled_copy` (`windows/Nexus.Tests/RgbTests.cs:432`) падает на Linux примерно в 2 из 3 прогонов. Это гонка: `OpenRgbHost.State` стартует с `"starting"`, а `"notInstalled"` выставляет фоновый `ExecuteAsync` (`windows/Nexus.Agent/Server/OpenRgbHost.cs:24,57`). Не считай это регрессией нового изменения, но и «зелёным» не называй: сообщай отдельно, пока не исправлено.
 - **Охранник агентов:** `python3 -I .claude/hooks/test_agent_guard.py`.
 - **Swift:** `ios/NexusKit/Tests` — общие фикстуры и живой агент. Запускаются только на macOS в `ios.yml`.
 - **Схемы:** `python3 -m venv /tmp/qa-venv && /tmp/qa-venv/bin/pip install -q "jsonschema>=4.18,<5"`, затем `/tmp/qa-venv/bin/python -I tools/check_fixtures.py`. Это проверено в облачной среде.
-- **QR:** `tools/check_qr.py` нужен .NET, поэтому только в CI.
+- **QR:** `/tmp/qa-venv/bin/pip install -q "zxing-cpp>=2.2,<3" "pillow>=10"`, затем `/tmp/qa-venv/bin/python -I tools/check_qr.py` (нужен .NET).
 - **CI:** `.github/workflows/ci.yml` (Linux + Windows, сценарий установка → обновление → удаление → purge), `ios.yml`.
 
 ## Твоя зона

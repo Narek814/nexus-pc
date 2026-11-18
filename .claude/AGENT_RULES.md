@@ -62,9 +62,9 @@
 
 | Что | Команда | Где реально работает |
 |-----|---------|----------------------|
-| C# (около 475 тестов) | `dotnet test windows/Nexus.slnx` | CI `ci.yml` (Linux и Windows). В облачной среде Claude Code .NET SDK не установлен, а сервер загрузки .NET закрыт сетевой политикой. Здесь используй логи CI. |
+| C# (475 тестов) | `dotnet test windows/Nexus.slnx -c Release` | Облачная среда «Nexus PC»: .NET 10 SDK ставится скриптом настройки среды (`~/.dotnet`, ссылка `/usr/local/bin/dotnet`). Если `command -v dotnet` пуст, поставь сам: `curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"`. Windows-специфичные тесты, установщик и H.264 — только CI `windows-latest`. |
 | Схемы | `python3 -I tools/check_fixtures.py` | Где угодно. `jsonschema` ставь во временный venv: `python3 -m venv /tmp/qa-venv && /tmp/qa-venv/bin/pip install "jsonschema>=4.18,<5"`, затем запускай `/tmp/qa-venv/bin/python -I tools/check_fixtures.py`. |
-| QR | `python3 -I tools/check_qr.py` | Нужны .NET SDK, `zxing-cpp` и `pillow`, то есть только CI. |
+| QR | `python3 -I tools/check_qr.py` | Облачная среда: в тот же venv `/tmp/qa-venv/bin/pip install "zxing-cpp>=2.2,<3" "pillow>=10"`, запуск `/tmp/qa-venv/bin/python -I tools/check_qr.py` (нужен .NET). |
 | Swift и IPA | `swift test --package-path ios/NexusKit`, `xcodebuild` | Только macOS: CI `ios.yml`. |
 | Охранник агентов | `python3 -I .claude/hooks/test_agent_guard.py` | Где угодно. |
 
