@@ -7,8 +7,16 @@ internal static class Program
     private const string Usage = """
         NexusPC-Setup.exe                установить или обновить Nexus PC
         NexusPC-Setup.exe --uninstall    удалить (сопряжения и настройки сохраняются)
-        NexusPC-Setup.exe --purge        удалить вместе с данными и сертификатом
+        NexusPC-Setup.exe --purge        удалить вместе с данными и сертификатом (резервные копии папки данных остаются)
         Дополнительно: --quiet (без вопросов), --no-tray (не запускать трей)
+
+        Папка данных (командная строка от имени администратора):
+        NexusPC-Setup.exe --datadir-check                         проверить, ничего не меняет
+        NexusPC-Setup.exe --datadir-repair                        резервная копия, затем исправление прав
+        NexusPC-Setup.exe --datadir-repair --continue "<копия>"   продолжить прерванное исправление
+        NexusPC-Setup.exe --datadir-restore-acl "<копия>"         вернуть права, сохранённые в копии
+        Дополнительно: --data-dir "<...\NexusPC>"
+        Коды выхода: docs/SETUP.md, «Коды выхода установщика».
         """;
 
     public static int Main(string[] args)

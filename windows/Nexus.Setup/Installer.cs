@@ -5,6 +5,8 @@ using System.Security.AccessControl;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 using Microsoft.Win32;
+using Nexus.Core.Storage;
+using Nexus.Windows;
 
 namespace Nexus.Setup;
 
@@ -21,6 +23,10 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         {
             Say("Нужны права администратора: запустите установщик ещё раз и нажмите «Да» в окне Windows.");
             return 2;
+        }
+        if (options.DataDirectory is { } command)
+        {
+            return DataDirectoryCommand.Run(command, new InstallerConsole(log));
         }
         return options.Uninstall ? Uninstall() : Install();
     }
@@ -44,6 +50,17 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             return 3;
         }
         var newVersion = ReadVersion(payload);
+
+        // Before anything else is changed on disk (and before the service is stopped).
+        using (var report = new StringWriter())
+        {
+            var refused = DataDirectoryGate(DataDirectory, report);
+            if (refused is { } code)
+            {
+                Say(report.ToString().TrimEnd());
+                return code;
+            }
+        }
 
         var agentExe = SetupPlan.AgentExe(Root);
         var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion?.Split('+')[0] : null;
@@ -191,6 +208,15 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
                 }
             });
             Say("Ваш список программ и профилей остаётся в %LOCALAPPDATA%\\NexusPC — удалите папку вручную, если не нужен.");
+            var backups = SetupPlan.RemainingBackups(DataDirectory);
+            if (backups.Count > 0)
+            {
+                Say("Резервные копии папки данных не удаляются автоматически. Остались (удалите вручную, если не нужны):");
+                foreach (var backup in backups)
+                {
+                    Say("  " + DataText.Clean(backup, 400));
+                }
+            }
         }
         Say("Драйвер PawnIO не удаляется: им могут пользоваться другие программы. Удалить: Параметры → Приложения → PawnIO.");
         Say("Готово.");
@@ -264,35 +290,134 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     /// </summary>
     private void ImportOpenRgbSettings()
     {
-        EnsureSecureDataDirectory();
+        // Runs only after DataDirectoryGate accepted (or created) the data folder.
         var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenRGB");
         var target = Path.Combine(DataDirectory, "OpenRGB");
         var files = SetupPlan.OpenRgbFilesToImport(source, target);
+        var fs = new DataDirectoryFileSystem();
         foreach (var relative in files)
         {
             var destination = Path.Combine(target, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(Path.Combine(source, relative), destination, overwrite: true);
+            CreateOwnedDirectories(fs, DataDirectory, Path.GetDirectoryName(destination)!);
+            // Every imported file is a new file owned by Administrators (not by the account running the
+            // installer), access inherited, put in place by rename: an existing file is replaced, not rewritten.
+            var temp = destination + ".import-tmp";
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+            using (var input = File.OpenRead(Path.Combine(source, relative)))
+            using (var output = fs.CreateFile(temp))
+            {
+                input.CopyTo(output);
+                fs.FlushToDisk(output);
+            }
+            File.Move(temp, destination, overwrite: true);
         }
         log.WriteLine($"OpenRGB settings imported: {files.Count} file(s) from {source}");
+        // The folder must still pass the start-up check of the service after the import.
+        using var check = new StringWriter();
+        if (DataDirectoryGate(DataDirectory, check) is not null)
+        {
+            log.WriteLine(check.ToString());
+            throw new InvalidOperationException("после переноса настроек OpenRGB папка данных не прошла проверку: " + check.ToString().Trim());
+        }
         if (files.Count > 0)
         {
             Write("перенесены из вашего OpenRGB — ", ConsoleColor.DarkGray);
         }
     }
 
-    /// <summary>Same protection the agent gives its data folder: SYSTEM and Administrators only.</summary>
-    private static void EnsureSecureDataDirectory()
+    private static void CreateOwnedDirectories(DataDirectoryFileSystem fs, string root, string directory)
     {
-        var directory = Directory.CreateDirectory(DataDirectory);
-        var security = new DirectorySecurity();
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        foreach (var sid in new[] { WellKnownSidType.LocalSystemSid, WellKnownSidType.BuiltinAdministratorsSid })
+        if (Directory.Exists(directory) || DataDirectoryPolicy.SamePath(directory, root))
         {
-            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), FileSystemRights.FullControl,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            return;
         }
-        directory.SetAccessControl(security);
+        CreateOwnedDirectories(fs, root, Path.GetDirectoryName(directory)!);
+        fs.CreateDirectory(directory);
+    }
+
+    /// <summary>
+    /// The data folder before the installer writes anything: missing — created with owner Administrators and
+    /// a protected SYSTEM/Administrators DACL in one call (ERROR_ALREADY_EXISTS means it is there, not that it
+    /// is fine); present — the same handle-based check as the service (SYSTEM, Administrators, TrustedInstaller
+    /// only, no links, no hard links, no non-empty OpenRGB plugins). Null to go on; otherwise the exit code,
+    /// with nothing changed. Shared code: Nexus.Core.Storage and Nexus.Windows, no copy here.
+    /// </summary>
+    internal static int? DataDirectoryGate(string path, TextWriter output)
+    {
+        var error = DataDirectoryFileSystem.TryCreateProtectedDirectory(path, withOwner: true);
+        if (error == 0)
+        {
+            return null;
+        }
+        if (!DataDirectoryFileSystem.IsAlreadyExists(error))
+        {
+            throw new IOException($"Не удалось создать папку данных {path}: {new System.ComponentModel.Win32Exception(error).Message}");
+        }
+        DataScan scan;
+        IReadOnlyList<UnfinishedRepair> unfinished;
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        using (DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.ReadPrivileges))
+        {
+            var fs = new DataDirectoryFileSystem();
+            scan = DataDirectoryScanner.Scan(fs, root, DataDirectoryPolicy.TrustedSids);
+            unfinished = [.. new DataDirectoryRepair(fs, new NullConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign)];
+        }
+        if (scan.Trusted && unfinished.Count == 0)
+        {
+            return null;
+        }
+        if (unfinished.Count > 0)
+        {
+            output.WriteLine($"Восстановление папки данных {path} не завершено. Установка остановлена, ничего не изменено.");
+            foreach (var repair in unfinished)
+            {
+                var backup = DataText.Clean(repair.Backup, 400);
+                output.WriteLine($"  Продолжить:      NexusPC-Setup.exe --datadir-repair --continue \"{backup}\"");
+                output.WriteLine($"  Вернуть права:   NexusPC-Setup.exe --datadir-restore-acl \"{backup}\"");
+            }
+            output.WriteLine("Команды выполняются в командной строке от имени администратора. Подробно: docs/SETUP.md, «Восстановление папки данных».");
+            return SetupPlan.ExitDataDirectoryUntrusted;
+        }
+        output.WriteLine($"Папка данных Nexus PC {path} защищена не так, как нужно. Установка остановлена, ничего не изменено.");
+        output.WriteLine("Найдено:");
+        foreach (var violation in scan.Violations.Take(50))
+        {
+            output.WriteLine("  " + violation);
+        }
+        if (scan.Violations.Count > 50)
+        {
+            output.WriteLine($"  … и ещё {scan.Violations.Count - 50}");
+        }
+        output.WriteLine("Что делать: откройте командную строку от имени администратора, остановите службу Nexus PC, если она есть, и выполните");
+        output.WriteLine("  NexusPC-Setup.exe --datadir-check    — подробный отчёт, ничего не меняет;");
+        output.WriteLine("  NexusPC-Setup.exe --datadir-repair   — резервная копия, затем исправление прав.");
+        output.WriteLine(scan.Repairable
+            ? "Потом запустите установщик ещё раз. Подробно: docs/SETUP.md, «Восстановление папки данных»."
+            : $"Автоматическое исправление откажется: в папке найдены {string.Join(", ", DataDirectoryRepair.BlockingKinds(scan).Select(SetupPlan.BlockingKindText))}. Разберите это вручную (docs/SETUP.md, «Восстановление папки данных»).");
+        return SetupPlan.ExitDataDirectoryUntrusted;
+    }
+
+    private sealed class NullConsole : IRepairConsole
+    {
+        public void WriteLine(string text)
+        {
+        }
+
+        public string? ReadLine() => null;
+    }
+
+    private sealed class InstallerConsole(TextWriter log) : IRepairConsole
+    {
+        public void WriteLine(string text)
+        {
+            Console.WriteLine(text);
+            log.WriteLine(text);
+        }
+
+        public string? ReadLine() => Console.ReadLine();
     }
 
     /// <summary>The OpenRGB copy in Program Files\NexusPC (the service's server, or a window left open): its DLLs would be locked.</summary>

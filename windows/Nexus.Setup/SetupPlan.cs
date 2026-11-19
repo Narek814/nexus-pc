@@ -6,8 +6,22 @@ namespace Nexus.Setup;
 
 internal sealed record SetupOptions(bool Uninstall, bool Purge, bool Quiet, bool NoTray, string? From)
 {
+    /// <summary>
+    /// "--datadir-check", "--datadir-repair [--continue &lt;backup&gt;]", "--datadir-restore-acl &lt;backup&gt;"
+    /// [--data-dir …\NexusPC] [--quiet]: the agent's datadir command, also before any agent is installed.
+    /// </summary>
+    public Nexus.Core.Storage.DataDirectoryCommandLine? DataDirectory { get; init; }
+
     public static SetupOptions? Parse(IReadOnlyList<string> args)
     {
+        ArgumentNullException.ThrowIfNull(args);
+        if (args.Count > 0 && args[0] is "--datadir-check" or "--datadir-repair" or "--datadir-restore-acl")
+        {
+            var rest = args.Skip(1).ToList();
+            var quietDataDir = rest.Remove("--quiet");
+            var command = Nexus.Core.Storage.DataDirectoryCommandLine.Parse([args[0]["--datadir-".Length..], .. rest]);
+            return command is null ? null : new SetupOptions(false, false, quietDataDir, true, null) { DataDirectory = command };
+        }
         bool uninstall = false, purge = false, quiet = false, noTray = false;
         string? from = null;
         for (var i = 0; i < args.Count; i++)
@@ -43,6 +57,32 @@ internal static partial class SetupPlan
     public const string RunValue = "NexusPC.Tray"; // same value the tray's own "Start with Windows" uses
 
     public static string InstallRoot(string programFiles) => Path.Combine(programFiles, "NexusPC");
+
+    /// <summary>Exit code: the existing data folder failed the check; the installer changed nothing (docs/SETUP.md).</summary>
+    public const int ExitDataDirectoryUntrusted = 6;
+
+    /// <summary>What the installer says it found, by kind of structural problem (not always "links").</summary>
+    public static string BlockingKindText(Nexus.Core.Storage.DataViolationKind kind) => kind switch
+    {
+        Nexus.Core.Storage.DataViolationKind.ReparsePoint => "ссылки (точки соединения, символические ссылки, точки подключения или файлы облачных хранилищ)",
+        Nexus.Core.Storage.DataViolationKind.HardLinks => "файлы с жёсткими ссылками",
+        Nexus.Core.Storage.DataViolationKind.NotDirectoryOrFile => "объекты, которые не являются ни папкой, ни обычным файлом, или недопустимые имена",
+        Nexus.Core.Storage.DataViolationKind.OutsidePath => "объекты, ведущие за пределы папки",
+        Nexus.Core.Storage.DataViolationKind.Unreadable => "объекты, которые не удаётся прочитать",
+        Nexus.Core.Storage.DataViolationKind.TooLarge => "слишком много объектов или слишком глубокая вложенность",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>Backups made by "datadir repair" next to the data folder; never deleted automatically (not even by --purge).</summary>
+    public static IReadOnlyList<string> RemainingBackups(string dataDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(dataDirectory);
+        var trimmed = Path.TrimEndingDirectorySeparator(dataDirectory);
+        var parent = Path.GetDirectoryName(trimmed);
+        return parent is null || !Directory.Exists(parent)
+            ? []
+            : [.. Directory.EnumerateDirectories(parent, Path.GetFileName(trimmed) + Nexus.Core.Storage.DataDirectoryRepair.BackupInfix + "*").Order(StringComparer.OrdinalIgnoreCase)];
+    }
 
     /// <summary>Start menu entry for all users (C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk).</summary>
     public static string StartMenuShortcut(string commonPrograms) => Path.Combine(commonPrograms, "Nexus PC.lnk");

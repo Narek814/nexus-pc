@@ -68,6 +68,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
         IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, int? openRgbPort = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
+        TrustTestAccount();
         power ??= fakePower ? new FakePowerController() : null;
         var sessionPipe = "nexus-session-" + Guid.NewGuid().ToString("N");
         var app = AgentHost.Build([], new AgentHostOptions
@@ -89,6 +90,25 @@ internal sealed class AgentTestHost : IAsyncDisposable
         });
         await app.StartAsync();
         return new AgentTestHost(app, dataDirectory, power, sessionPipe);
+    }
+
+    /// <summary>
+    /// The test agents run as the test account, not SYSTEM, and write their data folders themselves: their
+    /// start-up check also trusts this account. Test code only (production keeps the three-subject set).
+    /// </summary>
+    private static void TrustTestAccount()
+    {
+        if (!OperatingSystem.IsWindows() || Nexus.Agent.Storage.AgentPaths.TestTrustedSids is not null)
+        {
+            return;
+        }
+        using var self = System.Security.Principal.WindowsIdentity.GetCurrent();
+        var trusted = new HashSet<string>(Nexus.Core.Storage.DataDirectoryPolicy.TrustedSids, StringComparer.OrdinalIgnoreCase);
+        if (self.User is { } user)
+        {
+            trusted.Add(user.Value);
+        }
+        Nexus.Agent.Storage.AgentPaths.TestTrustedSids = trusted;
     }
 
     public Task<NexusClient> ConnectAsync(string? fingerprint = null, Action<System.Net.WebSockets.ClientWebSocketOptions>? configure = null, string host = "127.0.0.1") =>
