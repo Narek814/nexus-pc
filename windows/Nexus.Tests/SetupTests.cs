@@ -48,6 +48,10 @@ public sealed class SetupPlanTests
             Assert.Contains("запустите установщик ещё раз", text, StringComparison.Ordinal);
             Assert.DoesNotContain("ничего не изменено", text, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("служба не остановлена", text, StringComparison.OrdinalIgnoreCase);
+            // SA-T4-R12-2: the start type is not changed, so the text tells what happens after a reboot.
+            Assert.Contains("после перезагрузки Windows", text, StringComparison.Ordinal);
+            Assert.Contains("проверка папки данных при старте", text, StringComparison.Ordinal);
+            Assert.Contains("журнал событий", text, StringComparison.Ordinal);
         }
         // The first check keeps its wording.
         Assert.Equal("Установка остановлена, ничего не изменено.", SetupPlan.GateStoppedText(recheck: false));

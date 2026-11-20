@@ -89,7 +89,7 @@ internal static partial class SetupPlan
 
     /// <summary>What the installer has already done when the folder fails the check again after the OpenRGB import (exit code 6).</summary>
     public const string RecheckStoppedText =
-        "Установка прервана после переноса настроек OpenRGB: служба Nexus PC остановлена и не запущена, файлы программы уже обновлены, настройки подсветки перенесены. Исправьте папку данных и запустите установщик ещё раз.";
+        "Установка прервана после переноса настроек OpenRGB: служба Nexus PC остановлена и не запущена, файлы программы уже обновлены, настройки подсветки перенесены. Если служба была установлена раньше, после перезагрузки Windows она запустится, только если её собственная проверка папки данных при старте пройдёт; иначе служба не запустится и запишет причину в журнал событий Windows. Исправьте папку данных и запустите установщик ещё раз.";
 
     /// <summary>The "stopped" sentence of the data folder check: the first check changed nothing; the recheck after the import did.</summary>
     public static string GateStoppedText(bool recheck) => recheck ? RecheckStoppedText : "Установка остановлена, ничего не изменено.";
