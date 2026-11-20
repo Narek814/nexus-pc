@@ -818,6 +818,57 @@ public sealed class DataDirectoryRepairTests
         Assert.Contains("restore-acl: warning:", unfinished.Detail, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Restore_acl_with_a_lost_ai_flag_and_another_difference_fails_with_code_3()
+    {
+        // QA-T4-R10-b: one object loses only AI, another differs otherwise: the real difference wins (code 3).
+        const string saved = "O:S-1-5-21-1-2-3-1001G:SYD:AI(A;;0x1301bf;;;BU)(A;ID;FA;;;SY)(A;ID;FA;;;BA)";
+        _fs.Nodes[Root + Sep + "audit.log"].RawSddl = saved;
+        Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, []));
+        var backup = BackupOf(_fs)!;
+        var target = Root + Sep + "devices.json";
+        _fs.ReadBack = (path, sddl) => sddl == saved ? sddl.Replace("D:AI(", "D:(", StringComparison.Ordinal) : path == target ? sddl + "x" : sddl;
+        var console = new ScriptedConsole();
+        Assert.Equal(DataDirectoryRepair.ExitStopped, Repair(console).RestoreAcl(Root, backup, []));
+        Assert.Contains("devices.json: the access after the restore differs from the saved one", console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Original access restored", console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("INCOMPLETELY", console.Text, StringComparison.Ordinal);
+        var unfinished = Assert.Single(Repair(new ScriptedConsole()).FindUnfinished(Root));
+        Assert.Equal(RepairJournal.RestoreFailed, unfinished.State);
+        Assert.True(_fs.Nodes.ContainsKey(backup));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Check_without_elevation_or_privileges_refuses_with_code_6_and_checks_nothing(bool elevated)
+    {
+        var console = new ScriptedConsole();
+        var before = string.Join("\n", _fs.Nodes.OrderBy(n => n.Key, StringComparer.Ordinal).Select(n => n.Key + "=" + FakeDataFileSystem.Sddl(n.Value)));
+        IReadOnlyCollection<string> missing = elevated ? ["SeBackupPrivilege"] : [];
+        Assert.Equal(6, DataDirectoryRepair.ExitPrivilegesUnavailable);
+        Assert.Equal(DataDirectoryRepair.ExitPrivilegesUnavailable, Repair(console).CheckWithPrivileges(Root, elevated, missing));
+        var line = Assert.Single(console.Lines); // the refusal only: no report, no "passes"
+        Assert.Equal(elevated ? DataDirectoryRepair.PrivilegesUnavailableText : DataDirectoryRepair.NotElevatedText, line);
+        Assert.StartsWith("Check not performed:", line, StringComparison.Ordinal);
+        Assert.Contains("Nothing was checked or changed.", line, StringComparison.Ordinal);
+        Assert.Contains("Run as administrator", line, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\bSe[A-Z]\w*Privilege\b", line); // no internal privilege names for the person
+        Assert.DoesNotContain("passes every check", console.Text, StringComparison.Ordinal);
+        Assert.Equal(before, string.Join("\n", _fs.Nodes.OrderBy(n => n.Key, StringComparer.Ordinal).Select(n => n.Key + "=" + FakeDataFileSystem.Sddl(n.Value))));
+    }
+
+    [Fact]
+    public void Check_with_every_privilege_is_the_plain_check()
+    {
+        var plain = new ScriptedConsole();
+        var expected = Repair(plain).Check(Root);
+        var console = new ScriptedConsole();
+        Assert.Equal(expected, Repair(console).CheckWithPrivileges(Root, elevated: true, []));
+        Assert.Equal(plain.Lines, console.Lines);
+        Assert.DoesNotContain("Check not performed", console.Text, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("replaced")]
     [InlineData("hardlink")]

@@ -112,6 +112,14 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
     public const int ExitRefused = 1;
     /// <summary>Stopped after access changes began; the backup and the journal are kept.</summary>
     public const int ExitStopped = 3;
+    /// <summary>"datadir check" only: the check was not performed (not elevated, or Windows did not grant the read privileges); nothing was checked or changed.</summary>
+    public const int ExitPrivilegesUnavailable = 6;
+
+    public const string NotElevatedText =
+        "Check not performed: this command prompt is not running as administrator, so protected files cannot be read. Nothing was checked or changed. Run it in a command prompt opened with \"Run as administrator\".";
+
+    public const string PrivilegesUnavailableText =
+        "Check not performed: Windows did not grant the privileges the check needs to read protected files. Nothing was checked or changed. Run it in a command prompt opened with \"Run as administrator\" (an account with full administrator rights).";
 
     private const string Done = "done";
     public const string DisabledStartType = "disabled";
@@ -164,6 +172,28 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
     public static string Fingerprint(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     // ---------------------------------------------------------------- check
+
+    /// <summary>
+    /// "datadir check" as the command runs it: without elevation or with any read privilege missing the
+    /// check would see protected objects as unreadable, so it is not run at all (no partial result, no
+    /// "passes" message) and the exit code is <see cref="ExitPrivilegesUnavailable"/>.
+    /// </summary>
+    public int CheckWithPrivileges(string root, bool elevated, IReadOnlyCollection<string> missingPrivileges)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(missingPrivileges);
+        if (!elevated)
+        {
+            console.WriteLine(NotElevatedText);
+            return ExitPrivilegesUnavailable;
+        }
+        if (missingPrivileges.Count > 0)
+        {
+            console.WriteLine(PrivilegesUnavailableText);
+            return ExitPrivilegesUnavailable;
+        }
+        return Check(root);
+    }
 
     public int Check(string root)
     {

@@ -109,7 +109,18 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         if (File.Exists(SetupPlan.OpenRgbExe(Root)))
         {
-            Step("Настройки подсветки (OpenRGB)", ImportOpenRgbSettings);
+            try
+            {
+                Step("Настройки подсветки (OpenRGB)", ImportOpenRgbSettings);
+            }
+            catch (DataDirectoryRecheckException refused)
+            {
+                // The folder failed the check again after the import (R11-1): the same refusal as the first
+                // check, exit code 6, installation stops here. Every other failure keeps exit code 5.
+                Console.WriteLine();
+                Say(refused.Message);
+                return refused.ExitCode;
+            }
         }
 
         Step("Настраиваю службу Windows", () =>
@@ -326,15 +337,24 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         log.WriteLine($"OpenRGB settings imported: {files.Count} file(s) from {source}");
         // The folder must still pass the start-up check of the service after the import.
-        using var check = new StringWriter();
-        if (DataDirectoryGate(DataDirectory, check) is not null)
-        {
-            log.WriteLine(check.ToString());
-            throw new InvalidOperationException("после переноса настроек OpenRGB папка данных не прошла проверку: " + check.ToString().Trim());
-        }
+        RecheckAfterImport(DataDirectory, DataRepairEnvironment.ReadPrivileges);
         if (files.Count > 0)
         {
             Write("перенесены из вашего OpenRGB — ", ConsoleColor.DarkGray);
+        }
+    }
+
+    /// <summary>
+    /// The check again after the OpenRGB import: any refusal of <see cref="DataDirectoryGate(string, TextWriter, IReadOnlyList{string})"/>
+    /// (including missing privileges) becomes <see cref="DataDirectoryRecheckException"/> with the gate's recheck text
+    /// (service stopped, program files updated: no "nothing changed") and its exit code. Tests only pass other <paramref name="privileges"/>.
+    /// </summary>
+    internal static void RecheckAfterImport(string path, IReadOnlyList<string> privileges)
+    {
+        using var check = new StringWriter();
+        if (DataDirectoryGate(path, check, privileges, recheck: true) is { } code)
+        {
+            throw new DataDirectoryRecheckException(code, check.ToString().TrimEnd());
         }
     }
 
@@ -358,7 +378,10 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     internal static int? DataDirectoryGate(string path, TextWriter output) => DataDirectoryGate(path, output, DataRepairEnvironment.ReadPrivileges);
 
     /// <summary>Tests only pass other <paramref name="privileges"/> (a name Windows does not know, to see the refusal).</summary>
-    internal static int? DataDirectoryGate(string path, TextWriter output, IReadOnlyList<string> privileges)
+    internal static int? DataDirectoryGate(string path, TextWriter output, IReadOnlyList<string> privileges) => DataDirectoryGate(path, output, privileges, recheck: false);
+
+    /// <summary><paramref name="recheck"/>: the check again after the OpenRGB import; only the "stopped" wording differs (SetupPlan.GateStoppedText).</summary>
+    internal static int? DataDirectoryGate(string path, TextWriter output, IReadOnlyList<string> privileges, bool recheck)
     {
         var error = DataDirectoryFileSystem.TryCreateProtectedDirectory(path, withOwner: true);
         if (error == 0)
@@ -375,7 +398,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         using (var enabled = DataRepairEnvironment.EnablePrivileges(privileges))
         {
             // Without them the check cannot see protected objects: refuse instead of checking partly (R10-2).
-            if (SetupPlan.MissingPrivilegesText(enabled.Missing, uninstall: false) is { } refusal)
+            if (SetupPlan.MissingPrivilegesText(enabled.Missing, uninstall: false, recheck) is { } refusal)
             {
                 output.WriteLine(refusal);
                 return SetupPlan.ExitDataDirectoryUntrusted;
@@ -390,7 +413,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         if (unfinished.Count > 0)
         {
-            output.WriteLine($"Восстановление папки данных {path} не завершено. Установка остановлена, ничего не изменено.");
+            output.WriteLine($"Восстановление папки данных {path} не завершено. {SetupPlan.GateStoppedText(recheck)}");
             foreach (var repair in unfinished)
             {
                 var backup = DataText.Clean(repair.Backup, 400);
@@ -418,7 +441,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             output.WriteLine("Команды выполняются в командной строке от имени администратора. Подробно: docs/SETUP.md, «Восстановление папки данных».");
             return SetupPlan.ExitDataDirectoryUntrusted;
         }
-        output.WriteLine($"Папка данных Nexus PC {path} защищена не так, как нужно. Установка остановлена, ничего не изменено.");
+        output.WriteLine($"Папка данных Nexus PC {path} защищена не так, как нужно. {SetupPlan.GateStoppedText(recheck)}");
         output.WriteLine("Найдено:");
         foreach (var violation in scan.Violations.Take(50))
         {

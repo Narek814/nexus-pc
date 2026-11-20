@@ -405,6 +405,120 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
     }
 
     [Fact]
+    public void Datadir_check_refuses_with_code_6_when_the_check_privileges_cannot_be_enabled()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        IReadOnlyList<string> unknown = ["SeNexusTestNoSuchPrivilege"];
+        var root = NewRoot();
+        using (var file = new DataDirectoryFileSystem().CreateFile(Path.Combine(root, "config.json"))) // owner Administrators, as the installer writes
+        {
+            file.Write("{}"u8);
+        }
+        var before = Sddl(root);
+        var fileBefore = Sddl(Path.Combine(root, "config.json"));
+        var command = new DataDirectoryCommandLine("check", null, root);
+        var console = new ScriptedConsole();
+        Assert.Equal(DataDirectoryRepair.ExitPrivilegesUnavailable, DataDirectoryCommand.Run(command, console, unknown));
+        Assert.Contains(DataDirectoryRepair.PrivilegesUnavailableText, console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("passes every check", console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("SeNexusTestNoSuchPrivilege", console.Text, StringComparison.Ordinal);
+        Assert.Equal(before, Sddl(root));
+        Assert.Equal(fileBefore, Sddl(Path.Combine(root, "config.json")));
+        Assert.Equal("{}", File.ReadAllText(Path.Combine(root, "config.json")));
+        Assert.Single(Directory.GetFileSystemEntries(root));
+        // With the real privileges the same folder is checked as before.
+        var real = new ScriptedConsole();
+        Assert.Equal(DataDirectoryRepair.ExitOk, DataDirectoryCommand.Run(command, real));
+        Assert.Contains("passes every check", real.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Check not performed", real.Text, StringComparison.Ordinal);
+        Assert.Equal(before, Sddl(root));
+    }
+
+    [Fact]
+    public void Installer_recheck_after_the_openrgb_import_refuses_with_code_6_when_the_privileges_cannot_be_enabled()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        IReadOnlyList<string> unknown = ["SeNexusTestNoSuchPrivilege"];
+        var root = NewRoot();
+        var before = Sddl(root);
+        DataDirectoryRecheckException? refused = null;
+        try
+        {
+            Installer.RecheckAfterImport(root, unknown);
+        }
+        catch (DataDirectoryRecheckException ex)
+        {
+            refused = ex;
+        }
+        Assert.NotNull(refused);
+        Assert.Equal(SetupPlan.ExitDataDirectoryUntrusted, refused.ExitCode);
+        Assert.StartsWith(SetupPlan.RecheckStoppedText, refused.Message, StringComparison.Ordinal);
+        Assert.Contains("Проверка папки данных Nexus PC не выполнена", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("служба Nexus PC остановлена", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ничего не изменено", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("служба не остановлена", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Installer.RecheckAfterImport(root, DataRepairEnvironment.ReadPrivileges); // real privileges, trusted folder: passes
+        Assert.Equal(before, Sddl(root));
+        Assert.Empty(Directory.GetFileSystemEntries(root));
+    }
+
+    [Fact]
+    public void Installer_recheck_of_an_untrusted_folder_tells_what_was_already_done_and_the_first_check_keeps_its_text()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        Grant(root, WellKnownSidType.BuiltinUsersSid, directory: true);
+        DataDirectoryRecheckException? refused = null;
+        try
+        {
+            Installer.RecheckAfterImport(root, DataRepairEnvironment.ReadPrivileges);
+        }
+        catch (DataDirectoryRecheckException ex)
+        {
+            refused = ex;
+        }
+        Assert.NotNull(refused);
+        Assert.Equal(SetupPlan.ExitDataDirectoryUntrusted, refused.ExitCode);
+        Assert.Contains("защищена не так, как нужно. " + SetupPlan.RecheckStoppedText, refused.Message, StringComparison.Ordinal);
+        Assert.Contains("служба Nexus PC остановлена", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ничего не изменено", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("служба не остановлена", refused.Message, StringComparison.OrdinalIgnoreCase);
+        using var first = new StringWriter();
+        Assert.Equal(SetupPlan.ExitDataDirectoryUntrusted, Installer.DataDirectoryGate(root, first));
+        Assert.Contains("защищена не так, как нужно. Установка остановлена, ничего не изменено.", first.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(SetupPlan.RecheckStoppedText, first.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")] // checked at run time by Ready(); the lambda below uses Windows-only types
+    public void Datadir_check_without_administrators_refuses_with_code_6_before_the_lock_and_reads_nothing()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        var before = Sddl(root);
+        var console = new ScriptedConsole();
+        var code = RestrictedToken.RunWithoutAdministrators(() => RunCheck(root, console));
+        Assert.Equal(DataDirectoryRepair.ExitPrivilegesUnavailable, code);
+        Assert.Equal(DataDirectoryRepair.NotElevatedText, Assert.Single(console.Lines)); // no lock text, no report
+        Assert.DoesNotContain("passes every check", console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(ExclusiveRun.UnavailableText, console.Text, StringComparison.Ordinal);
+        Assert.Equal(before, Sddl(root));
+        Assert.Empty(Directory.GetFileSystemEntries(root));
+    }
+
+    [Fact]
     public void Service_start_refuses_while_a_repair_is_unfinished_until_it_is_continued()
     {
         if (!Ready() || !OperatingSystem.IsWindows())
@@ -744,6 +858,9 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
             return o;
         }));
     }
+
+    [SupportedOSPlatform("windows")]
+    private static int RunCheck(string root, ScriptedConsole console) => DataDirectoryCommand.Run(new DataDirectoryCommandLine("check", null, root), console);
 
     [SupportedOSPlatform("windows")]
     private static LockOutcome DisposeAndReturn(ProtectedDataDirectoryLock locks, out string? failure)

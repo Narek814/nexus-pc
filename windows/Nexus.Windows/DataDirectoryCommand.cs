@@ -21,15 +21,26 @@ public static class DataDirectoryCommand
 
     public static string InstallRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "NexusPC");
 
-    public static int Run(DataDirectoryCommandLine command, IRepairConsole console)
+    public static int Run(DataDirectoryCommandLine command, IRepairConsole console) => Run(command, console, DataRepairEnvironment.ReadPrivileges);
+
+    /// <summary>Tests only pass other <paramref name="checkPrivileges"/> (a name Windows does not know, to see the refusal of "check").</summary>
+    internal static int Run(DataDirectoryCommandLine command, IRepairConsole console, IReadOnlyList<string> checkPrivileges)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(console);
+        ArgumentNullException.ThrowIfNull(checkPrivileges);
+        if (command.Verb == "check" && !IsElevated())
+        {
+            // Before the lock (which a console without administrator rights cannot take anyway): refused with
+            // code 6 and nothing read — the folder is not opened, not even resolved against the disk.
+            return new DataDirectoryRepair(new DataDirectoryFileSystem(), console, TimeProvider.System)
+                .CheckWithPrivileges(command.DataDirectory ?? DefaultRoot, elevated: false, []);
+        }
         // One datadir command, installation or removal at a time, for its whole run (protected lock, N1/N2).
-        return ExclusiveRun.Run(new ProtectedDataDirectoryLock(), console.WriteLine, DataDirectoryRepair.ExitRefused, () => RunLocked(command, console));
+        return ExclusiveRun.Run(new ProtectedDataDirectoryLock(), console.WriteLine, DataDirectoryRepair.ExitRefused, () => RunLocked(command, console, checkPrivileges));
     }
 
-    private static int RunLocked(DataDirectoryCommandLine command, IRepairConsole console)
+    private static int RunLocked(DataDirectoryCommandLine command, IRepairConsole console, IReadOnlyList<string> checkPrivileges)
     {
         try
         {
@@ -41,11 +52,11 @@ public static class DataDirectoryCommand
                 var check = new DataDirectoryRepair(new DataDirectoryFileSystem(), console, TimeProvider.System);
                 if (!IsElevated())
                 {
-                    console.WriteLine("Not elevated: run this in a command prompt opened with \"Run as administrator\", otherwise protected objects show as unreadable.");
-                    return check.Check(root);
+                    return check.CheckWithPrivileges(root, elevated: false, []); // refused with code 6, nothing read
                 }
-                using var read = DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.ReadPrivileges);
-                return check.Check(root);
+                // Without the read privileges protected objects would show as unreadable: refuse instead of checking partly.
+                using var read = DataRepairEnvironment.EnablePrivileges(checkPrivileges);
+                return check.CheckWithPrivileges(root, elevated: true, read.Missing);
             }
 
             using var privileges = IsElevated() ? DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.RepairPrivileges) : null;

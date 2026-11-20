@@ -65,17 +65,34 @@ internal static partial class SetupPlan
     /// Null when every privilege the data folder check needs was enabled; otherwise the refusal (exit code 6,
     /// nothing changed): without them protected objects cannot be read, so the check was not done (R10-2).
     /// </summary>
-    public static string? MissingPrivilegesText(IReadOnlyList<string> missing, bool uninstall)
+    public static string? MissingPrivilegesText(IReadOnlyList<string> missing, bool uninstall) => MissingPrivilegesText(missing, uninstall, recheck: false);
+
+    /// <summary>
+    /// <paramref name="recheck"/>: the check again after the OpenRGB import (R11-1), when the service is already
+    /// stopped and the program files are updated, so "nothing changed" would not be true.
+    /// </summary>
+    public static string? MissingPrivilegesText(IReadOnlyList<string> missing, bool uninstall, bool recheck)
     {
         ArgumentNullException.ThrowIfNull(missing);
         if (missing.Count == 0)
         {
             return null;
         }
-        return (uninstall ? "Удаление остановлено, ничего не изменено" : "Установка остановлена, ничего не изменено")
-            + ": проверка папки данных Nexus PC не выполнена, потому что Windows не дала установщику права, нужные для чтения защищённых файлов. "
-            + "Запустите установщик от имени администратора (учётная запись с полными правами администратора) и повторите. Подробно: docs/SETUP.md, «Восстановление папки данных».";
+        const string reason = "роверка папки данных Nexus PC не выполнена, потому что Windows не дала установщику права, нужные для чтения защищённых файлов. ";
+        const string advice = "Запустите установщик от имени администратора (учётная запись с полными правами администратора) и повторите. Подробно: docs/SETUP.md, «Восстановление папки данных».";
+        if (recheck && !uninstall)
+        {
+            return RecheckStoppedText + " П" + reason + advice;
+        }
+        return (uninstall ? "Удаление остановлено, ничего не изменено" : "Установка остановлена, ничего не изменено") + ": п" + reason + advice;
     }
+
+    /// <summary>What the installer has already done when the folder fails the check again after the OpenRGB import (exit code 6).</summary>
+    public const string RecheckStoppedText =
+        "Установка прервана после переноса настроек OpenRGB: служба Nexus PC остановлена и не запущена, файлы программы уже обновлены, настройки подсветки перенесены. Исправьте папку данных и запустите установщик ещё раз.";
+
+    /// <summary>The "stopped" sentence of the data folder check: the first check changed nothing; the recheck after the import did.</summary>
+    public static string GateStoppedText(bool recheck) => recheck ? RecheckStoppedText : "Установка остановлена, ничего не изменено.";
 
     /// <summary>Exit code: another installation, removal or datadir command holds the protected lock, or the lock is unavailable; nothing was changed.</summary>
     public const int ExitLockedByAnotherRun = 7;
