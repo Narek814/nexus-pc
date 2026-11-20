@@ -526,6 +526,8 @@ public sealed partial class DataDirectoryFileSystem : IDataFileSystem
 
         private string? CurrentSddl() => ReadSecurity(Handle, State with { SecurityDescriptor = null }).SecurityDescriptor;
 
+        public string? ReadSecurityDescriptor() => CurrentSddl();
+
         public void Rename(string newFullPath)
         {
             ArgumentNullException.ThrowIfNull(newFullPath);

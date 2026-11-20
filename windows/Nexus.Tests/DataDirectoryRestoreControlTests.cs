@@ -52,6 +52,37 @@ public sealed class DataDirectoryRestoreControlTests
     }
 
     [Fact]
+    public void Read_back_equal_to_the_saved_descriptor_is_an_exact_restore()
+    {
+        Assert.Equal(RestoreOutcome.Exact, DataDirectoryPolicy.CompareRestored(Saved, Saved));
+        Assert.Equal(RestoreOutcome.Exact, DataDirectoryPolicy.CompareRestored(AiLost, AiLost));
+    }
+
+    [Theory]
+    [InlineData(Saved, AiLost)]
+    [InlineData("O:BAG:SYD:PAI(A;;FA;;;SY)(A;;FA;;;BA)", "O:BAG:SYD:P(A;;FA;;;SY)(A;;FA;;;BA)")]
+    [InlineData("O:DDG:DDD:AI(A;ID;FA;;;SY)", "O:DDG:DDD:(A;ID;FA;;;SY)")]
+    [InlineData("O:BAD:AI", "O:BAD:")]
+    public void Only_the_lost_ai_flag_is_an_incomplete_restore(string saved, string actual) =>
+        Assert.Equal(RestoreOutcome.AutoInheritedLost, DataDirectoryPolicy.CompareRestored(saved, actual));
+
+    [Theory]
+    [InlineData(Saved, "O:BAG:SYD:(A;;0x1301bf;;;BU)(A;ID;FA;;;SY)")]                    // AI lost and an entry lost
+    [InlineData(Saved, "O:SYG:SYD:(A;;0x1301bf;;;BU)(A;ID;FA;;;SY)(A;ID;FA;;;BA)")]      // AI lost and another owner
+    [InlineData(Saved, "O:BAG:SYD:PAI(A;;0x1301bf;;;BU)(A;ID;FA;;;SY)(A;ID;FA;;;BA)")]   // P added
+    [InlineData(Saved, "O:BAG:SYD:P(A;;0x1301bf;;;BU)(A;ID;FA;;;SY)(A;ID;FA;;;BA)")]     // AI lost, P added
+    [InlineData("O:BAG:SYD:PAI(A;;FA;;;SY)", "O:BAG:SYD:AI(A;;FA;;;SY)")]                // P lost
+    [InlineData(AiLost, Saved)]                                                          // AI gained
+    [InlineData(AiLost, "O:BAG:SYD:(A;ID;FA;;;SY)(A;ID;FA;;;BA)")]                       // no AI saved, result differs
+    [InlineData("O:BAG:SYD:AI(A;;FA;;;SY)", "O:BAG:SYD:AI(A;;FA;;;BA)")]                 // entries differ, flag kept
+    public void Any_other_difference_is_a_failed_restore(string saved, string actual) =>
+        Assert.Equal(RestoreOutcome.Different, DataDirectoryPolicy.CompareRestored(saved, actual));
+
+    [Fact]
+    public void Unreadable_read_back_is_a_failed_restore() =>
+        Assert.Equal(RestoreOutcome.Different, DataDirectoryPolicy.CompareRestored(Saved, null));
+
+    [Fact]
     public void Unreadable_result_still_gets_the_second_write()
     {
         var control = DaclPresent | DataDirectoryPolicy.DaclAutoInherited | SelfRelative;

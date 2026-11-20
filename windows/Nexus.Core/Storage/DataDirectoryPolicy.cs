@@ -227,6 +227,66 @@ public static class DataDirectoryPolicy
         return originalControl | DaclAutoInheritRequired;
     }
 
+    /// <summary>
+    /// restore-acl, after the last write of a saved descriptor: how the descriptor read back through the object's
+    /// handle compares with the saved one (both in the SDDL form the same reader produces). AutoInheritedLost only
+    /// when the one and only difference is the AI flag of the DACL (SE_DACL_AUTO_INHERITED) missing from the
+    /// result; anything else, or a result that could not be read, is Different.
+    /// </summary>
+    public static RestoreOutcome CompareRestored(string originalSddl, string? actualSddl)
+    {
+        ArgumentNullException.ThrowIfNull(originalSddl);
+        if (actualSddl is null)
+        {
+            return RestoreOutcome.Different;
+        }
+        if (string.Equals(originalSddl, actualSddl, StringComparison.Ordinal))
+        {
+            return RestoreOutcome.Exact;
+        }
+        if (DaclFlags(originalSddl) is not var (start, length))
+        {
+            return RestoreOutcome.Different;
+        }
+        var flags = originalSddl.Substring(start, length);
+        if (!flags.Contains("AI", StringComparison.Ordinal))
+        {
+            return RestoreOutcome.Different;
+        }
+        var withoutAi = string.Concat(originalSddl.AsSpan(0, start), flags.Replace("AI", "", StringComparison.Ordinal), originalSddl.AsSpan(start + length));
+        return string.Equals(withoutAi, actualSddl, StringComparison.Ordinal) ? RestoreOutcome.AutoInheritedLost : RestoreOutcome.Different;
+    }
+
+    // Start and length of the DACL flags (P, AI, AR, NO_ACCESS_CONTROL) in an SDDL string: right after "D:"
+    // outside any ACE, up to the first ACE or the next section ("S:").
+    private static (int Start, int Length)? DaclFlags(string sddl)
+    {
+        var depth = 0;
+        for (var i = 0; i + 1 < sddl.Length; i++)
+        {
+            var c = sddl[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth--;
+            }
+            else if (depth == 0 && c == 'D' && sddl[i + 1] == ':')
+            {
+                var start = i + 2;
+                var end = start;
+                while (end < sddl.Length && sddl[end] != '(' && !(end + 1 < sddl.Length && sddl[end + 1] == ':'))
+                {
+                    end++;
+                }
+                return (start, end - start);
+            }
+        }
+        return null;
+    }
+
     // Rights that would let someone else delete, rename or re-permission what is inside a folder.
     private const uint DangerousOnParent = 0x00010000 /* DELETE */ | 0x00040000 /* WRITE_DAC */ | 0x00080000 /* WRITE_OWNER */
         | 0x00000040 /* FILE_DELETE_CHILD */ | 0x10000000 /* GENERIC_ALL */ | 0x40000000 /* GENERIC_WRITE */;
@@ -341,6 +401,15 @@ public abstract record DataSecurity
     public sealed record Original(string Sddl) : DataSecurity;
 }
 
+/// <summary>How the access read back after restore-acl compares with the saved one.</summary>
+public enum RestoreOutcome
+{
+    Exact,
+    /// <summary>Everything as saved except the DACL's AI flag (SE_DACL_AUTO_INHERITED): an incomplete restore.</summary>
+    AutoInheritedLost,
+    Different,
+}
+
 public interface IDataObject : IDisposable
 {
     DataObjectState State { get; }
@@ -349,6 +418,9 @@ public interface IDataObject : IDisposable
     Stream OpenContent();
 
     void SetSecurity(DataSecurity security);
+
+    /// <summary>Owner, group and DACL as the object has them now, read again through this handle; null if unreadable.</summary>
+    string? ReadSecurityDescriptor();
 
     /// <summary>Renames through this handle (needs DataAccess.Rename).</summary>
     void Rename(string newFullPath);

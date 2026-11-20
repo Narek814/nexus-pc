@@ -35,6 +35,8 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
         public bool Protected { get; set; }
         public List<DataAce> Aces { get; set; } = [];
         public byte[] Content { get; set; } = [];
+        /// <summary>A real SDDL text reported instead of the JSON form until the repair rewrites the access.</summary>
+        public string? RawSddl { get; set; }
     }
 
     public Dictionary<string, Node> Nodes { get; } = new(StringComparer.Ordinal);
@@ -51,6 +53,8 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
     public IReadOnlyList<string> ExtraNames { get; set; } = [];
     public bool FailMoveDirectory { get; set; }
     public Action<string, DataAccess>? OnOpen { get; set; }
+    /// <summary>What ReadSecurityDescriptor returns, given the path and the descriptor the fake holds (null: unreadable).</summary>
+    public Func<string, string, string?>? ReadBack { get; set; }
     public int SecurityChanges { get; private set; }
     public int Renames { get; private set; }
     private int _createdFiles;
@@ -83,7 +87,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
         .OrderBy(n => n.Key, StringComparer.Ordinal)
         .Select(n => $"{n.Key}|{n.Value.Kind}|{n.Value.Id}|{n.Value.Links}|{Sddl(n.Value)}|{Convert.ToHexString(SHA256.HashData(n.Value.Content))}"));
 
-    public static string Sddl(Node node) => JsonSerializer.Serialize(new SddlForm(node.Owner, node.Protected, node.Aces));
+    public static string Sddl(Node node) => node.RawSddl ?? JsonSerializer.Serialize(new SddlForm(node.Owner, node.Protected, node.Aces));
 
     private sealed record SddlForm(string Owner, bool Protected, List<DataAce> Aces);
 
@@ -238,6 +242,10 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
                 throw new SimulatedCrashException();
             }
             fs.SecurityChanges++;
+            if (security is not DataSecurity.Original)
+            {
+                node.RawSddl = null;
+            }
             switch (security)
             {
                 case DataSecurity.ProtectedRoot:
@@ -250,7 +258,11 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
                     node.Protected = false;
                     node.Aces = [.. TrustedAces().Select(a => a with { Flags = 0x10 })];
                     break;
+                case DataSecurity.Original original when original.Sddl.StartsWith("O:", StringComparison.Ordinal):
+                    node.RawSddl = original.Sddl; // a real SDDL text given by a test: kept as is
+                    break;
                 case DataSecurity.Original original:
+                    node.RawSddl = null;
                     var form = JsonSerializer.Deserialize<SddlForm>(original.Sddl)!;
                     node.Owner = form.Owner;
                     node.Protected = form.Protected;
@@ -262,6 +274,8 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
                 throw new SimulatedCrashException();
             }
         }
+
+        public string? ReadSecurityDescriptor() => fs.ReadBack is { } readBack ? readBack(path, FakeDataFileSystem.Sddl(node)) : FakeDataFileSystem.Sddl(node);
 
         public void Rename(string newFullPath)
         {
@@ -766,6 +780,42 @@ public sealed class DataDirectoryRepairTests
         Assert.Contains("replaced by another object", console.Text, StringComparison.Ordinal);
         Assert.True(_fs.Nodes.ContainsKey(backup));
         Assert.NotEmpty(Repair(new ScriptedConsole()).FindUnfinished(Root)); // restore-failed stays visible
+    }
+
+    [Theory]
+    [InlineData("changed")]
+    [InlineData("unreadable")]
+    public void Restore_acl_fails_with_code_3_when_the_access_read_back_differs_from_the_saved_one(string how)
+    {
+        Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, []));
+        var backup = BackupOf(_fs)!;
+        var target = Root + Sep + "devices.json";
+        _fs.ReadBack = (path, sddl) => path != target ? sddl : how == "changed" ? sddl + "x" : null;
+        var console = new ScriptedConsole();
+        Assert.Equal(DataDirectoryRepair.ExitStopped, Repair(console).RestoreAcl(Root, backup, []));
+        Assert.Contains("devices.json: the access after the restore differs from the saved one", console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Original access restored", console.Text, StringComparison.Ordinal);
+        var unfinished = Assert.Single(Repair(new ScriptedConsole()).FindUnfinished(Root));
+        Assert.Equal(RepairJournal.RestoreFailed, unfinished.State);
+        Assert.True(_fs.Nodes.ContainsKey(backup));
+    }
+
+    [Fact]
+    public void Restore_acl_that_loses_only_the_ai_flag_ends_with_an_incomplete_restore_warning()
+    {
+        const string saved = "O:S-1-5-21-1-2-3-1001G:SYD:AI(A;;0x1301bf;;;BU)(A;ID;FA;;;SY)(A;ID;FA;;;BA)";
+        _fs.Nodes[Root + Sep + "audit.log"].RawSddl = saved;
+        Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, []));
+        var backup = BackupOf(_fs)!;
+        _fs.ReadBack = (_, sddl) => sddl == saved ? sddl.Replace("D:AI(", "D:(", StringComparison.Ordinal) : sddl;
+        var console = new ScriptedConsole();
+        Assert.Equal(DataDirectoryRepair.ExitOk, Repair(console).RestoreAcl(Root, backup, []));
+        Assert.Contains("restored INCOMPLETELY", console.Text, StringComparison.Ordinal);
+        Assert.Contains("audit.log", console.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Original access restored", console.Text, StringComparison.Ordinal);
+        var unfinished = Assert.Single(Repair(new ScriptedConsole()).FindUnfinished(Root));
+        Assert.Equal(RepairJournal.Restored, unfinished.State);
+        Assert.Contains("restore-acl: warning:", unfinished.Detail, StringComparison.Ordinal);
     }
 
     [Theory]

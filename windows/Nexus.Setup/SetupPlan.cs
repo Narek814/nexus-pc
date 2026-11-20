@@ -61,6 +61,22 @@ internal static partial class SetupPlan
     /// <summary>Exit code: the existing data folder failed the check; the installer changed nothing (docs/SETUP.md).</summary>
     public const int ExitDataDirectoryUntrusted = 6;
 
+    /// <summary>
+    /// Null when every privilege the data folder check needs was enabled; otherwise the refusal (exit code 6,
+    /// nothing changed): without them protected objects cannot be read, so the check was not done (R10-2).
+    /// </summary>
+    public static string? MissingPrivilegesText(IReadOnlyList<string> missing, bool uninstall)
+    {
+        ArgumentNullException.ThrowIfNull(missing);
+        if (missing.Count == 0)
+        {
+            return null;
+        }
+        return (uninstall ? "Удаление остановлено, ничего не изменено" : "Установка остановлена, ничего не изменено")
+            + ": проверка папки данных Nexus PC не выполнена, потому что Windows не дала установщику права, нужные для чтения защищённых файлов. "
+            + "Запустите установщик от имени администратора (учётная запись с полными правами администратора) и повторите. Подробно: docs/SETUP.md, «Восстановление папки данных».";
+    }
+
     /// <summary>Exit code: another installation, removal or datadir command holds the protected lock, or the lock is unavailable; nothing was changed.</summary>
     public const int ExitLockedByAnotherRun = 7;
 

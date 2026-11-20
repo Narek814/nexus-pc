@@ -355,7 +355,10 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     /// only, no links, no hard links, no non-empty OpenRGB plugins). Null to go on; otherwise the exit code,
     /// with nothing changed. Shared code: Nexus.Core.Storage and Nexus.Windows, no copy here.
     /// </summary>
-    internal static int? DataDirectoryGate(string path, TextWriter output)
+    internal static int? DataDirectoryGate(string path, TextWriter output) => DataDirectoryGate(path, output, DataRepairEnvironment.ReadPrivileges);
+
+    /// <summary>Tests only pass other <paramref name="privileges"/> (a name Windows does not know, to see the refusal).</summary>
+    internal static int? DataDirectoryGate(string path, TextWriter output, IReadOnlyList<string> privileges)
     {
         var error = DataDirectoryFileSystem.TryCreateProtectedDirectory(path, withOwner: true);
         if (error == 0)
@@ -369,8 +372,14 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         DataScan scan;
         IReadOnlyList<UnfinishedRepair> unfinished;
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        using (DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.ReadPrivileges))
+        using (var enabled = DataRepairEnvironment.EnablePrivileges(privileges))
         {
+            // Without them the check cannot see protected objects: refuse instead of checking partly (R10-2).
+            if (SetupPlan.MissingPrivilegesText(enabled.Missing, uninstall: false) is { } refusal)
+            {
+                output.WriteLine(refusal);
+                return SetupPlan.ExitDataDirectoryUntrusted;
+            }
             var fs = new DataDirectoryFileSystem();
             scan = DataDirectoryScanner.Scan(fs, root, DataDirectoryPolicy.TrustedSids);
             unfinished = [.. new DataDirectoryRepair(fs, new NullConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign)];
@@ -429,15 +438,23 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     }
 
     /// <summary>Null when no repair of the data folder is unfinished; otherwise what to tell the person (nothing is changed).</summary>
-    internal static string? UnfinishedRepairBlocksUninstall(string dataDirectory)
+    internal static string? UnfinishedRepairBlocksUninstall(string dataDirectory) => UnfinishedRepairBlocksUninstall(dataDirectory, DataRepairEnvironment.ReadPrivileges);
+
+    /// <summary>Tests only pass other <paramref name="privileges"/> (a name Windows does not know, to see the refusal).</summary>
+    internal static string? UnfinishedRepairBlocksUninstall(string dataDirectory, IReadOnlyList<string> privileges)
     {
         if (!Directory.Exists(dataDirectory))
         {
             return null;
         }
         IReadOnlyList<UnfinishedRepair> unfinished;
-        using (DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.ReadPrivileges))
+        using (var enabled = DataRepairEnvironment.EnablePrivileges(privileges))
         {
+            // Without them an unfinished repair could stay unseen: refuse, the caller exits with 6 (R10-2).
+            if (SetupPlan.MissingPrivilegesText(enabled.Missing, uninstall: true) is { } refusal)
+            {
+                return refusal;
+            }
             var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataDirectory));
             unfinished = [.. new DataDirectoryRepair(new DataDirectoryFileSystem(), new NullConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign)];
         }

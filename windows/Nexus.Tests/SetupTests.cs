@@ -17,6 +17,21 @@ public sealed class SetupPlanTests
         Assert.Equal(["create", "NexusPCAgent", "binPath=", "\"" + AgentExe + "\"", "start=", "auto", "DisplayName=", "Nexus PC Agent"], create.Args);
     }
 
+    [Theory]
+    [InlineData(false, "Установка остановлена")]
+    [InlineData(true, "Удаление остановлено")]
+    public void Missing_privileges_refuse_the_data_folder_check_without_internal_names(bool uninstall, string stopped)
+    {
+        Assert.Null(SetupPlan.MissingPrivilegesText([], uninstall));
+        var text = SetupPlan.MissingPrivilegesText(["SeBackupPrivilege"], uninstall);
+        Assert.NotNull(text);
+        Assert.StartsWith(stopped + ", ничего не изменено", text, StringComparison.Ordinal);
+        Assert.Contains("проверка папки данных Nexus PC не выполнена", text, StringComparison.Ordinal);
+        Assert.Contains("права", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Se", text, StringComparison.Ordinal);
+        Assert.Equal(6, SetupPlan.ExitDataDirectoryUntrusted);
+    }
+
     [Fact]
     public void Firewall_rule_is_for_the_agent_program_on_private_networks_only()
     {

@@ -544,6 +544,7 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         }
         var rename = journal.Steps.FirstOrDefault(s => s.Action == RepairStep.RenamePlugins && s.Status == Done);
         var problems = new List<string>();
+        var incomplete = new List<string>();
         // Children before parents, the root last: until the end the root keeps the repaired, protected access.
         foreach (var entry in original.Entries.OrderByDescending(e => e.Path.Length).ThenByDescending(e => e.Path, StringComparer.Ordinal))
         {
@@ -564,6 +565,16 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
                     continue;
                 }
                 obj.SetSecurity(new DataSecurity.Original(entry.Sddl));
+                // What the object has now decides, not what was written (R10-1).
+                switch (DataDirectoryPolicy.CompareRestored(entry.Sddl, obj.ReadSecurityDescriptor()))
+                {
+                    case RestoreOutcome.AutoInheritedLost:
+                        incomplete.Add(Display(relative));
+                        break;
+                    case RestoreOutcome.Different:
+                        problems.Add($"{Display(relative)}: the access after the restore differs from the saved one (or cannot be read)");
+                        break;
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -575,10 +586,24 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         // refusing until a new repair or "datadir finalize" passes every check.
         journal.State = problems.Count == 0 ? RepairJournal.Restored : RepairJournal.RestoreFailed;
         journal.Problems.AddRange(problems.Select(p => "restore-acl: " + p));
+        journal.Problems.AddRange(incomplete.Select(p => "restore-acl: warning: " + p + ": restored except the inherited-entries flag (AI)"));
         var saved = TrySave(journal, backup);
         foreach (var problem in problems)
         {
             console.WriteLine("  " + problem);
+        }
+        if (problems.Count == 0 && saved && incomplete.Count > 0)
+        {
+            // Owner decision (R10-1): exit 0, state acl-restored, but never reported as an exact restore.
+            console.WriteLine($"WARNING: the original access was restored INCOMPLETELY from {backup}: for {incomplete.Count} object(s) Windows did not keep the \"inherited entries\" flag (AI); owner, group and every access entry are as saved.");
+            foreach (var path in incomplete)
+            {
+                console.WriteLine("  " + path);
+            }
+            console.WriteLine("Contents were not changed. The backup is kept. The service was not started.");
+            console.WriteLine($"The repair is NOT finished: the service start type is now {CurrentStartType()} and the service refuses to start.");
+            console.WriteLine($"To finish: run \"datadir repair\" again (it takes over this backup's saved start type), or fix the folder by hand and run \"datadir finalize \\\"{backup}\\\"\".");
+            return ExitOk;
         }
         if (problems.Count == 0 && saved)
         {

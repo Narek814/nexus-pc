@@ -356,6 +356,55 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
     }
 
     [Fact]
+    public void Restore_comparison_reads_the_real_descriptor_and_tells_a_lost_ai_flag_from_other_changes()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        string? read;
+        using (var obj = new DataDirectoryFileSystem().Open(root, DataAccess.Inspect))
+        {
+            read = obj.ReadSecurityDescriptor();
+            Assert.Equal(obj.State.SecurityDescriptor, read);
+        }
+        Assert.Equal(RestoreOutcome.Exact, DataDirectoryPolicy.CompareRestored(read!, Sddl(root)));
+        // The same descriptor in the form Windows writes it, with and without SE_DACL_AUTO_INHERITED.
+        var withAi = new RawSecurityDescriptor(read!);
+        withAi.SetFlags(withAi.ControlFlags | ControlFlags.DiscretionaryAclAutoInherited);
+        var withoutAi = new RawSecurityDescriptor(read!);
+        withoutAi.SetFlags(withoutAi.ControlFlags & ~ControlFlags.DiscretionaryAclAutoInherited);
+        const AccessControlSections sections = AccessControlSections.Owner | AccessControlSections.Group | AccessControlSections.Access;
+        Assert.Equal(RestoreOutcome.AutoInheritedLost, DataDirectoryPolicy.CompareRestored(withAi.GetSddlForm(sections), withoutAi.GetSddlForm(sections)));
+        var otherOwner = new RawSecurityDescriptor(withoutAi.GetSddlForm(sections)) { Owner = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) };
+        Assert.Equal(RestoreOutcome.Different, DataDirectoryPolicy.CompareRestored(withAi.GetSddlForm(sections), otherOwner.GetSddlForm(sections)));
+    }
+
+    [Fact]
+    public void Installer_gate_and_uninstall_refuse_when_the_check_privileges_cannot_be_enabled()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        // A privilege name Windows does not know: it lands in Missing; nothing in the system is changed.
+        IReadOnlyList<string> unknown = ["SeNexusTestNoSuchPrivilege"];
+        var root = NewRoot(); // exists and trusted: only the privileges decide
+        var before = Sddl(root);
+        using var output = new StringWriter();
+        Assert.Equal(SetupPlan.ExitDataDirectoryUntrusted, Installer.DataDirectoryGate(root, output, unknown));
+        Assert.Contains("проверка папки данных Nexus PC не выполнена", output.ToString(), StringComparison.Ordinal);
+        Assert.Null(Installer.DataDirectoryGate(root, new StringWriter())); // with the real privileges the same folder passes
+        var refusal = Installer.UnfinishedRepairBlocksUninstall(root, unknown);
+        Assert.NotNull(refusal);
+        Assert.StartsWith("Удаление остановлено, ничего не изменено", refusal, StringComparison.Ordinal);
+        Assert.Null(Installer.UnfinishedRepairBlocksUninstall(root));
+        Assert.Equal(before, Sddl(root));
+        Assert.Empty(Directory.GetFileSystemEntries(root));
+    }
+
+    [Fact]
     public void Service_start_refuses_while_a_repair_is_unfinished_until_it_is_continued()
     {
         if (!Ready() || !OperatingSystem.IsWindows())
