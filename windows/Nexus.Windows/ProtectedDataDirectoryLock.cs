@@ -66,7 +66,7 @@ public sealed partial class ProtectedDataDirectoryLock : IDataDirectoryLockProvi
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
             {
-                failure = ex.Message;
+                failure = Describe("create or open the lock", ex);
                 return LockOutcome.Unavailable;
             }
             // SA-T4-R7-1: whether made now or found, the mutex is used only if its owner and DACL are exactly ours.
@@ -111,10 +111,10 @@ public sealed partial class ProtectedDataDirectoryLock : IDataDirectoryLockProvi
         var descriptor = new RawSecurityDescriptor("D:P(A;;GA;;;SY)(A;;GA;;;BA)");
         var bytes = new byte[descriptor.BinaryLength];
         descriptor.GetBinaryForm(bytes, 0);
+        var code = 0;
         for (var attempt = 0; attempt < 3; attempt++)
         {
             IntPtr ns;
-            int code;
             unsafe
             {
                 fixed (byte* sd = bytes)
@@ -146,7 +146,7 @@ public sealed partial class ProtectedDataDirectoryLock : IDataDirectoryLockProvi
             }
             // Closed by its creator between the two calls: try again.
         }
-        error = "the private namespace kept disappearing";
+        error = Describe("open the private namespace (it kept disappearing)", code);
         return IntPtr.Zero;
     }
 
@@ -173,7 +173,7 @@ public sealed partial class ProtectedDataDirectoryLock : IDataDirectoryLockProvi
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException or ArgumentException)
         {
-            return "the lock's security cannot be read: " + ex.Message;
+            return Describe("read the lock's security", ex);
         }
     }
 
@@ -191,6 +191,10 @@ public sealed partial class ProtectedDataDirectoryLock : IDataDirectoryLockProvi
 
     private static string Describe(string what, int code) =>
         $"cannot {what}: {new Win32Exception(code).Message} (error {code.ToString(CultureInfo.InvariantCulture)})";
+
+    // Diagnostics only: the Win32 code and HRESULT behind a managed failure, so one refusal can be told from another.
+    private static string Describe(string what, Exception ex) =>
+        $"cannot {what}: {ex.GetType().Name}: {ex.Message} (error {(ex.HResult & 0xFFFF).ToString(CultureInfo.InvariantCulture)}, HRESULT 0x{ex.HResult.ToString("X8", CultureInfo.InvariantCulture)})";
 
     private sealed class Held(Mutex mutex, IntPtr ns) : IDisposable
     {

@@ -478,12 +478,13 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
         Assert.Null(failure);
         using (held)
         {
-            Assert.Equal(LockOutcome.Busy, OnThread(() =>
+            var (second, secondFailure) = OnThread(() =>
             {
-                var outcome = new ProtectedDataDirectoryLock().TryAcquire(out var other, out _);
+                var outcome = new ProtectedDataDirectoryLock().TryAcquire(out var other, out var refusal);
                 other?.Dispose();
-                return outcome;
-            }));
+                return (outcome, refusal);
+            });
+            Assert.True(second == LockOutcome.Busy, $"expected Busy, got {second}: {secondFailure ?? "(no failure text)"}");
 
             // The mutex in the private namespace: SYSTEM and Administrators only, nothing inherited.
             using var opened = System.Threading.MutexAcl.OpenExisting(ProtectedDataDirectoryLock.MutexName, System.Security.AccessControl.MutexRights.ReadPermissions);

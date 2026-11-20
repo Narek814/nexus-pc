@@ -203,6 +203,30 @@ public static class DataDirectoryPolicy
         return CheckSecurity("", state, TrustedSids).Count == 0 && (!isRoot || state.DaclProtected);
     }
 
+    // SECURITY_DESCRIPTOR_CONTROL bits.
+    public const int DaclAutoInheritRequired = 0x0100; // SE_DACL_AUTO_INHERIT_REQ
+    public const int DaclAutoInherited = 0x0400;       // SE_DACL_AUTO_INHERITED
+    public const int DaclProtectedControl = 0x1000;    // SE_DACL_PROTECTED
+
+    /// <summary>
+    /// restore-acl, after the first exact write of a saved descriptor: the control for a second write, or null
+    /// when none is needed. SetKernelObjectSecurity keeps SE_DACL_AUTO_INHERITED only when the descriptor also
+    /// carries SE_DACL_AUTO_INHERIT_REQ, and with that bit the kernel keeps the object's current inherited
+    /// entries and takes only the explicit ones from the descriptor. So the bit is requested only for an
+    /// original that had AI, only when the first write did not already give back the exact descriptor, and only
+    /// after that first write (the inherited entries in place are then the original ones). Every other control
+    /// bit (SE_DACL_PROTECTED included) stays as it was saved.
+    /// </summary>
+    public static int? RestoreRewriteControl(int originalControl, string originalSddl, string? afterFirstWrite)
+    {
+        ArgumentNullException.ThrowIfNull(originalSddl);
+        if ((originalControl & DaclAutoInherited) == 0 || string.Equals(originalSddl, afterFirstWrite, StringComparison.Ordinal))
+        {
+            return null;
+        }
+        return originalControl | DaclAutoInheritRequired;
+    }
+
     // Rights that would let someone else delete, rename or re-permission what is inside a folder.
     private const uint DangerousOnParent = 0x00010000 /* DELETE */ | 0x00040000 /* WRITE_DAC */ | 0x00080000 /* WRITE_OWNER */
         | 0x00000040 /* FILE_DELETE_CHILD */ | 0x10000000 /* GENERIC_ALL */ | 0x40000000 /* GENERIC_WRITE */;

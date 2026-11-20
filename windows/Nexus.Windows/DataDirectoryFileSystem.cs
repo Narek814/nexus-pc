@@ -495,16 +495,36 @@ public sealed partial class DataDirectoryFileSystem : IDataFileSystem
                     information = DaclSecurityInformation
                         | (descriptor.Owner is null ? 0 : OwnerSecurityInformation)
                         | (descriptor.Group is null ? 0 : GroupSecurityInformation);
-                    break;
+                    Write(information, descriptor);
+                    // Without SE_DACL_AUTO_INHERIT_REQ the kernel drops SE_DACL_AUTO_INHERITED (D:AI): a second write
+                    // with that bit puts it back once the inherited entries in place are the original ones.
+                    if (DataDirectoryPolicy.RestoreRewriteControl((int)descriptor.ControlFlags, original.Sddl, CurrentSddl()) is int control)
+                    {
+                        var again = new RawSecurityDescriptor(original.Sddl);
+                        again.SetFlags((ControlFlags)control);
+                        Write(information, again);
+                        if (!string.Equals(CurrentSddl(), original.Sddl, StringComparison.Ordinal))
+                        {
+                            Write(information, descriptor); // the exact entries take precedence over the flag
+                        }
+                    }
+                    return;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(security));
             }
+            Write(information, descriptor);
+        }
+
+        private void Write(uint information, RawSecurityDescriptor descriptor)
+        {
             // SetKernelObjectSecurity sets exactly this object's descriptor; unlike SetSecurityInfo it does not walk children by name.
             if (!SetKernelObjectSecurity(Handle, information, Binary(descriptor)))
             {
                 throw Failure("cannot set the access of " + State.FullPath, Marshal.GetLastPInvokeError());
             }
         }
+
+        private string? CurrentSddl() => ReadSecurity(Handle, State with { SecurityDescriptor = null }).SecurityDescriptor;
 
         public void Rename(string newFullPath)
         {
