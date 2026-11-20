@@ -15,7 +15,7 @@ internal sealed record SetupOptions(bool Uninstall, bool Purge, bool Quiet, bool
     public static SetupOptions? Parse(IReadOnlyList<string> args)
     {
         ArgumentNullException.ThrowIfNull(args);
-        if (args.Count > 0 && args[0] is "--datadir-check" or "--datadir-repair" or "--datadir-restore-acl")
+        if (args.Count > 0 && args[0] is "--datadir-check" or "--datadir-repair" or "--datadir-restore-acl" or "--datadir-finalize")
         {
             var rest = args.Skip(1).ToList();
             var quietDataDir = rest.Remove("--quiet");
@@ -60,6 +60,35 @@ internal static partial class SetupPlan
 
     /// <summary>Exit code: the existing data folder failed the check; the installer changed nothing (docs/SETUP.md).</summary>
     public const int ExitDataDirectoryUntrusted = 6;
+
+    /// <summary>Exit code: another installation, removal or datadir command holds the protected lock, or the lock is unavailable; nothing was changed.</summary>
+    public const int ExitLockedByAnotherRun = 7;
+
+    /// <summary>The installer's own words for the two refusals of the shared lock (busy, unavailable).</summary>
+    public static string LockRefusalText(string coreText) =>
+        string.Equals(coreText, Nexus.Core.Storage.ExclusiveRun.BusyText, StringComparison.Ordinal)
+            ? "Сейчас уже выполняется установка, удаление или команда восстановления папки данных Nexus PC. Ничего не изменено; дождитесь её окончания и запустите установщик ещё раз."
+            : "Не удалось создать или открыть защищённую блокировку Nexus PC, поэтому установщик не может исключить одновременную работу с папкой данных. Ничего не изменено. "
+              + (coreText.Length > Nexus.Core.Storage.ExclusiveRun.UnavailableText.Length ? "Подробности: " + coreText[Nexus.Core.Storage.ExclusiveRun.UnavailableText.Length..].Trim() : "");
+
+    /// <summary>How an unfinished repair is finished, written with the installer's own commands (not the agent's).</summary>
+    public static string InstallerFinishText(Nexus.Core.Storage.UnfinishedRepair repair)
+    {
+        ArgumentNullException.ThrowIfNull(repair);
+        var backup = Nexus.Core.Storage.DataText.Clean(repair.Backup, 400);
+        return repair.State switch
+        {
+            Nexus.Core.Storage.RepairJournal.Restored =>
+                $"NexusPC-Setup.exe --datadir-repair (новое исправление) или, если права исправлены вручную, NexusPC-Setup.exe --datadir-finalize \"{backup}\"",
+            Nexus.Core.Storage.RepairJournal.RestoreFailed =>
+                $"NexusPC-Setup.exe --datadir-restore-acl \"{backup}\" (ещё раз), затем NexusPC-Setup.exe --datadir-repair",
+            Nexus.Core.Storage.DataDirectoryRepair.Tampered =>
+                $"копия изменена, ни одна команда ей не доверяет. Проверьте её вручную и, чтобы снять блокировку, переименуйте (от имени администратора) так, чтобы имя не начиналось с NexusPC.backup-; затем NexusPC-Setup.exe --datadir-check",
+            Nexus.Core.Storage.DataDirectoryRepair.TooManyBackups =>
+                "удалите папки NexusPC.backup-…, которых вы не создавали, затем NexusPC-Setup.exe --datadir-check",
+            _ => $"NexusPC-Setup.exe --datadir-repair --continue \"{backup}\" (или вернуть права: NexusPC-Setup.exe --datadir-restore-acl \"{backup}\")",
+        };
+    }
 
     /// <summary>What the installer says it found, by kind of structural problem (not always "links").</summary>
     public static string BlockingKindText(Nexus.Core.Storage.DataViolationKind kind) => kind switch

@@ -48,6 +48,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
     public Func<string, bool>? FailDurableWrite { get; set; }
     public string? ExtraNamesIn { get; set; }
     public IReadOnlyList<string> ExtraNames { get; set; } = [];
+    public bool FailMoveDirectory { get; set; }
     public Action<string, DataAccess>? OnOpen { get; set; }
     public int SecurityChanges { get; private set; }
     public int Renames { get; private set; }
@@ -116,7 +117,10 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
         return [.. Nodes.Keys.Where(k => Path.GetDirectoryName(k) == path).Select(Path.GetFileName)!, .. path == ExtraNamesIn ? ExtraNames : []];
     }
 
-    public string ExpectedRootFinalPath(string root) => root;
+    /// <summary>Other names of the same folder (8.3 names, "All Users", \\?\ forms) and what they resolve to.</summary>
+    public Dictionary<string, string> Aliases { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public string ExpectedRootFinalPath(string root) => Aliases.TryGetValue(root, out var real) ? real : root;
 
     public long AvailableBytes(string directory) => Available;
 
@@ -186,6 +190,10 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
 
     public void MoveDirectory(string source, string destination)
     {
+        if (FailMoveDirectory)
+        {
+            throw new IOException("The process cannot access the file because it is being used by another process.");
+        }
         foreach (var key in Nodes.Keys.Where(k => k == source || k.StartsWith(source + "/", StringComparison.Ordinal)).ToList())
         {
             Nodes[destination + key[source.Length..]] = Nodes[key];
@@ -712,7 +720,8 @@ public sealed class DataDirectoryRepairTests
         }
         Assert.Equal(contents, ContentsSnapshot());
         Assert.True(_fs.Nodes.ContainsKey(backup)); // the backup is kept
-        Assert.Empty(Repair(new ScriptedConsole()).FindUnfinished(Root));
+        // Owner decision (QA-T4-R3-3, variant A): restore-acl does not finish the repair; it stays visible and blocking.
+        Assert.Equal(RepairJournal.Restored, Assert.Single(Repair(new ScriptedConsole()).FindUnfinished(Root)).State);
     }
 
     [Fact]

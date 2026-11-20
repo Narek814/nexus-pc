@@ -68,7 +68,7 @@ public sealed class DataDirectoryHardeningTests
     [InlineData("ace")]
     [InlineData("unprotected")]
     [InlineData("reparse-journal")]
-    public void Planted_backup_is_reported_as_foreign_never_used_and_does_not_block_repair(string spoil)
+    public void Planted_backup_is_foreign_and_ignored_but_an_admin_owned_changed_one_blocks(string spoil)
     {
         var foreign = ForeignBackup(node =>
         {
@@ -81,6 +81,13 @@ public sealed class DataDirectoryHardeningTests
             }
         });
         var found = Assert.Single(Repair().FindUnfinished(Root));
+        if (spoil != "owner")
+        {
+            // Owner decision (SA-T4-R4-1): an Administrators-owned backup with a journal that no longer passes
+            // the check is tampered: never used, and it BLOCKS (fail closed) instead of being ignored.
+            AssertTamperedBlocks(foreign, found);
+            return;
+        }
         Assert.True(found.Foreign);
 
         var check = new ScriptedConsole();
@@ -97,6 +104,23 @@ public sealed class DataDirectoryHardeningTests
         Assert.Equal(0, _fs.SecurityChanges);
 
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair().Repair(Root, [])); // not blocked by it
+    }
+
+    private void AssertTamperedBlocks(string tampered, UnfinishedRepair found)
+    {
+        Assert.False(found.Foreign);
+        Assert.Equal(DataDirectoryRepair.Tampered, found.State);
+        Assert.Single(DataDirectoryRepair.StartCheck(_fs, Root, DataDirectoryPolicy.TrustedSids).Unfinished); // the service does not start
+        var before = _fs.Snapshot("/pd");
+        var refused = new ScriptedConsole(DataDirectoryRepair.ConfirmationWord);
+        Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(refused).RestoreAcl(Root, tampered, []));
+        Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(refused).Continue(Root, tampered, []));
+        Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(refused).Finalize(Root, tampered, []));
+        Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(refused).Repair(Root, [])); // a new repair waits too
+        Assert.Equal(before, _fs.Snapshot("/pd"));
+        Assert.Equal(0, _fs.SecurityChanges);
+        Assert.Contains("tampered", refused.Text, StringComparison.Ordinal);
+        Assert.Contains("rename it", refused.Text, StringComparison.Ordinal); // the way out is named
     }
 
     [Theory]

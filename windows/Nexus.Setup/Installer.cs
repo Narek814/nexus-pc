@@ -26,9 +26,12 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         if (options.DataDirectory is { } command)
         {
-            return DataDirectoryCommand.Run(command, new InstallerConsole(log));
+            return DataDirectoryCommand.Run(command, new InstallerConsole(log)); // takes the protected lock itself
         }
-        return options.Uninstall ? Uninstall() : Install();
+        // Installation and removal hold the same protected lock as the datadir commands for their whole run (N2):
+        // none of them can work on the data folder or the service while another one does.
+        return ExclusiveRun.Run(new ProtectedDataDirectoryLock(), text => Say(SetupPlan.LockRefusalText(text)), SetupPlan.ExitLockedByAnotherRun,
+            () => options.Uninstall ? Uninstall() : Install());
     }
 
     private int Install()
@@ -158,6 +161,13 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     private int Uninstall()
     {
         Say(options.Purge ? "Nexus PC — полное удаление (вместе с данными)" : "Nexus PC — удаление (данные и сопряжения сохраняются)");
+        // Removing the service in the middle of a repair would leave nothing to finish it with (and --purge would
+        // take the folder the journal refers to). Refuse, changing nothing, until the repair is finished.
+        if (UnfinishedRepairBlocksUninstall(DataDirectory) is { } blocked)
+        {
+            Say(blocked);
+            return SetupPlan.ExitDataDirectoryUntrusted;
+        }
         Step("Останавливаю Nexus PC", () =>
         {
             StopTray();
@@ -375,6 +385,24 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             foreach (var repair in unfinished)
             {
                 var backup = DataText.Clean(repair.Backup, 400);
+                if (repair.State == RepairJournal.Restored)
+                {
+                    output.WriteLine($"  Права возвращены, восстановление не завершено ({backup}).");
+                    output.WriteLine("  Завершить:       NexusPC-Setup.exe --datadir-repair (новое исправление)");
+                    output.WriteLine($"  или, если папка исправлена вручную: NexusPC-Setup.exe --datadir-finalize \"{backup}\"");
+                    continue;
+                }
+                if (repair.State is DataDirectoryRepair.Tampered or DataDirectoryRepair.TooManyBackups)
+                {
+                    output.WriteLine($"  {backup}: {DataText.Clean(repair.Detail, 400)}");
+                    output.WriteLine("  Что делать: " + DataDirectoryRepair.FinishCommand(repair) + " (docs/SETUP.md, «Восстановление папки данных»).");
+                    continue;
+                }
+                if (repair.State == RepairJournal.RestoreFailed)
+                {
+                    output.WriteLine($"  Повторить возврат прав: NexusPC-Setup.exe --datadir-restore-acl \"{backup}\"");
+                    continue;
+                }
                 output.WriteLine($"  Продолжить:      NexusPC-Setup.exe --datadir-repair --continue \"{backup}\"");
                 output.WriteLine($"  Вернуть права:   NexusPC-Setup.exe --datadir-restore-acl \"{backup}\"");
             }
@@ -398,6 +426,34 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             ? "Потом запустите установщик ещё раз. Подробно: docs/SETUP.md, «Восстановление папки данных»."
             : $"Автоматическое исправление откажется: в папке найдены {string.Join(", ", DataDirectoryRepair.BlockingKinds(scan).Select(SetupPlan.BlockingKindText))}. Разберите это вручную (docs/SETUP.md, «Восстановление папки данных»).");
         return SetupPlan.ExitDataDirectoryUntrusted;
+    }
+
+    /// <summary>Null when no repair of the data folder is unfinished; otherwise what to tell the person (nothing is changed).</summary>
+    internal static string? UnfinishedRepairBlocksUninstall(string dataDirectory)
+    {
+        if (!Directory.Exists(dataDirectory))
+        {
+            return null;
+        }
+        IReadOnlyList<UnfinishedRepair> unfinished;
+        using (DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.ReadPrivileges))
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataDirectory));
+            unfinished = [.. new DataDirectoryRepair(new DataDirectoryFileSystem(), new NullConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign)];
+        }
+        if (unfinished.Count == 0)
+        {
+            return null;
+        }
+        var text = new System.Text.StringBuilder();
+        text.AppendLine("Удаление остановлено, ничего не изменено: восстановление папки данных не завершено.");
+        foreach (var repair in unfinished)
+        {
+            text.AppendLine($"  {DataText.Clean(repair.Backup, 400)} ({DataText.Clean(repair.State)})");
+            text.AppendLine("  Завершить: " + SetupPlan.InstallerFinishText(repair));
+        }
+        text.Append("Затем запустите удаление ещё раз. Подробно: docs/SETUP.md, «Восстановление папки данных».");
+        return text.ToString();
     }
 
     private sealed class NullConsole : IRepairConsole

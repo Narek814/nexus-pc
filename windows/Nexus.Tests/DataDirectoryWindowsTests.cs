@@ -12,10 +12,15 @@ using Xunit.Abstractions;
 
 namespace Nexus.Tests;
 
+/// <summary>T4 Windows tests change real NTFS security and process privileges: never in parallel with each other or other tests.</summary>
+[CollectionDefinition(nameof(DataDirectoryWindowsSerial), DisableParallelization = true)]
+public sealed class DataDirectoryWindowsSerial;
+
 /// <summary>
 /// The real handle-based file layer on NTFS. Runs only on Windows (CI windows-latest, elevated). Every
-/// object is made by the test under %TEMP%; nothing outside it is read or changed.
+/// object is made by the test under %TEMP%; nothing outside it is read or changed. No real service is touched.
 /// </summary>
+[Collection(nameof(DataDirectoryWindowsSerial))]
 public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDisposable
 {
     private readonly List<string> _cleanup = [];
@@ -351,6 +356,354 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
     }
 
     [Fact]
+    public void Service_start_refuses_while_a_repair_is_unfinished_until_it_is_continued()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        File.WriteAllText(Path.Combine(root, "config.json"), "{}");
+        File.WriteAllText(Path.Combine(root, "devices.json"), "[]");
+        Grant(Path.Combine(root, "devices.json"), WellKnownSidType.BuiltinUsersSid, directory: false);
+        var fs = new DataDirectoryFileSystem();
+        // No real service is touched: the start type lives in this double; a precondition fails mid-way.
+        var environment = new FakeRepairEnvironment { FailuresAt = n => n == 3 ? ["simulated: a second session signed in"] : [] };
+        Assert.Equal(DataDirectoryRepair.ExitStopped, new DataDirectoryRepair(fs, new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), TimeProvider.System, environment).Repair(root, []));
+        Assert.Equal("disabled", environment.StartType);
+        var backup = Assert.Single(Directory.GetDirectories(Path.GetDirectoryName(root)!, "NexusPC.backup-*"));
+        _cleanup.Add(backup);
+
+        var refused = Assert.Throws<DataDirectoryUntrustedException>(() => AgentPaths.EnsureSecureDirectory(root, null));
+        Assert.Contains("--continue", refused.Message, StringComparison.Ordinal);
+
+        environment.FailuresAt = null;
+        Assert.Equal(DataDirectoryRepair.ExitOk, new DataDirectoryRepair(fs, new ScriptedConsole(), TimeProvider.System, environment).Continue(root, backup, []));
+        Assert.Equal("auto", environment.StartType);
+        AgentPaths.EnsureSecureDirectory(root, null); // completed and verified: the start check passes again
+    }
+
+    [Fact]
+    public void Restore_acl_then_finalize_on_ntfs_keeps_the_service_blocked_until_every_check_passes()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        File.WriteAllText(Path.Combine(root, "config.json"), "{}");
+        File.WriteAllText(Path.Combine(root, "devices.json"), "[]");
+        Grant(Path.Combine(root, "devices.json"), WellKnownSidType.BuiltinUsersSid, directory: false);
+        var fs = new DataDirectoryFileSystem();
+        var environment = new FakeRepairEnvironment { FailuresAt = n => n == 3 ? ["simulated: a second session signed in"] : [] };
+        Assert.Equal(DataDirectoryRepair.ExitStopped, new DataDirectoryRepair(fs, new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), TimeProvider.System, environment).Repair(root, []));
+        environment.FailuresAt = null;
+        var backup = Assert.Single(Directory.GetDirectories(Path.GetDirectoryName(root)!, "NexusPC.backup-*"));
+        _cleanup.Add(backup);
+        Assert.Equal(DataDirectoryRepair.ExitOk, new DataDirectoryRepair(fs, new ScriptedConsole(), TimeProvider.System, environment).RestoreAcl(root, backup, []));
+        Assert.Equal("disabled", environment.StartType);
+
+        var refused = Assert.Throws<DataDirectoryUntrustedException>(() => AgentPaths.EnsureSecureDirectory(root, null));
+        Assert.Contains("datadir finalize", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(DataDirectoryRepair.ExitRefused, new DataDirectoryRepair(fs, new ScriptedConsole(), TimeProvider.System, environment).Finalize(root, backup, []));
+        Assert.Equal("disabled", environment.StartType);
+
+        // The administrator's own fix, by handle: protected root, only inherited entries below it.
+        foreach (var path in Directory.GetFileSystemEntries(root, "*", SearchOption.AllDirectories).Append(root))
+        {
+            using var obj = fs.Open(path, DataAccess.ChangeSecurity);
+            obj.SetSecurity(path == root ? new DataSecurity.ProtectedRoot() : new DataSecurity.InheritedFromRoot(obj.State.Kind == DataObjectKind.Directory));
+        }
+        var console = new ScriptedConsole();
+        Assert.Equal(DataDirectoryRepair.ExitOk, new DataDirectoryRepair(fs, console, TimeProvider.System, environment).Finalize(root, backup, []));
+        output.WriteLine(console.Text);
+        Assert.Equal("auto", environment.StartType);
+        AgentPaths.EnsureSecureDirectory(root, null); // finalized and verified: the start check passes
+    }
+
+    [Fact]
+    public void Uninstall_is_refused_while_a_repair_is_unfinished_and_a_tampered_backup_still_blocks()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        File.WriteAllText(Path.Combine(root, "config.json"), "{}");
+        File.WriteAllText(Path.Combine(root, "devices.json"), "[]");
+        Grant(Path.Combine(root, "devices.json"), WellKnownSidType.BuiltinUsersSid, directory: false);
+        var fs = new DataDirectoryFileSystem();
+        var environment = new FakeRepairEnvironment { FailuresAt = n => n == 3 ? ["simulated"] : [] };
+        Assert.Equal(DataDirectoryRepair.ExitStopped, new DataDirectoryRepair(fs, new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), TimeProvider.System, environment).Repair(root, []));
+        var backup = Assert.Single(Directory.GetDirectories(Path.GetDirectoryName(root)!, "NexusPC.backup-*"));
+        _cleanup.Add(backup);
+
+        var refusal = Installer.UnfinishedRepairBlocksUninstall(root);
+        Assert.NotNull(refusal);
+        Assert.Contains("--datadir-repair --continue", refusal, StringComparison.Ordinal);
+
+        // What Explorer's "Continue" does to a folder the administrator could not open: an ACE for that account.
+        Grant(backup, WellKnownSidType.AuthenticatedUserSid, directory: true);
+        Assert.Throws<DataDirectoryUntrustedException>(() => AgentPaths.EnsureSecureDirectory(root, null));
+        using var output = new StringWriter();
+        Assert.Equal(SetupPlan.ExitDataDirectoryUntrusted, Installer.DataDirectoryGate(root, output));
+        Assert.NotNull(Installer.UnfinishedRepairBlocksUninstall(root));
+    }
+
+    /// <summary>Runs <paramref name="action"/> on a new thread (a mutex belongs to its thread) and waits.</summary>
+    private static T OnThread<T>(Func<T> action)
+    {
+        T result = default!;
+        var thread = new Thread(() => result = action());
+        thread.Start();
+        thread.Join();
+        return result;
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")] // checked at run time by Ready(); lambdas below use Windows-only types
+    public void Protected_lock_excludes_a_second_holder_and_ignores_a_squatted_global_name()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        // Someone took the old name with an access list that refuses everybody: it no longer matters.
+        var denyAll = new System.Security.AccessControl.MutexSecurity();
+        denyAll.SetAccessRuleProtection(true, false);
+        using var squatted = System.Threading.MutexAcl.Create(false, @"Global\NexusPC.DataDir", out _, denyAll);
+
+        var locks = new ProtectedDataDirectoryLock();
+        Assert.Equal(LockOutcome.Acquired, locks.TryAcquire(out var held, out var failure));
+        Assert.Null(failure);
+        using (held)
+        {
+            Assert.Equal(LockOutcome.Busy, OnThread(() =>
+            {
+                var outcome = new ProtectedDataDirectoryLock().TryAcquire(out var other, out _);
+                other?.Dispose();
+                return outcome;
+            }));
+
+            // The mutex in the private namespace: SYSTEM and Administrators only, nothing inherited.
+            using var opened = System.Threading.MutexAcl.OpenExisting(ProtectedDataDirectoryLock.MutexName, System.Security.AccessControl.MutexRights.ReadPermissions);
+            var security = opened.GetAccessControl();
+            Assert.True(security.AreAccessRulesProtected);
+            var sids = security.GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<System.Security.AccessControl.MutexAccessRule>()
+                .Select(r => ((SecurityIdentifier)r.IdentityReference).Value).Order().ToList();
+            Assert.Equal([DataDirectoryPolicy.LocalSystem, DataDirectoryPolicy.Administrators], sids);
+        }
+        Assert.Equal(LockOutcome.Acquired, OnThread(() =>
+        {
+            var outcome = new ProtectedDataDirectoryLock().TryAcquire(out var again, out _);
+            again?.Dispose();
+            return outcome;
+        }));
+    }
+
+    /// <summary>Exit code and output of a System32 tool; never asserts (used for cleanup).</summary>
+    private static (int Code, string Text) TryRun(string exe, params string[] args)
+    {
+        var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, exe)) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in args)
+        {
+            start.ArgumentList.Add(arg);
+        }
+        using var process = Process.Start(start)!;
+        var text = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return (process.ExitCode, text);
+    }
+
+    private static bool WaitForFile(string path, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (File.Exists(path))
+            {
+                return true;
+            }
+            Thread.Sleep(200);
+        }
+        return File.Exists(path);
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")] // checked at run time by Ready(); lambdas below use Windows-only types
+    public void Protected_lock_excludes_a_holder_in_another_session()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        // It creates (and always deletes) a SYSTEM scheduled task: only on a GitHub-hosted runner, which is a
+        // fresh machine per job — never on a developer's PC or a self-hosted runner (GITHUB_ACTIONS alone is set there too).
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" || Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted")
+        {
+            output.WriteLine("Not run: creates a temporary SYSTEM scheduled task, so it runs only on a GitHub-hosted runner (GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted).");
+            return;
+        }
+        var id = Guid.NewGuid().ToString("N");
+        var task = "NexusPC-T4-LockTest-" + id;
+        // Everything SYSTEM runs or reads lives in a folder only SYSTEM and Administrators may change
+        // (protected DACL from its creation): a copy of the test build, verified by SHA-256, and the signal files.
+        // Remaining Low risk (CI only, SA-T4-R8-A): the build folder the copy is taken from is writable by the runner
+        // account until the copy is made; the SHA-256 proves the copy equals that folder, not that the folder was
+        // never changed. Closing that would need a workflow step (protect or sign the build output), and ci.yml is
+        // not to be changed. On a GitHub-hosted runner the job itself is the only writer, so this is accepted.
+        var folder = Path.Combine(Path.GetTempPath(), "nexus-t4-lock-" + id);
+        Assert.Equal(0, DataDirectoryFileSystem.TryCreateProtectedDirectory(folder, withOwner: true));
+        _cleanup.Add(folder);
+        var helper = Path.Combine(folder, "helper");
+        Directory.CreateDirectory(helper);
+        foreach (var file in Directory.GetFiles(AppContext.BaseDirectory, "*", SearchOption.AllDirectories))
+        {
+            var copy = Path.Combine(helper, Path.GetRelativePath(AppContext.BaseDirectory, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy);
+            Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file))),
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(copy))));
+        }
+        var dotnet = Path.GetFullPath(Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", "dotnet.exe"));
+        Assert.True(File.Exists(dotnet), "dotnet.exe not found at " + dotnet);
+        var assembly = Path.Combine(helper, Path.GetFileName(typeof(TestHelperProgram).Assembly.Location));
+        // Task XML: locale-independent, a one-time trigger in the past (it never fires by itself, and never again),
+        // run by hand once, as SYSTEM, at most 5 minutes; the helper releases by itself after 90 seconds.
+        var xml = Path.Combine(folder, "task.xml");
+        File.WriteAllText(xml, $"""
+            <?xml version="1.0" encoding="UTF-16"?>
+            <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+              <Triggers><TimeTrigger><StartBoundary>2000-01-01T00:00:00</StartBoundary><Enabled>true</Enabled></TimeTrigger></Triggers>
+              <Principals><Principal id="Author"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
+              <Settings>
+                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+                <StartWhenAvailable>false</StartWhenAvailable>
+                <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+                <Enabled>true</Enabled>
+              </Settings>
+              <Actions Context="Author"><Exec>
+                <Command>{System.Security.SecurityElement.Escape(dotnet)}</Command>
+                <Arguments>{System.Security.SecurityElement.Escape($"exec \"{assembly}\" --hold-datadir-lock \"{folder}\" 90")}</Arguments>
+              </Exec></Actions>
+            </Task>
+            """, System.Text.Encoding.Unicode);
+
+        Exception? primary = null;
+        try
+        {
+            Run("schtasks.exe", "/Create", "/TN", task, "/XML", xml, "/F");
+            Run("schtasks.exe", "/Run", "/TN", task);
+            Assert.True(WaitForFile(Path.Combine(folder, "acquired"), TimeSpan.FromSeconds(90)) || File.Exists(Path.Combine(folder, "failed")),
+                "the SYSTEM helper did not start");
+            Assert.False(File.Exists(Path.Combine(folder, "failed")), "SYSTEM helper: " + (File.Exists(Path.Combine(folder, "failed")) ? File.ReadAllText(Path.Combine(folder, "failed")) : ""));
+            var helperSide = File.ReadAllText(Path.Combine(folder, "acquired"));
+            var ourSession = Process.GetCurrentProcess().SessionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            output.WriteLine("Helper: " + helperSide + "; this test: " + Environment.UserName + " session " + ourSession);
+            if (helperSide.EndsWith(" session " + ourSession, StringComparison.Ordinal))
+            {
+                // Still a real exclusion between two processes and two accounts (SYSTEM and the runner account).
+                output.WriteLine("NOTE: both sides run in session " + ourSession + ": exclusion BETWEEN SESSIONS is not verified by this run (only between processes and accounts).");
+            }
+
+            Assert.Equal(LockOutcome.Busy, OnThread(() => DisposeAndReturn(new ProtectedDataDirectoryLock(), out _)));
+
+            File.WriteAllText(Path.Combine(folder, "release"), "");
+            Assert.True(WaitForFile(Path.Combine(folder, "released"), TimeSpan.FromSeconds(30)), "the SYSTEM helper did not release the lock");
+            var acquired = LockOutcome.Unavailable;
+            for (var attempt = 0; attempt < 50 && acquired != LockOutcome.Acquired; attempt++)
+            {
+                acquired = OnThread(() => DisposeAndReturn(new ProtectedDataDirectoryLock(), out _));
+                if (acquired != LockOutcome.Acquired)
+                {
+                    Thread.Sleep(100); // the helper process may still be exiting
+                }
+            }
+            Assert.Equal(LockOutcome.Acquired, acquired);
+        }
+#pragma warning disable CA1031 // the original failure is kept and rethrown after the cleanup below
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            primary = ex;
+        }
+
+        // Cleanup always runs; its own problems never hide the original failure.
+        var cleanup = new List<string>();
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "release"), "");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            cleanup.Add("release signal: " + ex.Message);
+        }
+        var ended = TryRun("schtasks.exe", "/End", "/TN", task);
+        var deleted = TryRun("schtasks.exe", "/Delete", "/TN", task, "/F");
+        output.WriteLine($"Cleanup: end {ended.Code}, delete {deleted.Code} {deleted.Text.Trim()}");
+        if (TryRun("schtasks.exe", "/Query", "/TN", task).Code == 0)
+        {
+            cleanup.Add($"the task {task} still exists after /Delete ({deleted.Text.Trim()})");
+        }
+        if (primary is not null)
+        {
+            foreach (var problem in cleanup)
+            {
+                output.WriteLine("Cleanup problem after the failure: " + problem);
+            }
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(primary).Throw();
+        }
+        Assert.True(cleanup.Count == 0, "cleanup failed: " + string.Join("; ", cleanup));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")] // checked at run time by Ready(); lambdas below use Windows-only types
+    public void Lookalike_lock_names_outside_the_private_namespace_are_not_taken_for_the_lock()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        // Objects named like the lock in the ordinary namespaces, held and with an access list that refuses
+        // everybody: the protected lock neither uses nor waits for them.
+        var denyAll = new System.Security.AccessControl.MutexSecurity();
+        denyAll.SetAccessRuleProtection(true, false);
+        using var local = System.Threading.MutexAcl.Create(true, @"Local\NexusPC.DataDir", out _, denyAll);
+        using var plain = System.Threading.MutexAcl.Create(true, @"Local\NexusPC-DataDir", out _, denyAll);
+        Assert.Equal(LockOutcome.Acquired, OnThread(() => DisposeAndReturn(new ProtectedDataDirectoryLock(), out _)));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")] // checked at run time by Ready(); lambdas below use Windows-only types
+    public void Protected_lock_cannot_be_taken_without_an_enabled_administrators_group()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        // The same account with Administrators made deny-only (what a non-elevated or ordinary token has):
+        // it may neither create the private namespace nor open it, so it cannot take or squat the lock.
+        var outcome = RestrictedToken.RunWithoutAdministrators(() => DisposeAndReturn(new ProtectedDataDirectoryLock(), out _));
+        Assert.Equal(LockOutcome.Unavailable, outcome);
+
+        // And while such a token is around, the elevated command still gets the lock.
+        Assert.Equal(LockOutcome.Acquired, OnThread(() =>
+        {
+            var o = new ProtectedDataDirectoryLock().TryAcquire(out var held, out _);
+            held?.Dispose();
+            return o;
+        }));
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static LockOutcome DisposeAndReturn(ProtectedDataDirectoryLock locks, out string? failure)
+    {
+        var outcome = locks.TryAcquire(out var held, out failure);
+        held?.Dispose();
+        return outcome;
+    }
+
+    [Fact]
     public void Backup_with_extra_access_is_not_used_by_restore_acl_or_continue()
     {
         if (!Ready() || !OperatingSystem.IsWindows())
@@ -368,7 +721,13 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
         var console = new ScriptedConsole();
         Assert.Equal(DataDirectoryRepair.ExitRefused, new DataDirectoryRepair(fs, console, TimeProvider.System).RestoreAcl(root, backup, []));
         Assert.Equal(DataDirectoryRepair.ExitRefused, new DataDirectoryRepair(fs, console, TimeProvider.System).Continue(root, backup, []));
-        Assert.Contains("foreign folder, not used", console.Text, StringComparison.Ordinal);
+        // Exact: both refusals name this backup as tampered (a completed repair whose folder was changed), never as foreign.
+        Assert.Equal(2, console.Lines.Count(l => l.StartsWith(backup + ": " + DataDirectoryRepair.TamperedText, StringComparison.Ordinal)));
+        Assert.DoesNotContain("foreign folder", console.Text, StringComparison.Ordinal);
+        var blocked = Assert.Single(DataDirectoryRepair.StartCheck(fs, Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)), DataDirectoryPolicy.TrustedSids).Unfinished);
+        Assert.Equal(DataDirectoryRepair.Tampered, blocked.State); // its "completed" journal is not believed
+        using var gate = new StringWriter();
+        Assert.Equal(SetupPlan.ExitDataDirectoryUntrusted, Installer.DataDirectoryGate(root, gate));
         Assert.Equal(after, Sddl(Path.Combine(root, "devices.json")));
     }
 

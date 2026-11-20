@@ -537,6 +537,135 @@ public interface IRepairEnvironment
     void SetServiceStartType(string startType);
 }
 
+public enum LockOutcome
+{
+    Acquired,
+    /// <summary>Another datadir command, installation or removal of Nexus PC holds it.</summary>
+    Busy,
+    /// <summary>The protected lock could not be created or opened (fail closed).</summary>
+    Unavailable,
+}
+
+/// <summary>The one lock shared by datadir commands, installation and removal (N1, N2).</summary>
+public interface IDataDirectoryLockProvider
+{
+    LockOutcome TryAcquire(out IDisposable? held, out string? failure);
+}
+
+public static class ProtectedLockPolicy
+{
+    /// <summary>
+    /// SA-T4-R7-1: the lock object found or made is used only if it is exactly what the lock creates: owner
+    /// SYSTEM or Administrators, a protected DACL, and only access-allowed entries, each for SYSTEM or
+    /// Administrators (no other SID, no deny entries). Null when acceptable, otherwise the reason.
+    /// </summary>
+    public static string? Refusal(string? ownerSid, bool daclPresent, bool daclProtected, IReadOnlyList<DataAce> dacl)
+    {
+        ArgumentNullException.ThrowIfNull(dacl);
+        if (ownerSid is not (DataDirectoryPolicy.LocalSystem or DataDirectoryPolicy.Administrators))
+        {
+            return "the lock's owner is " + (ownerSid ?? "unknown") + ", not SYSTEM or Administrators";
+        }
+        if (!daclPresent)
+        {
+            return "the lock has no access list";
+        }
+        if (!daclProtected)
+        {
+            return "the lock's access list is not protected";
+        }
+        if (dacl.Count == 0)
+        {
+            return "the lock's access list is empty";
+        }
+        foreach (var ace in dacl)
+        {
+            if (!ace.Allow)
+            {
+                return "the lock's access list contains an entry that is not a plain allow entry (" + ace.Sid + ")";
+            }
+            if (ace.Sid is not (DataDirectoryPolicy.LocalSystem or DataDirectoryPolicy.Administrators))
+            {
+                return "the lock grants access to " + ace.Sid;
+            }
+        }
+        return null;
+    }
+}
+
+public static class ExclusiveRun
+{
+    public const string BusyText = "Refused: another Nexus PC datadir command, installation or removal is running on this PC. Nothing was changed; try again when it has finished.";
+    public const string UnavailableText = "Refused: the protected Nexus PC lock could not be created or opened, so it cannot be made sure that nothing else changes the data folder meanwhile. Nothing was changed.";
+
+    /// <summary>
+    /// Runs <paramref name="action"/> while holding the lock, or refuses without running it: busy and
+    /// unavailable are told apart, both return <paramref name="refusedCode"/> (fail closed).
+    /// </summary>
+    public static int Run(IDataDirectoryLockProvider locks, Action<string> say, int refusedCode, Func<int> action)
+    {
+        ArgumentNullException.ThrowIfNull(locks);
+        ArgumentNullException.ThrowIfNull(say);
+        ArgumentNullException.ThrowIfNull(action);
+        var outcome = locks.TryAcquire(out var held, out var error);
+        if (outcome != LockOutcome.Acquired || held is null)
+        {
+            say(outcome == LockOutcome.Busy ? BusyText : UnavailableText + (error is null ? "" : " (" + error + ")"));
+            return refusedCode;
+        }
+        using (held)
+        {
+            return action();
+        }
+    }
+}
+
+/// <summary>
+/// A plain named mutex: the portable building block (tests, other OSes). It is NOT protected against an
+/// ordinary user taking the name first; on Windows the datadir commands and the installer use
+/// Nexus.Windows.ProtectedDataDirectoryLock (a private namespace bound to Administrators) instead.
+/// </summary>
+public sealed class DataDirectoryLock : IDisposable
+{
+    private readonly Mutex _mutex;
+
+    private DataDirectoryLock(Mutex mutex) => _mutex = mutex;
+
+    /// <summary>The lock, or null when another datadir command holds it (or it cannot be taken).</summary>
+    public static DataDirectoryLock? TryAcquire(string name)
+    {
+        Mutex mutex;
+        try
+        {
+            mutex = new Mutex(false, name);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
+        {
+            return null;
+        }
+        try
+        {
+            if (mutex.WaitOne(0))
+            {
+                return new DataDirectoryLock(mutex);
+            }
+        }
+        catch (AbandonedMutexException)
+        {
+            // The previous holder died mid-command: its journal says what is unfinished. The lock is ours now.
+            return new DataDirectoryLock(mutex);
+        }
+        mutex.Dispose();
+        return null;
+    }
+
+    public void Dispose()
+    {
+        _mutex.ReleaseMutex();
+        _mutex.Dispose();
+    }
+}
+
 /// <summary>No service, no further preconditions (tests of the plain repair logic, offline folders).</summary>
 public sealed class NoRepairEnvironment : IRepairEnvironment
 {
@@ -615,7 +744,7 @@ public sealed record DataDirectoryCommandLine(string Verb, string? Backup, strin
                     verb = "continue";
                     backup = args[++i];
                     break;
-                case var path when verb == "restore-acl" && backup is null && !path.StartsWith("--", StringComparison.Ordinal):
+                case var path when verb is "restore-acl" or "finalize" && backup is null && !path.StartsWith("--", StringComparison.Ordinal):
                     backup = path;
                     break;
                 default:
@@ -630,7 +759,7 @@ public sealed record DataDirectoryCommandLine(string Verb, string? Backup, strin
         return verb switch
         {
             "check" or "repair" => new DataDirectoryCommandLine(verb, null, dataDirectory),
-            "continue" or "restore-acl" when backup is not null => new DataDirectoryCommandLine(verb, backup, dataDirectory),
+            "continue" or "restore-acl" or "finalize" when backup is not null => new DataDirectoryCommandLine(verb, backup, dataDirectory),
             _ => null,
         };
     }

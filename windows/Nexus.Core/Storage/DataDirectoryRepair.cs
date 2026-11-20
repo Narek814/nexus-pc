@@ -50,6 +50,8 @@ public sealed class RepairJournal
     public const string Completed = "completed";
     public const string Restored = "acl-restored";
     public const string RestoreFailed = "restore-failed";
+    /// <summary>An undone repair (acl-restored) whose job a later, completed repair took over.</summary>
+    public const string Superseded = "superseded";
 
     public int Format { get; init; } = 1;
     /// <summary>For matching only: operations always use the folder given on the command line.</summary>
@@ -70,9 +72,15 @@ public sealed class RepairJournal
     public bool ServiceDisabled { get; set; }
     public bool ServiceRestored { get; set; }
 
-    /// <summary>Finished states: nothing is left half done.</summary>
+    /// <summary>Backups of earlier repairs undone by restore-acl that this repair finishes (marked superseded when it completes).</summary>
+    public List<string> Supersedes { get; init; } = [];
+
+    /// <summary>
+    /// Finished states: nothing is left half done. acl-restored is not finished: the service stays disabled and
+    /// blocked until a new repair or "datadir finalize" completes the procedure (owner decision, variant A).
+    /// </summary>
     [JsonIgnore]
-    public bool Finished => State is Completed or Restored;
+    public bool Finished => State is Completed or Superseded;
 }
 
 /// <summary>A NexusPC.backup-* folder next to the data folder. Foreign: it fails the trust check and is never used.</summary>
@@ -188,33 +196,67 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
     }
 
     /// <summary>
-    /// Backups next to the data folder that need attention: trusted ones with an unfinished journal, and
-    /// foreign ones (anything named like a backup that fails the trust check — reported, never used, and
-    /// they never block a new repair).
+    /// Backups next to the data folder that need attention:
+    /// <list type="bullet">
+    /// <item>trusted ones with an unfinished journal (they block the service until finished);</item>
+    /// <item>tampered ones: the root is owned by Administrators or SYSTEM (an ordinary user cannot set that) and
+    /// holds a repair journal, but something inside no longer passes the check (an ACE added by Explorer's
+    /// "Continue", a link, ...). Their journal is not trusted, so it cannot finish anything — and they block
+    /// (fail closed) until an administrator deals with them;</item>
+    /// <item>foreign ones: owned by anyone else. Reported after one look at the root, never walked, never used,
+    /// and they never block;</item>
+    /// <item>more than MaxBackupCandidates such folders owned by Administrators or SYSTEM: nothing can be decided safely, so the
+    /// whole set blocks (fail closed) instead of possibly hiding a real unfinished repair.</item>
+    /// </list>
     /// </summary>
     public IReadOnlyList<UnfinishedRepair> FindUnfinished(string root)
     {
         ArgumentNullException.ThrowIfNull(root);
         var found = new List<UnfinishedRepair>();
-        foreach (var backup in fs.Siblings(root, BackupInfix).Order(StringComparer.Ordinal))
+        var candidates = fs.Siblings(root, BackupInfix).Where(b => !b.EndsWith(IncompleteSuffix, StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal).ToList();
+        // Pass 1: one look at each root. Folders an ordinary user owns are foreign: never walked, never counted.
+        var adminOwned = new List<(string Backup, DataObjectState Root)>();
+        foreach (var backup in candidates)
         {
-            if (backup.EndsWith(IncompleteSuffix, StringComparison.OrdinalIgnoreCase))
+            var (rootState, foreignDetail) = InspectBackupRoot(backup);
+            if (rootState is null)
             {
-                continue; // a failed backup: the data folder was never changed
-            }
-            if (BackupDistrust(backup) is { } distrust)
-            {
-                found.Add(new UnfinishedRepair(backup, "foreign", distrust, Foreign: true));
+                found.Add(new UnfinishedRepair(backup, "foreign", foreignDetail!, Foreign: true));
                 continue;
+            }
+            adminOwned.Add((backup, rootState));
+        }
+        // Owner decision (variant B): only folders owned by Administrators or SYSTEM count towards the limit.
+        // An ordinary user cannot create those, so this cannot be used to block the service or the installer.
+        if (adminOwned.Count > MaxBackupCandidates)
+        {
+            found.Add(new UnfinishedRepair(Path.TrimEndingDirectorySeparator(root) + BackupInfix + "*", TooManyBackups,
+                string.Create(CultureInfo.InvariantCulture, $"{adminOwned.Count} folders owned by Administrators or SYSTEM are named like backups (more than {MaxBackupCandidates}); remove the ones you do not recognise")));
+            return found;
+        }
+        // Pass 2: only admin-owned roots are checked further (journal, then the whole folder).
+        foreach (var (backup, rootState) in adminOwned)
+        {
+            var (trust, detail) = ClassifyAdminOwned(backup, rootState);
+            if (trust == BackupTrust.Foreign)
+            {
+                found.Add(new UnfinishedRepair(backup, "foreign", detail, Foreign: true));
+                continue;
+            }
+            if (trust == BackupTrust.Tampered)
+            {
+                found.Add(new UnfinishedRepair(backup, Tampered, detail));
+                continue;
+            }
+            if (trust == BackupTrust.NoJournal)
+            {
+                continue; // stopped before the journal was written: the data folder was never changed
             }
             var journal = TryLoadJournal(backup, out var error);
             if (journal is null)
             {
-                if (error is not null)
-                {
-                    found.Add(new UnfinishedRepair(backup, "unreadable", error));
-                }
-                continue; // a backup without a journal: stopped before any change
+                found.Add(new UnfinishedRepair(backup, Tampered, error ?? "the journal cannot be read"));
+                continue;
             }
             if (!journal.Finished)
             {
@@ -224,24 +266,87 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         return found;
     }
 
+    /// <summary>Admin-owned folders named like backups that are checked, at most (folders of ordinary users are not counted).</summary>
+    public const int MaxBackupCandidates = 10_000;
+    public const string Tampered = "tampered";
+    public const string TooManyBackups = "too-many-backups";
+
+    private enum BackupTrust
+    {
+        Foreign,
+        NoJournal,
+        Tampered,
+        Trusted,
+    }
+
     /// <summary>
-    /// A backup is trusted only if the whole folder passes the same check as the data folder (no links,
-    /// trusted owners and grantees, journal files included) and its root is owned by Administrators or
-    /// SYSTEM with a protected DACL — what CreateProtectedDirectory makes. Null when trusted.
+    /// The root first, through one handle: anything not owned by Administrators or SYSTEM is foreign and is
+    /// never walked (no cost for planted folders, whatever they contain). Only admin-owned roots with a
+    /// journal are walked in full; any problem inside makes them tampered.
     /// </summary>
+    private (BackupTrust Trust, string Detail) ClassifyBackup(string backup)
+    {
+        var (root, foreignDetail) = InspectBackupRoot(backup);
+        return root is null ? (BackupTrust.Foreign, foreignDetail!) : ClassifyAdminOwned(backup, root);
+    }
+
+    /// <summary>One open of the root: its state when owned by Administrators or SYSTEM, otherwise why it is foreign.</summary>
+    private (DataObjectState? Root, string? ForeignDetail) InspectBackupRoot(string backup)
+    {
+        try
+        {
+            using var handle = fs.Open(backup, DataAccess.Inspect);
+            var root = handle.State;
+            return root.OwnerSid is DataDirectoryPolicy.Administrators or DataDirectoryPolicy.LocalSystem
+                ? (root, null)
+                : (null, "foreign folder, not used: not created by the repair command (owner " + DataText.Clean(root.OwnerSid ?? "unknown") + ")");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, "foreign folder, not used: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// An admin-owned root with a journal: walked in full, and any problem makes it tampered — whatever its
+    /// journal says, "completed" included (the journal of a changed folder is not believed).
+    /// </summary>
+    private (BackupTrust Trust, string Detail) ClassifyAdminOwned(string backup, DataObjectState root)
+    {
+        try
+        {
+            using var journal = fs.Open(Path.Join(backup, JournalName), DataAccess.Inspect);
+        }
+        catch (DataAccessException ex) when (ex.NotFound)
+        {
+            return (BackupTrust.NoJournal, "");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (BackupTrust.Tampered, TamperedText + ex.Message);
+        }
+        if (root.Kind != DataObjectKind.Directory || !root.DaclProtected)
+        {
+            return (BackupTrust.Tampered, TamperedText + "its root is not a protected folder");
+        }
+        var scan = DataDirectoryScanner.Scan(fs, backup, DataDirectoryPolicy.TrustedSids);
+        return scan.Violations.Count > 0
+            ? (BackupTrust.Tampered, TamperedText + scan.Violations[0])
+            : (BackupTrust.Trusted, "");
+    }
+
+    public const string TamperedText = "tampered backup (changed after the repair wrote it), its journal is not trusted and it blocks the service: ";
+
+    /// <summary>Null when the backup is trusted (made by the repair command and unchanged); otherwise why not.</summary>
     private string? BackupDistrust(string backup)
     {
-        var scan = DataDirectoryScanner.Scan(fs, backup, DataDirectoryPolicy.TrustedSids);
-        if (scan.Violations.Count > 0)
+        var (trust, detail) = ClassifyBackup(backup);
+        return trust switch
         {
-            return "foreign folder, not used: " + scan.Violations[0];
-        }
-        var root = scan.Entries[0].State;
-        if (root.OwnerSid is not (DataDirectoryPolicy.Administrators or DataDirectoryPolicy.LocalSystem) || !root.DaclProtected)
-        {
-            return "foreign folder, not used: not created by the repair command (owner or inherited access)";
-        }
-        return null;
+            BackupTrust.Trusted => null,
+            BackupTrust.NoJournal => "no repair journal in it",
+            _ => detail,
+        };
     }
 
     // ---------------------------------------------------------------- repair
@@ -251,6 +356,7 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(preconditionFailures);
         string? backup = null;
+        List<(string Backup, RepairJournal Journal)> undone = [];
         (RepairJournal Journal, OriginalSecurity Original) plan;
         try
         {
@@ -261,11 +367,17 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             }
             var backups = FindUnfinished(root);
             ReportUnfinished(backups);
-            if (backups.Any(b => !b.Foreign))
+            // A repair undone by restore-acl may be taken over by this one (it keeps that repair's saved start
+            // type and marks it superseded when it completes); any other unfinished repair must be finished first.
+            if (backups.Any(b => !b.Foreign && b.State != RepairJournal.Restored))
             {
                 console.WriteLine("Nothing was changed. Finish or undo the earlier repair first.");
                 return ExitRefused;
             }
+            undone = [.. backups.Where(b => !b.Foreign && b.State == RepairJournal.Restored)
+                .Select(b => (b.Backup, Journal: TryLoadJournal(b.Backup, out _)))
+                .Where(b => b.Journal is not null)
+                .Select(b => (b.Backup, b.Journal!))];
 
             // Р2. Full scan without following links, and the folder the backup goes to.
             var scan = DataDirectoryScanner.Scan(fs, root, DataDirectoryPolicy.TrustedSids);
@@ -277,6 +389,16 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             }
             if (scan.Trusted && scan.Plugins is null)
             {
+                if (undone.Count > 0)
+                {
+                    // The folder is fine, but an undone repair still blocks the service: only finalize ends it.
+                    console.WriteLine("Nothing to repair, but an earlier repair is not finished and the service stays blocked.");
+                    foreach (var (older, _) in undone)
+                    {
+                        console.WriteLine($"  Finish it: datadir finalize \"{DataText.Clean(older, 400)}\"");
+                    }
+                    return ExitRefused;
+                }
                 console.WriteLine("Nothing to repair. Nothing was changed.");
                 return ExitOk;
             }
@@ -342,22 +464,24 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             console.WriteLine($"SHA-256 of {ManifestName}: {manifestSha}");
 
             // Р6. Original owner, group and DACL by object identity, then the journal — before the first change.
-            plan = Plan(scan, root, rootFinal, backup, stamp, manifestSha);
+            plan = Plan(scan, root, rootFinal, backup, stamp, manifestSha, undone);
             console.WriteLine($"Original access saved: {Path.Join(backup, OriginalSecurityName)}");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DataRepairException or JsonException or InvalidOperationException)
         {
             console.WriteLine("Repair refused: " + ex.Message);
-            if (backup is not null)
+            if (backup is not null && !MarkIncomplete(backup) && fs.ReadAllText(Path.Join(backup, JournalName)) is not null)
             {
-                MarkIncomplete(backup);
+                console.WriteLine($"The data folder was not changed, but the backup {backup} still holds an unfinished repair journal; the service refuses to start while it is there.");
+                console.WriteLine($"End it with: datadir repair --continue \"{backup}\".");
+                return ExitStopped;
             }
             console.WriteLine("The data folder was not changed.");
             return ExitRefused;
         }
 
         // Р7 and Р8.
-        return Apply(root, plan.Journal, plan.Original, backup);
+        return Apply(root, plan.Journal, plan.Original, backup, fresh: true);
     }
 
     /// <summary>Р9: continues an interrupted repair. Every step checks its object again; done steps are skipped.</summary>
@@ -385,12 +509,17 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             console.WriteLine("This repair is already completed.");
             return ExitOk;
         }
-        if (journal.State is RepairJournal.Restored or RepairJournal.RestoreFailed)
+        if (journal.State is RepairJournal.Restored or RepairJournal.RestoreFailed or RepairJournal.Superseded)
         {
-            console.WriteLine("The original access of this repair was restored (or restoring was attempted); start a new repair instead. Nothing was changed.");
+            console.WriteLine(journal.State switch
+            {
+                RepairJournal.Restored => $"The original access of this repair was restored. Finish the procedure with a new \"datadir repair\", or, if the folder was fixed otherwise, \"datadir finalize \\\"{backup}\\\"\". Nothing was changed.",
+                RepairJournal.RestoreFailed => $"Restoring the original access did not finish; run \"datadir restore-acl \\\"{backup}\\\"\" again. Nothing was changed.",
+                _ => "This repair was taken over by a later one. Nothing was changed.",
+            });
             return ExitRefused;
         }
-        return Apply(root, journal, original, backup);
+        return Apply(root, journal, original, backup, fresh: false);
     }
 
     /// <summary>Р9: puts back the saved owner, group and DACL of every object that is still the same object. Contents are not touched.</summary>
@@ -441,19 +570,9 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
                 problems.Add($"{Display(relative)}: {ex.Message}");
             }
         }
-        if (problems.Count == 0)
-        {
-            // Undo is complete only with the start type the repair changed. The folder is back to its earlier,
-            // untrusted access, so the service start check still refuses it until a new repair succeeds.
-            try
-            {
-                RestoreStartType(journal, backup);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-            {
-                problems.Add("the service start type could not be put back: " + ex.Message);
-            }
-        }
+        // Variant A (owner): restore-acl does not finish the procedure. The start type stays as the repair left
+        // it (disabled), the original one stays saved in the journal, and the service start check keeps
+        // refusing until a new repair or "datadir finalize" passes every check.
         journal.State = problems.Count == 0 ? RepairJournal.Restored : RepairJournal.RestoreFailed;
         journal.Problems.AddRange(problems.Select(p => "restore-acl: " + p));
         var saved = TrySave(journal, backup);
@@ -464,14 +583,195 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         if (problems.Count == 0 && saved)
         {
             console.WriteLine($"Original access restored from {backup}. Contents were not changed. The backup is kept. The service was not started.");
-            if (journal.ServiceRestored)
-            {
-                console.WriteLine($"The service start type is back to \"{journal.OriginalStartType}\"; the service still refuses to start while the folder fails its check.");
-            }
+            console.WriteLine($"The repair is NOT finished: the service start type is now {CurrentStartType()} and the service refuses to start.");
+            console.WriteLine($"To finish: run \"datadir repair\" again (it takes over this backup's saved start type), or fix the folder by hand and run \"datadir finalize \\\"{backup}\\\"\".");
             return ExitOk;
         }
-        console.WriteLine($"Original access was not restored for {problems.Count} object(s){(saved ? "" : " and the journal could not be updated")}. The backup is kept: {backup}. The service was not started and stays disabled; run restore-acl again.");
+        console.WriteLine($"Original access was not restored for {problems.Count} object(s){(saved ? "" : " and the journal could not be updated")}. The backup is kept: {backup}.");
+        console.WriteLine($"The service was not started; its start type is now {CurrentStartType()} and it refuses to start. Run restore-acl again.");
         return ExitStopped;
+    }
+
+    /// <summary>
+    /// "datadir finalize &lt;backup&gt;": the administrator's explicit end of a repair procedure that did not
+    /// finish by itself (after restore-acl, or when the start type could not be put back). Checks, in order:
+    /// preconditions (again), the trusted backup and its journal, the data folder (strict scan: no links, no
+    /// hard links, trusted owners and grantees only, protected root, every file as in the manifest), and the
+    /// backup copy (every file as in the manifest). Only then, as the last step, the saved start type goes back,
+    /// and only after that the repair is marked completed. Any failure leaves it unfinished: the service stays
+    /// disabled and refuses to start.
+    /// </summary>
+    public int Finalize(string root, string backup, IReadOnlyList<string> preconditionFailures)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(backup);
+        ArgumentNullException.ThrowIfNull(preconditionFailures);
+        RepairJournal? journal;
+        try
+        {
+            if (Refuse(preconditionFailures) || (journal = LoadForResume(root, backup)) is null || LoadOriginal(root, backup, journal) is null)
+            {
+                return ExitRefused;
+            }
+            if (journal.State == RepairJournal.Completed)
+            {
+                console.WriteLine("This repair is already completed.");
+                return ExitOk;
+            }
+            if (journal.State == RepairJournal.Superseded)
+            {
+                console.WriteLine("This repair was taken over by a later one; nothing to finalize.");
+                return ExitOk;
+            }
+            if (Refuse(_environment.PreconditionFailures()))
+            {
+                return ExitRefused;
+            }
+            // Another unfinished repair (not one this backup took over) keeps the procedure open: finishing this
+            // one would put the start type back while the other is still half done.
+            if (OtherUnfinished(root, backup, journal) is { Count: > 0 } others)
+            {
+                foreach (var other in others)
+                {
+                    console.WriteLine($"  Unfinished: {DataText.Clean(other.Backup, 400)} ({DataText.Clean(other.State)}) — {FinishCommand(other)}");
+                }
+                console.WriteLine($"Not finalized: another repair is not finished; finish it first. Nothing was changed; the service start type is {CurrentStartType()} and the service refuses to start.");
+                return ExitRefused;
+            }
+            var failures = Verify(root, journal, backup);
+            failures.AddRange(VerifyBackup(backup, journal));
+            if (failures.Count > 0)
+            {
+                foreach (var failure in failures)
+                {
+                    console.WriteLine("  " + failure);
+                }
+                console.WriteLine($"Not finalized: the checks above failed. Nothing was changed; the service start type is {CurrentStartType()} and the service refuses to start.");
+                console.WriteLine($"Fix the folder (for example with a new \"datadir repair\") and run \"datadir finalize \\\"{backup}\\\"\" again.");
+                return ExitRefused;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            console.WriteLine("Not finalized: " + ex.Message + $" Nothing was changed; the service refuses to start.");
+            return ExitRefused;
+        }
+        try
+        {
+            Complete(root, journal, backup);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            console.WriteLine("Not finalized: " + ex.Message);
+            console.WriteLine($"The repair stays unfinished; the service start type is {CurrentStartType()} and the service refuses to start. Run \"datadir finalize \\\"{backup}\\\"\" again.");
+            return ExitStopped;
+        }
+        console.WriteLine("Repair finalized: the folder, its access and the backup passed every check. The backup is kept: " + backup);
+        console.WriteLine("Check the paired devices in the tray (\"Устройства и разрешения\") and remove any you do not recognise, then start the service.");
+        return ExitOk;
+    }
+
+    /// <summary>Every file of the backup copy still matches the manifest (read through handles, not following links).</summary>
+    private List<string> VerifyBackup(string backup, RepairJournal journal)
+    {
+        var failures = new List<string>();
+        var text = fs.ReadAllText(Path.Join(backup, ManifestName));
+        if (text is null || !string.Equals(Fingerprint(text), journal.ManifestSha256, StringComparison.Ordinal)
+            || JsonSerializer.Deserialize<BackupManifest>(text, Json) is not { } manifest)
+        {
+            failures.Add("backup: the manifest is missing or changed");
+            return failures;
+        }
+        var data = Path.Join(backup, DataFolder);
+        var backupFinal = fs.ExpectedRootFinalPath(backup);
+        foreach (var entry in manifest.Entries)
+        {
+            if (!DataDirectoryPolicy.IsSafeRelativePath(entry.Path) || entry.Path.Length == 0)
+            {
+                failures.Add("backup: the manifest contains an invalid path");
+                continue;
+            }
+            try
+            {
+                using var obj = fs.Open(Path.Join(data, entry.Path), DataAccess.Read);
+                var expectedPath = DataDirectoryPolicy.ExpectedFinalPath(backupFinal, Path.Join(DataFolder, entry.Path));
+                if (obj.State.Kind != entry.Kind || (entry.Kind == DataObjectKind.File && obj.State.LinkCount != 1) || !DataDirectoryPolicy.SamePath(obj.State.FinalPath, expectedPath))
+                {
+                    failures.Add($"backup: {Display(entry.Path)} is not the copy that was made");
+                    continue;
+                }
+                if (entry.Kind == DataObjectKind.File)
+                {
+                    using var content = obj.OpenContent();
+                    if (!string.Equals(Convert.ToHexStringLower(SHA256.HashData(content)), entry.Sha256, StringComparison.Ordinal))
+                    {
+                        failures.Add($"backup: {Display(entry.Path)} differs from the manifest");
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failures.Add($"backup: {Display(entry.Path)}: {ex.Message}");
+            }
+        }
+        return failures;
+    }
+
+    /// <summary>
+    /// What the service start check refuses on, in this order: first an unfinished repair (it names the exact
+    /// command that finishes it), only then the folder's own problems.
+    /// </summary>
+    public static (IReadOnlyList<UnfinishedRepair> Unfinished, IReadOnlyList<DataViolation> Violations) StartCheck(IDataFileSystem fs, string root, IReadOnlySet<string> trusted)
+    {
+        ArgumentNullException.ThrowIfNull(fs);
+        var unfinished = new DataDirectoryRepair(fs, new SilentConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign).ToList();
+        if (unfinished.Count > 0)
+        {
+            return (unfinished, []);
+        }
+        return ([], DataDirectoryScanner.Scan(fs, root, trusted).Violations);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="root"/> is this PC's own data folder, by where both resolve (8.3 names,
+    /// "C:\Users\All Users", \\?\ forms all count as the same). If that cannot be told, it counts as local:
+    /// then the local service is disabled for the repair, which is the safe side.
+    /// </summary>
+    public static bool IsLocalDataFolder(IDataFileSystem fs, string root, string defaultRoot)
+    {
+        ArgumentNullException.ThrowIfNull(fs);
+        try
+        {
+            return DataDirectoryPolicy.SamePath(fs.ExpectedRootFinalPath(root), fs.ExpectedRootFinalPath(defaultRoot));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>The command that finishes an unfinished repair in this state.</summary>
+    public static string FinishCommand(UnfinishedRepair repair)
+    {
+        ArgumentNullException.ThrowIfNull(repair);
+        var backup = DataText.Clean(repair.Backup, 400);
+        return repair.State switch
+        {
+            RepairJournal.Restored => $"datadir repair (a new repair takes over), or after fixing the folder by hand: datadir finalize \"{backup}\"",
+            RepairJournal.RestoreFailed => $"datadir restore-acl \"{backup}\" (again), then datadir repair",
+            Tampered => $"no command can trust this backup. Inspect \"{backup}\" by hand; to release the block, rename it (as administrator) so that its name no longer starts with \"{DataText.Clean(Path.GetFileName(backup.Split(BackupInfix)[0]))}{BackupInfix}\", then run datadir check (see docs/SETUP.md)",
+            TooManyBackups => "remove the folders named like backups that you do not recognise, then run datadir check",
+            _ => $"datadir repair --continue \"{backup}\" (or undo: datadir restore-acl \"{backup}\")",
+        };
+    }
+
+    private sealed class SilentConsole : IRepairConsole
+    {
+        public void WriteLine(string text)
+        {
+        }
+
+        public string? ReadLine() => null;
     }
 
     // ---------------------------------------------------------------- steps
@@ -625,21 +925,30 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         return (Convert.ToHexStringLower(hash.GetHashAndReset()), total);
     }
 
-    private void MarkIncomplete(string backup)
+    /// <summary>Unfinished trusted repairs other than this backup and the ones it took over.</summary>
+    private List<UnfinishedRepair> OtherUnfinished(string root, string backup, RepairJournal journal) =>
+        [.. FindUnfinished(root).Where(r => !r.Foreign
+            && !DataDirectoryPolicy.SamePath(Path.TrimEndingDirectorySeparator(r.Backup), Path.TrimEndingDirectorySeparator(backup))
+            && !journal.Supersedes.Any(s => DataDirectoryPolicy.SamePath(Path.TrimEndingDirectorySeparator(s), Path.TrimEndingDirectorySeparator(r.Backup))))];
+
+    /// <summary>True when the backup now ends in .incomplete (it no longer counts as a repair).</summary>
+    private bool MarkIncomplete(string backup)
     {
         try
         {
             fs.MoveDirectory(backup, backup + IncompleteSuffix);
             console.WriteLine($"The partial backup is kept as {backup + IncompleteSuffix}.");
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             console.WriteLine($"The partial backup {backup} could not be renamed ({ex.Message}); it is kept as is.");
+            return false;
         }
     }
 
     /// <summary>Р6: saves the original security of every planned object, then the journal with the steps.</summary>
-    private (RepairJournal, OriginalSecurity) Plan(DataScan scan, string root, string rootFinal, string backup, string stamp, string manifestSha)
+    private (RepairJournal, OriginalSecurity) Plan(DataScan scan, string root, string rootFinal, string backup, string stamp, string manifestSha, List<(string Backup, RepairJournal Journal)> undone)
     {
         var original = new OriginalSecurity(1, root, rootFinal, time.GetUtcNow(),
             [.. scan.Plan.Select(e => new OriginalSecurityEntry(e.RelativePath, e.State.Kind, e.State.Id.Volume, e.State.Id.FileId, e.State.SecurityDescriptor!))]);
@@ -687,25 +996,35 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             ManifestSha256 = manifestSha,
             OriginalSecuritySha256 = Fingerprint(originalText),
             Steps = steps,
-            // Saved before the service is disabled; put back only after a verified repair (or restore-acl).
-            OriginalStartType = _environment.ServiceStartType(),
+            // Saved before the service is disabled; put back only after a verified repair or "datadir finalize".
+            // Taking over an undone repair: the service is already disabled by it, its saved start type is the real one.
+            OriginalStartType = undone.Select(u => u.Journal).FirstOrDefault(j => j.ServiceDisabled && !j.ServiceRestored)?.OriginalStartType
+                ?? _environment.ServiceStartType(),
+            Supersedes = [.. undone.Select(u => u.Backup)],
         };
         Save(journal, backup);
         return (journal, parsed);
     }
 
     /// <summary>Р7 (owner and DACL by handle, after checking each object again) and Р8 (verification).</summary>
-    private int Apply(string root, RepairJournal journal, OriginalSecurity original, string backup)
+    private int Apply(string root, RepairJournal journal, OriginalSecurity original, string backup, bool fresh)
     {
         var saved = original.Entries.ToDictionary(e => e.Path, StringComparer.OrdinalIgnoreCase);
         try
         {
             journal.State = RepairJournal.InProgress;
             Save(journal, backup);
-            // No automatic start in an intermediate state: the service stays disabled until the repair is finished.
+            // No automatic start in an intermediate state: the service is disabled before the first change of access.
             if (journal.OriginalStartType is not null && journal.OriginalStartType != DisabledStartType && !journal.ServiceDisabled)
             {
-                _environment.SetServiceStartType(DisabledStartType);
+                try
+                {
+                    _environment.SetServiceStartType(DisabledStartType);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                {
+                    return DisableFailed(journal, backup, fresh, ex);
+                }
                 journal.ServiceDisabled = true;
                 Save(journal, backup);
                 console.WriteLine($"The Nexus PC service is disabled for the repair (it was \"{journal.OriginalStartType}\").");
@@ -743,9 +1062,7 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
                 StoppedAdvice(backup);
                 return ExitStopped;
             }
-            RestoreStartType(journal, backup); // only now: access fixed and verified
-            journal.State = RepairJournal.Completed;
-            Save(journal, backup);
+            Complete(root, journal, backup); // only now: access fixed and verified
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
@@ -754,12 +1071,83 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             return ExitStopped;
         }
         console.WriteLine("Repair completed: access fixed, every file matches the backup manifest. The backup is kept: " + backup);
+        console.WriteLine("Check the paired devices in the tray (\"Устройства и разрешения\") and remove any you do not recognise, then start the service.");
+        return ExitOk;
+    }
+
+    /// <summary>
+    /// The service could not be disabled: nothing is said about it that is not true. A fresh repair changed no
+    /// access yet, so it is abandoned: the backup is renamed .incomplete and then nothing blocks the service.
+    /// If even that rename fails, the backup keeps its stopped journal and blocks the service start; that is
+    /// said plainly, with the command that ends it (code 3). A continued repair stays unfinished (the service
+    /// start check keeps refusing) and reports the real start type.
+    /// </summary>
+    private int DisableFailed(RepairJournal journal, string backup, bool fresh, Exception ex)
+    {
+        console.WriteLine("The Nexus PC service could not be disabled: " + ex.Message);
+        console.WriteLine("Service start type now: " + CurrentStartType() + ". No access in the data folder was changed by this run.");
+        if (fresh)
+        {
+            journal.State = RepairJournal.Stopped;
+            journal.Problems.Add("the service could not be disabled; repair abandoned before any change");
+            TrySave(journal, backup);
+            if (MarkIncomplete(backup))
+            {
+                console.WriteLine("Repair refused. The data folder was not changed.");
+                return ExitRefused;
+            }
+            console.WriteLine($"Repair refused. The data folder was not changed, but the backup {backup} still holds an unfinished repair journal:");
+            console.WriteLine("the Nexus PC service refuses to start while it is there.");
+            console.WriteLine($"End it with: datadir repair --continue \"{backup}\" (it disables the service and finishes the repair).");
+            return ExitStopped;
+        }
+        journal.State = RepairJournal.Stopped;
+        journal.Problems.Add("the service could not be disabled");
+        TrySave(journal, backup);
+        console.WriteLine($"The repair stays unfinished; the service refuses to start until it is finished. Try again: datadir repair --continue \"{backup}\"");
+        return ExitStopped;
+    }
+
+    /// <summary>
+    /// The last steps, in this order: no other unfinished repair may be left (it would keep a half-done state
+    /// behind a "completed" mark), earlier undone repairs marked superseded, preconditions checked once more,
+    /// the saved start type put back (only after every check passed), this one marked completed. Any failure
+    /// throws and leaves the journal unfinished, so the service start check keeps refusing — there is no
+    /// window in which the service could start half done.
+    /// </summary>
+    private void Complete(string root, RepairJournal journal, string backup)
+    {
+        if (OtherUnfinished(root, backup, journal) is { Count: > 0 } others)
+        {
+            throw new InvalidOperationException("another repair is not finished: " + string.Join(", ", others.Select(o => DataText.Clean(o.Backup, 400))));
+        }
+        // Marking older journals and putting the start type back are changes too: the preconditions are checked
+        // once more before the first of them.
+        if (_environment.PreconditionFailures() is { Count: > 0 } failures)
+        {
+            throw new InvalidOperationException("preconditions no longer hold: " + string.Join("; ", failures));
+        }
+        foreach (var older in journal.Supersedes)
+        {
+            if (!Path.TrimEndingDirectorySeparator(older).StartsWith(Path.TrimEndingDirectorySeparator(root) + BackupInfix, StringComparison.OrdinalIgnoreCase)
+                || BackupDistrust(older) is not null)
+            {
+                continue; // never write into a folder that is not a trusted backup of this data folder
+            }
+            if (TryLoadJournal(older, out _) is { State: RepairJournal.Restored } undone)
+            {
+                undone.State = RepairJournal.Superseded;
+                undone.Problems.Add("superseded by " + backup);
+                Save(undone, older);
+            }
+        }
+        RestoreStartType(journal, backup); // the last step before the completion mark; if it fails, no mark
+        journal.State = RepairJournal.Completed;
+        Save(journal, backup);
         if (journal.ServiceRestored)
         {
             console.WriteLine($"The service start type is back to \"{journal.OriginalStartType}\".");
         }
-        console.WriteLine("Check the paired devices in the tray (\"Устройства и разрешения\") and remove any you do not recognise, then start the service.");
-        return ExitOk;
     }
 
     private void RestoreStartType(RepairJournal journal, string backup)
@@ -768,15 +1156,36 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
         {
             return;
         }
+        if (_environment.ServiceStartType() is null)
+        {
+            // The service was removed meanwhile (--uninstall from an older installer, by hand): there is no start
+            // type to put back and nothing that could start. Every check has already passed.
+            console.WriteLine("The Nexus PC service is not installed any more; there is no start type to put back.");
+            journal.ServiceRestored = true;
+            Save(journal, backup);
+            return;
+        }
         _environment.SetServiceStartType(journal.OriginalStartType);
         journal.ServiceRestored = true;
         Save(journal, backup);
     }
 
+    private string CurrentStartType()
+    {
+        try
+        {
+            return _environment.ServiceStartType() ?? "not installed";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return "unknown (" + ex.Message + ")";
+        }
+    }
+
     private void StoppedAdvice(string backup)
     {
         console.WriteLine($"Nothing else was changed. The backup and the journal are kept: {backup}.");
-        console.WriteLine("The service was not started and stays disabled until the repair is finished; it also refuses to start while this repair is unfinished.");
+        console.WriteLine($"The service was not started; its start type is now: {CurrentStartType()}. It refuses to start while this repair is unfinished.");
         console.WriteLine($"Continue after checking: datadir repair --continue \"{backup}\"   Undo: datadir restore-acl \"{backup}\"");
     }
 
@@ -1090,6 +1499,11 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
                 continue;
             }
             console.WriteLine($"Unfinished repair ({DataText.Clean(repair.State)}): {name}{(repair.Detail.Length > 0 ? " — " + DataText.Clean(repair.Detail, 400) : "")}");
+            if (repair.State is RepairJournal.Restored or RepairJournal.RestoreFailed or Tampered or TooManyBackups)
+            {
+                console.WriteLine("  Finish:   " + FinishCommand(repair));
+                continue;
+            }
             console.WriteLine($"  Continue: datadir repair --continue \"{name}\"");
             console.WriteLine($"  Undo:     datadir restore-acl \"{name}\"");
         }

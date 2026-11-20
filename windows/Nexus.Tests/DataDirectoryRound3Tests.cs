@@ -16,6 +16,7 @@ internal sealed class FakeRepairEnvironment : IRepairEnvironment
     /// <summary>Failures returned by the n-th re-check (1 = right after the confirmation).</summary>
     public Func<int, IReadOnlyList<string>>? FailuresAt { get; set; }
     public bool FailRestore { get; set; }
+    public bool FailDisable { get; set; }
 
     public IReadOnlyList<string> PreconditionFailures() => FailuresAt?.Invoke(++_calls) ?? [];
 
@@ -23,6 +24,10 @@ internal sealed class FakeRepairEnvironment : IRepairEnvironment
 
     public void SetServiceStartType(string startType)
     {
+        if (FailDisable && startType == DataDirectoryRepair.DisabledStartType)
+        {
+            throw new IOException("The service is marked for deletion.");
+        }
         if (FailRestore && startType != DataDirectoryRepair.DisabledStartType)
         {
             throw new IOException("Access is denied.");
@@ -125,13 +130,17 @@ public sealed class DataDirectoryRound3Tests
     }
 
     [Fact]
-    public void Restore_acl_puts_back_the_start_type_with_the_access()
+    public void Restore_acl_keeps_the_service_disabled_and_the_repair_unfinished()
     {
         _fs.CrashAfterSecurityChanges = 2;
         Assert.Throws<SimulatedCrashException>(() => Repair().Repair(Root, []));
         _fs.CrashAfterSecurityChanges = null;
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole()).RestoreAcl(Root, Backup, []));
-        Assert.Equal("auto", _env.StartType);
+        // Owner decision QA-T4-R3-3, variant A: the start type is NOT put back by restore-acl.
+        Assert.Equal("disabled", _env.StartType);
+        Assert.Equal(["disabled"], _env.StartTypeChanges);
+        Assert.Equal(RepairJournal.Restored, Assert.Single(Repair().FindUnfinished(Root)).State);
+        Assert.Equal("auto", Journal.GetProperty("originalStartType").GetString()); // still saved for the end
     }
 
     // ------------------------------------------------------------ preconditions checked again (SA-T4-R2-1)
@@ -274,25 +283,25 @@ public sealed class DataDirectoryRound3Tests
     // ------------------------------------------------------------ sanitising (SA-T4-R2-4)
 
     [Theory]
-    [InlineData("evil‮txt.exe", "evil?txt.exe")]
+    [InlineData("evil\u202Etxt.exe", "evil?txt.exe")]
     [InlineData("a\u0007b\u001Bc", "a?b?c")]
-    [InlineData("x‍y⁦z⁩", "x?y?z?")]
-    [InlineData("line break", "line?break")]
+    [InlineData("x\u200Dy\u2066z\u2069", "x?y?z?")]
+    [InlineData("line\u2028break", "line?break")]
     [InlineData("Устройства", "Устройства")]
     public void Untrusted_names_are_cleaned_before_printing(string raw, string shown)
     {
         Assert.Equal(shown, DataText.Clean(raw));
-        Assert.DoesNotContain('‮', new DataViolation(raw, DataViolationKind.UntrustedOwner, raw).ToString());
+        Assert.DoesNotContain('\u202E', new DataViolation(raw, DataViolationKind.UntrustedOwner, raw).ToString());
     }
 
     [Fact]
     public void Foreign_backup_name_is_cleaned_in_reports()
     {
-        var foreign = Root + DataDirectoryRepair.BackupInfix + "x‮exe.";
+        var foreign = Root + DataDirectoryRepair.BackupInfix + "x\u202Eexe.";
         _fs.AddDirectory(foreign, FakeDataFileSystem.SomeUser);
         var console = new ScriptedConsole();
         Repair(console).Check(Root);
-        Assert.DoesNotContain('‮', console.Text);
+        Assert.DoesNotContain('\u202E', console.Text);
         Assert.Contains("foreign folder, not used", console.Text, StringComparison.Ordinal);
     }
 
@@ -319,10 +328,10 @@ public sealed class DataDirectoryRound3Tests
     [Fact]
     public void Unfinished_repair_report_tells_how_to_continue_or_undo()
     {
-        var report = Nexus.Agent.Storage.AgentPaths.UnfinishedReport(Root, [new UnfinishedRepair(Root + ".backup-x‮", "stopped", "")]);
+        var report = Nexus.Agent.Storage.AgentPaths.UnfinishedReport(Root, [new UnfinishedRepair(Root + ".backup-x\u202E", "stopped", "")]);
         Assert.Contains("datadir repair --continue", report, StringComparison.Ordinal);
         Assert.Contains("datadir restore-acl", report, StringComparison.Ordinal);
-        Assert.DoesNotContain('‮', report);
+        Assert.DoesNotContain('\u202E', report);
     }
 
     [Fact]

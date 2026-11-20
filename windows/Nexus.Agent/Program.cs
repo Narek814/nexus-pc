@@ -28,6 +28,10 @@ internal static class Program
                                             continue an interrupted repair
           Nexus.Agent datadir restore-acl <backup>
                                             put back the access saved by a repair; contents are not touched
+                                            (the repair stays unfinished and the service blocked until finished)
+          Nexus.Agent datadir finalize <backup>
+                                            finish a repair after all checks (folder, access, backup);
+                                            puts back the saved service start type as the last step
                                             (datadir option: --data-dir <...\NexusPC>, default C:\ProgramData\NexusPC)
 
         Admin commands talk to the running agent and need an elevated (Administrator) prompt.
@@ -92,7 +96,7 @@ internal static class Program
     {
         if (DataDirectoryCommandLine.Parse(args) is not { } command)
         {
-            Console.WriteLine("Usage: Nexus.Agent datadir check | repair | repair --continue <backup> | restore-acl <backup>  [--data-dir <...\\NexusPC>]");
+            Console.WriteLine("Usage: Nexus.Agent datadir check | repair | repair --continue <backup> | restore-acl <backup> | finalize <backup>  [--data-dir <...\\NexusPC>]");
             return 1;
         }
         if (!OperatingSystem.IsWindows())

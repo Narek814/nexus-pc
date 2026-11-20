@@ -50,19 +50,19 @@ internal static class AgentPaths
         if (OperatingSystem.IsWindows())
         {
             CreateProtectedIfMissing(path, allowTestOwner: testOverride is not null);
-            var violations = CheckDirectory(path, TrustedSids(testOverride));
-            if (violations.Count > 0)
-            {
-                var report = UntrustedReport(path, violations);
-                WriteEventLog(report);
-                throw new DataDirectoryUntrustedException(report);
-            }
-            // An unfinished repair (its journal lives in a trusted backup, so it survives a reboot) blocks the
-            // start until "datadir repair --continue" finishes it, which re-checks access and contents.
-            var unfinished = UnfinishedRepairs(path);
+            // First an unfinished repair (its journal lives in a trusted backup, so it survives a reboot): it names
+            // the command that finishes it. Only then the folder's own problems.
+            var (unfinished, violations) = DataDirectoryRepair.StartCheck(new DataDirectoryFileSystem(),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)), TrustedSids(testOverride));
             if (unfinished.Count > 0)
             {
                 var report = UnfinishedReport(path, unfinished);
+                WriteEventLog(report);
+                throw new DataDirectoryUntrustedException(report);
+            }
+            if (violations.Count > 0)
+            {
+                var report = UntrustedReport(path, violations);
                 WriteEventLog(report);
                 throw new DataDirectoryUntrustedException(report);
             }
@@ -118,10 +118,9 @@ internal static class AgentPaths
         {
             var backup = DataText.Clean(repair.Backup, 400);
             report.AppendLine(CultureInfo.InvariantCulture, $"  {backup} ({DataText.Clean(repair.State)})");
-            report.AppendLine(CultureInfo.InvariantCulture, $"  Continue: Nexus.Agent.exe datadir repair --continue \"{backup}\"");
-            report.AppendLine(CultureInfo.InvariantCulture, $"  Undo:     Nexus.Agent.exe datadir restore-acl \"{backup}\"");
+            report.AppendLine(CultureInfo.InvariantCulture, $"  To finish: Nexus.Agent.exe {DataDirectoryRepair.FinishCommand(repair)}");
         }
-        report.AppendLine("Run it in a command prompt opened as administrator. The service starts again only after the repair is completed and verified.");
+        report.AppendLine("Run it in a command prompt opened as administrator, with the service stopped. The service starts again only after the repair is completed and verified (the saved start type is put back then).");
         return report.ToString();
     }
 

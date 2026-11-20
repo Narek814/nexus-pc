@@ -25,9 +25,16 @@ public static class DataDirectoryCommand
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(console);
+        // One datadir command, installation or removal at a time, for its whole run (protected lock, N1/N2).
+        return ExclusiveRun.Run(new ProtectedDataDirectoryLock(), console.WriteLine, DataDirectoryRepair.ExitRefused, () => RunLocked(command, console));
+    }
+
+    private static int RunLocked(DataDirectoryCommandLine command, IRepairConsole console)
+    {
         try
         {
             var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(command.DataDirectory ?? DefaultRoot));
+            var localService = DataDirectoryRepair.IsLocalDataFolder(new DataDirectoryFileSystem(), root, Path.TrimEndingDirectorySeparator(Path.GetFullPath(DefaultRoot)));
             var backup = command.Backup is null ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(command.Backup));
             if (command.Verb == "check")
             {
@@ -42,7 +49,11 @@ public static class DataDirectoryCommand
             }
 
             using var privileges = IsElevated() ? DataRepairEnvironment.EnablePrivileges(DataRepairEnvironment.RepairPrivileges) : null;
-            var environment = new WindowsRepairEnvironment(privileges);
+            var environment = new WindowsRepairEnvironment(privileges, localService);
+            if (!localService)
+            {
+                console.WriteLine("Not this PC's own data folder: the local Nexus PC service and its start type are not touched.");
+            }
             var repair = new DataDirectoryRepair(new DataDirectoryFileSystem(), console, TimeProvider.System, environment);
             var failures = environment.PreconditionFailures();
             console.WriteLine("Note: one signed-in session lowers the risk that the folder changes during the repair; it does not remove it.");
@@ -51,6 +62,7 @@ public static class DataDirectoryCommand
             {
                 "repair" => repair.Repair(root, failures),
                 "continue" => repair.Continue(root, backup!, failures),
+                "finalize" => repair.Finalize(root, backup!, failures),
                 _ => repair.RestoreAcl(root, backup!, failures),
             };
         }
@@ -68,14 +80,25 @@ public static class DataDirectoryCommand
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
-    /// <summary>Р1, checked at the start and again before every change of access.</summary>
-    private sealed class WindowsRepairEnvironment(DataRepairEnvironment.PrivilegeScope? privileges) : IRepairEnvironment
+    /// <summary>
+    /// Preconditions, checked at the start and again before every change. The local service's start type is
+    /// touched only when the folder is this PC's own data folder: with --data-dir pointing elsewhere (offline
+    /// variant, a disk of another Windows) the local service has nothing to do with it.
+    /// </summary>
+    private sealed class WindowsRepairEnvironment(DataRepairEnvironment.PrivilegeScope? privileges, bool localService) : IRepairEnvironment
     {
         public IReadOnlyList<string> PreconditionFailures() => Preconditions(privileges);
 
-        public string? ServiceStartType() => DataRepairEnvironment.ServiceStartType(ServiceName);
+        public string? ServiceStartType() => localService ? DataRepairEnvironment.ServiceStartType(ServiceName) : null;
 
-        public void SetServiceStartType(string startType) => DataRepairEnvironment.SetServiceStartType(ServiceName, startType);
+        public void SetServiceStartType(string startType)
+        {
+            if (!localService)
+            {
+                throw new InvalidOperationException("not the local data folder: the local service is not touched");
+            }
+            DataRepairEnvironment.SetServiceStartType(ServiceName, startType);
+        }
     }
 
     /// <summary>Elevated, privileges, service stopped, no agent anywhere, exactly one signed-in session (ours).</summary>

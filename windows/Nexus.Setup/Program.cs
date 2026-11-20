@@ -14,7 +14,8 @@ internal static class Program
         NexusPC-Setup.exe --datadir-check                         проверить, ничего не меняет
         NexusPC-Setup.exe --datadir-repair                        резервная копия, затем исправление прав
         NexusPC-Setup.exe --datadir-repair --continue "<копия>"   продолжить прерванное исправление
-        NexusPC-Setup.exe --datadir-restore-acl "<копия>"         вернуть права, сохранённые в копии
+        NexusPC-Setup.exe --datadir-restore-acl "<копия>"         вернуть права, сохранённые в копии (восстановление остаётся незавершённым)
+        NexusPC-Setup.exe --datadir-finalize "<копия>"            завершить восстановление после всех проверок
         Дополнительно: --data-dir "<...\NexusPC>"
         Коды выхода: docs/SETUP.md, «Коды выхода установщика».
         """;
