@@ -38,7 +38,7 @@ public sealed class DataDirectoryRound4Tests
 
     private string Backup => Assert.Single(Backups);
 
-    private string State(string backup) => JsonDocument.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!).RootElement.GetProperty("state").GetString()!;
+    private string State(string backup) => JsonElement.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!).GetProperty("state").GetString()!;
 
     /// <summary>A repair interrupted after two changes, then undone by restore-acl.</summary>
     private void InterruptAndUndo()

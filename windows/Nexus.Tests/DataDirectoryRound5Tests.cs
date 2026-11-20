@@ -29,7 +29,7 @@ public sealed class DataDirectoryRound5Tests
     private IReadOnlyList<string> Backups => [.. _fs.Nodes.Keys.Where(k => k.StartsWith(Root + DataDirectoryRepair.BackupInfix, StringComparison.Ordinal)
         && !k[(Root.Length + 1)..].Contains('/', StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal)).Order(StringComparer.Ordinal)];
 
-    private string State(string backup) => JsonDocument.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!).RootElement.GetProperty("state").GetString()!;
+    private string State(string backup) => JsonElement.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!).GetProperty("state").GetString()!;
 
     private string Interrupt()
     {

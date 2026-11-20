@@ -66,7 +66,7 @@ public sealed class DataDirectoryRound3Tests
     private string Backup => _fs.Nodes.Keys.Single(k => k.StartsWith(Root + DataDirectoryRepair.BackupInfix, StringComparison.Ordinal)
         && !k[(Root.Length + 1)..].Contains('/', StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal));
 
-    private JsonElement Journal => JsonDocument.Parse(_fs.ReadAllText(Backup + "/" + DataDirectoryRepair.JournalName)!).RootElement;
+    private JsonElement Journal => JsonElement.Parse(_fs.ReadAllText(Backup + "/" + DataDirectoryRepair.JournalName)!);
 
     // ------------------------------------------------------------ service start type (owner decision 2)
 
