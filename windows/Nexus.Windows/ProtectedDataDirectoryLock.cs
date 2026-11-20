@@ -32,7 +32,13 @@ public sealed partial class ProtectedDataDirectoryLock : IDataDirectoryLockProvi
     private const int ErrorPathNotFound = 3;
     private const int ErrorFileNotFound = 2;
 
-    public LockOutcome TryAcquire(out IDisposable? held, out string? failure)
+    // One per process: this process may hold the lock once; its other attempts are Busy (see InProcessLockGate).
+    private static readonly InProcessLockGate ProcessGate = new();
+
+    public LockOutcome TryAcquire(out IDisposable? held, out string? failure) =>
+        ProcessGate.TryAcquire(AcquireProtected, out held, out failure);
+
+    private static LockOutcome AcquireProtected(out IDisposable? held, out string? failure)
     {
         held = null;
         failure = null;
