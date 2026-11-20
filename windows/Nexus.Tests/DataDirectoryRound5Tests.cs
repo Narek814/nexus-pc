@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nexus.Core.Storage;
+using static Nexus.Tests.TestPaths;
 
 namespace Nexus.Tests;
 
@@ -10,26 +11,26 @@ namespace Nexus.Tests;
 /// </summary>
 public sealed class DataDirectoryRound5Tests
 {
-    private const string Root = "/pd/NexusPC";
+    private static readonly string Root = TestPaths.Root;
     private readonly FakeDataFileSystem _fs = new();
     private readonly FixedTimeProvider _time = new(Shared.Now);
     private readonly FakeRepairEnvironment _env = new();
 
     public DataDirectoryRound5Tests()
     {
-        _fs.AddDirectory("/pd");
+        _fs.AddDirectory(Pd);
         _fs.AddDirectory(Root, FakeDataFileSystem.SomeUser);
-        _fs.AddFile(Root + "/config.json", """{"pcId":"x"}""");
-        _fs.AddFile(Root + "/devices.json", "[]", aces: [.. FakeDataFileSystem.TrustedAces(), new DataAce(FakeDataFileSystem.Users, true, 0x1F01FF, 0x10)]);
+        _fs.AddFile(Root + Sep + "config.json", """{"pcId":"x"}""");
+        _fs.AddFile(Root + Sep + "devices.json", "[]", aces: [.. FakeDataFileSystem.TrustedAces(), new DataAce(FakeDataFileSystem.Users, true, 0x1F01FF, 0x10)]);
     }
 
     private DataDirectoryRepair Repair(ScriptedConsole? console = null) =>
         new(_fs, console ?? new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), _time, _env);
 
     private IReadOnlyList<string> Backups => [.. _fs.Nodes.Keys.Where(k => k.StartsWith(Root + DataDirectoryRepair.BackupInfix, StringComparison.Ordinal)
-        && !k[(Root.Length + 1)..].Contains('/', StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal)).Order(StringComparer.Ordinal)];
+        && !k[(Root.Length + 1)..].Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal)).Order(StringComparer.Ordinal)];
 
-    private string State(string backup) => JsonElement.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!).GetProperty("state").GetString()!;
+    private string State(string backup) => JsonElement.Parse(_fs.ReadAllText(backup + Sep + DataDirectoryRepair.JournalName)!).GetProperty("state").GetString()!;
 
     private string Interrupt()
     {
@@ -41,7 +42,7 @@ public sealed class DataDirectoryRound5Tests
 
     private void FixByHand()
     {
-        foreach (var (path, node) in _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + "/", StringComparison.Ordinal)))
+        foreach (var (path, node) in _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + Sep, StringComparison.Ordinal)))
         {
             node.Owner = DataDirectoryPolicy.Administrators;
             node.Aces = FakeDataFileSystem.TrustedAces();
@@ -65,10 +66,10 @@ public sealed class DataDirectoryRound5Tests
                 _fs.Nodes[backup].Aces.Add(new DataAce(FakeDataFileSystem.SomeUser, true, 0x1F01FF, 0x3));
                 break;
             case "journal-ace":
-                _fs.Nodes[backup + "/" + DataDirectoryRepair.JournalName].Aces.Add(new DataAce(FakeDataFileSystem.Users, true, 0x1200A9, 0));
+                _fs.Nodes[backup + Sep + DataDirectoryRepair.JournalName].Aces.Add(new DataAce(FakeDataFileSystem.Users, true, 0x1200A9, 0));
                 break;
             case "journal-replaced-by-link":
-                _fs.Nodes[backup + "/" + DataDirectoryRepair.JournalName].Kind = DataObjectKind.ReparsePoint;
+                _fs.Nodes[backup + Sep + DataDirectoryRepair.JournalName].Kind = DataObjectKind.ReparsePoint;
                 break;
             default:
                 _fs.Nodes[backup].Protected = false;
@@ -93,7 +94,7 @@ public sealed class DataDirectoryRound5Tests
     {
         var backup = Interrupt();
         _fs.Nodes[backup].Aces.Add(new DataAce(FakeDataFileSystem.SomeUser, true, 0x1F01FF, 0x3));
-        _fs.MoveDirectory(backup, "/pd/NexusPC-tampered-backup-kept");
+        _fs.MoveDirectory(backup, Abs("/pd/NexusPC-tampered-backup-kept"));
         var (unfinished, violations) = DataDirectoryRepair.StartCheck(_fs, Root, DataDirectoryPolicy.TrustedSids);
         Assert.Empty(unfinished);
         Assert.NotEmpty(violations); // the half-repaired folder still has to pass on its own
@@ -106,10 +107,10 @@ public sealed class DataDirectoryRound5Tests
     {
         var planted = Root + DataDirectoryRepair.BackupInfix + "20260101-000000";
         _fs.AddDirectory(planted, FakeDataFileSystem.SomeUser);
-        _fs.AddFile(planted + "/" + DataDirectoryRepair.JournalName, "{}", owner: FakeDataFileSystem.SomeUser);
+        _fs.AddFile(planted + Sep + DataDirectoryRepair.JournalName, "{}", owner: FakeDataFileSystem.SomeUser);
         for (var i = 0; i < 200; i++)
         {
-            _fs.AddFile(planted + "/f" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "x", owner: FakeDataFileSystem.SomeUser);
+            _fs.AddFile(planted + Sep + "f" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "x", owner: FakeDataFileSystem.SomeUser);
         }
         var opens = 0;
         _fs.OnOpen = (path, _) =>
@@ -131,7 +132,7 @@ public sealed class DataDirectoryRound5Tests
         _fs.AddDirectory(stub).Protected = true;
         for (var i = 0; i < 50; i++)
         {
-            _fs.AddFile(stub + "/f" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "x");
+            _fs.AddFile(stub + Sep + "f" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), "x");
         }
         var opens = 0;
         _fs.OnOpen = (path, _) => opens += path.StartsWith(stub, StringComparison.Ordinal) ? 1 : 0;
@@ -164,7 +165,7 @@ public sealed class DataDirectoryRound5Tests
             _fs.AddDirectory(planted, FakeDataFileSystem.SomeUser);
             if (i % 1000 == 0)
             {
-                _fs.AddFile(planted + "/" + DataDirectoryRepair.JournalName, "{}", owner: FakeDataFileSystem.SomeUser);
+                _fs.AddFile(planted + Sep + DataDirectoryRepair.JournalName, "{}", owner: FakeDataFileSystem.SomeUser);
             }
         }
         var opens = 0;

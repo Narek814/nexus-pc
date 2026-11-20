@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Nexus.Agent;
 using Nexus.Core.Storage;
+using static Nexus.Tests.TestPaths;
 
 namespace Nexus.Tests;
 
@@ -78,7 +79,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
 
     /// <summary>Everything at or below <paramref name="root"/>: identity, links, owner, ACEs and a content hash.</summary>
     public string Snapshot(string root) => string.Join("\n", Nodes
-        .Where(n => n.Key == root || n.Key.StartsWith(root + "/", StringComparison.Ordinal))
+        .Where(n => n.Key == root || n.Key.StartsWith(root + TestPaths.Sep, StringComparison.Ordinal))
         .OrderBy(n => n.Key, StringComparer.Ordinal)
         .Select(n => $"{n.Key}|{n.Value.Kind}|{n.Value.Id}|{n.Value.Links}|{Sddl(n.Value)}|{Convert.ToHexString(SHA256.HashData(n.Value.Content))}"));
 
@@ -114,7 +115,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
     public IReadOnlyList<string> ListChildren(IDataObject directory)
     {
         var path = directory.State.FullPath;
-        return [.. Nodes.Keys.Where(k => Path.GetDirectoryName(k) == path).Select(Path.GetFileName)!, .. path == ExtraNamesIn ? ExtraNames : []];
+        return [.. Nodes.Keys.Where(k => TestPaths.Parent(k) == path).Select(TestPaths.Name),.. path == ExtraNamesIn ? ExtraNames : []];
     }
 
     /// <summary>Other names of the same folder (8.3 names, "All Users", \\?\ forms) and what they resolve to.</summary>
@@ -127,7 +128,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
     public bool DirectoryExists(string path) => Nodes.TryGetValue(path, out var n) && n.Kind == DataObjectKind.Directory;
 
     public IReadOnlyList<string> Siblings(string path, string suffixPrefix) =>
-        [.. Nodes.Keys.Where(k => Path.GetDirectoryName(k) == Path.GetDirectoryName(path) && Path.GetFileName(k).StartsWith(Path.GetFileName(path) + suffixPrefix, StringComparison.Ordinal))];
+        [.. Nodes.Keys.Where(k => TestPaths.Parent(k) == TestPaths.Parent(path) && TestPaths.Name(k).StartsWith(TestPaths.Name(path) + suffixPrefix, StringComparison.Ordinal))];
 
     public void CreateProtectedDirectory(string path)
     {
@@ -186,7 +187,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
     public string? ReadAllText(string path) => Nodes.TryGetValue(path, out var n) && n.Kind == DataObjectKind.File ? Encoding.UTF8.GetString(n.Content) : null;
 
     public IReadOnlyList<string> ListTree(string path) =>
-        [.. Nodes.Keys.Where(k => k.StartsWith(path + "/", StringComparison.Ordinal)).Select(k => Path.GetRelativePath(path, k))];
+        [.. Nodes.Keys.Where(k => k.StartsWith(path + TestPaths.Sep, StringComparison.Ordinal)).Select(k => k[(path.Length + 1)..])];
 
     public void MoveDirectory(string source, string destination)
     {
@@ -194,7 +195,7 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
         {
             throw new IOException("The process cannot access the file because it is being used by another process.");
         }
-        foreach (var key in Nodes.Keys.Where(k => k == source || k.StartsWith(source + "/", StringComparison.Ordinal)).ToList())
+        foreach (var key in Nodes.Keys.Where(k => k == source || k.StartsWith(source + TestPaths.Sep, StringComparison.Ordinal)).ToList())
         {
             Nodes[destination + key[source.Length..]] = Nodes[key];
             Nodes.Remove(key);
@@ -291,17 +292,44 @@ internal sealed class ScriptedConsole(params string[] answers) : IRepairConsole
     public string? ReadLine() => _answers.Count > 0 ? _answers.Dequeue() : null;
 }
 
+/// <summary>The test paths have the platform's form, the same one production builds with Path.Join.</summary>
+public sealed class TestPathsTests
+{
+    [Fact]
+    public void Test_paths_use_the_platform_separator_and_match_Path_Join()
+    {
+        var sep = Path.DirectorySeparatorChar;
+        var other = sep == '/' ? '\\' : '/';
+        Assert.Equal(sep.ToString(), Sep);
+        Assert.DoesNotContain(other, TestPaths.Root);
+        Assert.DoesNotContain(other, Pd);
+        Assert.True(Path.IsPathFullyQualified(TestPaths.Root));
+        Assert.Equal(TestPaths.Root, Path.GetFullPath(TestPaths.Root)); // already normalized
+        Assert.Equal(Pd, Path.GetDirectoryName(TestPaths.Root));
+        Assert.Equal(OperatingSystem.IsWindows() ? @"C:\pd\NexusPC" : "/pd/NexusPC", TestPaths.Root);
+        Assert.Equal($"{sep}OpenRGB{sep}plugins", Rel("/OpenRGB/plugins"));
+
+        var joined = Path.Join(TestPaths.Root, "OpenRGB", "plugins");
+        Assert.Equal(TestPaths.Root + Rel("/OpenRGB/plugins"), joined);
+        Assert.Equal(Path.Join(TestPaths.Root, "OpenRGB"), Parent(joined));
+        Assert.Equal("plugins", Name(joined));
+        Assert.Equal(TestPaths.Root, Parent(Path.Join(TestPaths.Root, "devices.json")));
+    }
+}
+
 public sealed class DataDirectoryPolicyTests
 {
-    private const string Root = "/pd/NexusPC";
+    private static readonly string Root = TestPaths.Root;
+    private static readonly string ObjectPath = Root + TestPaths.Rel("/a");
+    private const string SameAsObjectPath = "\0same";
 
-    private static DataObjectState State(DataObjectKind kind = DataObjectKind.File, uint links = 1, string? final = Root + "/a", string? owner = DataDirectoryPolicy.LocalSystem,
+    private static DataObjectState State(DataObjectKind kind = DataObjectKind.File, uint links = 1, string? final = SameAsObjectPath, string? owner = DataDirectoryPolicy.LocalSystem,
         bool daclPresent = true, params DataAce[] aces) => new()
         {
-            FullPath = Root + "/a",
+            FullPath = ObjectPath,
             Kind = kind,
             LinkCount = links,
-            FinalPath = final,
+            FinalPath = final == SameAsObjectPath ? ObjectPath : final,
             OwnerSid = owner,
             DaclPresent = daclPresent,
             Dacl = aces.Length == 0 ? FakeDataFileSystem.TrustedAces() : aces,
@@ -342,7 +370,7 @@ public sealed class DataDirectoryPolicyTests
             "reparse" => State(kind: DataObjectKind.ReparsePoint),
             "other" => State(kind: DataObjectKind.Other),
             "hardlinks" => State(links: 2),
-            "outside" => State(final: "/elsewhere/a"),
+            "outside" => State(final: TestPaths.Abs("/elsewhere/a")),
             _ => State(final: null),
         };
         var violation = Assert.Single(DataDirectoryPolicy.Check("a", state, Root, DataDirectoryPolicy.TrustedSids));
@@ -360,7 +388,7 @@ public sealed class DataDirectoryPolicyTests
     [Fact]
     public void Paths_compare_without_case()
     {
-        Assert.Empty(DataDirectoryPolicy.Check("a", State(final: "/PD/nexuspc/A"), Root, DataDirectoryPolicy.TrustedSids));
+        Assert.Empty(DataDirectoryPolicy.Check("a", State(final: TestPaths.Abs("/PD/nexuspc/A")), Root, DataDirectoryPolicy.TrustedSids));
     }
 
     [Fact]
@@ -432,31 +460,31 @@ public sealed class DataDirectoryPolicyTests
 
 public sealed class DataDirectoryRepairTests
 {
-    private const string Root = "/pd/NexusPC";
-    private static readonly string Plugins = Root + "/OpenRGB/plugins";
+    private static readonly string Root = TestPaths.Root;
+    private static readonly string Plugins = Root + Rel("/OpenRGB/plugins");
     private readonly FakeDataFileSystem _fs = new();
     private readonly FixedTimeProvider _time = new(Shared.Now);
 
     public DataDirectoryRepairTests()
     {
-        _fs.AddDirectory("/pd");
+        _fs.AddDirectory(Pd);
         _fs.AddDirectory(Root, FakeDataFileSystem.SomeUser).Protected = false;
-        _fs.AddFile(Root + "/config.json", """{"pcId":"x","trayPath":"C:\\evil\\tray.exe","certificateThumbprint":"ABCD"}""");
-        _fs.AddFile(Root + "/devices.json", """[{"DeviceId":"d","Name":"Phone\u0007","PublicKey":"AQID","Permissions":["power"],"PairedAt":"2026-01-01T00:00:00Z"}]""",
+        _fs.AddFile(Root + Sep + "config.json", """{"pcId":"x","trayPath":"C:\\evil\\tray.exe","certificateThumbprint":"ABCD"}""");
+        _fs.AddFile(Root + Sep + "devices.json", """[{"DeviceId":"d","Name":"Phone\u0007","PublicKey":"AQID","Permissions":["power"],"PairedAt":"2026-01-01T00:00:00Z"}]""",
             aces: [.. FakeDataFileSystem.TrustedAces(), new DataAce(FakeDataFileSystem.Users, true, 0x1F01FF, 0x10)]);
-        _fs.AddFile(Root + "/audit.log", "line\n", owner: FakeDataFileSystem.SomeUser);
-        _fs.AddFile(Root + "/stranger.txt", "?");
-        _fs.AddDirectory(Root + "/OpenRGB");
-        _fs.AddFile(Root + "/OpenRGB/OpenRGB.json", "{}");
+        _fs.AddFile(Root + Sep + "audit.log", "line\n", owner: FakeDataFileSystem.SomeUser);
+        _fs.AddFile(Root + Sep + "stranger.txt", "?");
+        _fs.AddDirectory(Root + Sep + "OpenRGB");
+        _fs.AddFile(Root + Rel("/OpenRGB/OpenRGB.json"), "{}");
         _fs.AddDirectory(Plugins);
-        _fs.AddFile(Plugins + "/evil.dll", "MZ");
+        _fs.AddFile(Plugins + Sep + "evil.dll", "MZ");
     }
 
     private DataDirectoryRepair Repair(ScriptedConsole console) => new(_fs, console, _time);
 
-    private static string? BackupOf(FakeDataFileSystem fs) => fs.Nodes.Keys.FirstOrDefault(k => k.StartsWith(Root + ".backup-", StringComparison.Ordinal) && !k[(Root.Length + 1)..].Contains('/', StringComparison.Ordinal));
+    private static string? BackupOf(FakeDataFileSystem fs) => fs.Nodes.Keys.FirstOrDefault(k => k.StartsWith(Root + ".backup-", StringComparison.Ordinal) && !k[(Root.Length + 1)..].Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal));
 
-    private string ContentsSnapshot() => string.Join("\n", _fs.Nodes.Where(n => n.Key.StartsWith(Root + "/", StringComparison.Ordinal) && n.Value.Kind == DataObjectKind.File)
+    private string ContentsSnapshot() => string.Join("\n", _fs.Nodes.Where(n => n.Key.StartsWith(Root + Sep, StringComparison.Ordinal) && n.Value.Kind == DataObjectKind.File)
         .OrderBy(n => n.Key, StringComparer.Ordinal).Select(n => n.Key.Replace("plugins.disabled-20261114-100000", "plugins", StringComparison.Ordinal) + "=" + Convert.ToHexString(SHA256.HashData(n.Value.Content))));
 
     [Fact]
@@ -476,7 +504,7 @@ public sealed class DataDirectoryRepairTests
     [Fact]
     public void Empty_plugins_folder_is_not_a_violation()
     {
-        _fs.Nodes.Remove(Plugins + "/evil.dll");
+        _fs.Nodes.Remove(Plugins + Sep + "evil.dll");
         var scan = DataDirectoryScanner.Scan(_fs, Root, DataDirectoryPolicy.TrustedSids);
         Assert.DoesNotContain(scan.Violations, v => v.Kind == DataViolationKind.Plugins);
         Assert.Null(scan.Plugins); // empty: nothing to quarantine (owner decision 2)
@@ -487,7 +515,7 @@ public sealed class DataDirectoryRepairTests
     {
         var fs = new FakeDataFileSystem();
         fs.AddDirectory(Root).Protected = true;
-        fs.AddFile(Root + "/config.json", "{}", owner: DataDirectoryPolicy.LocalSystem);
+        fs.AddFile(Root + Sep + "config.json", "{}", owner: DataDirectoryPolicy.LocalSystem);
         var console = new ScriptedConsole();
         Assert.Equal(DataDirectoryRepair.ExitOk, new DataDirectoryRepair(fs, console, _time).Check(Root));
     }
@@ -503,17 +531,17 @@ public sealed class DataDirectoryRepairTests
         switch (problem)
         {
             case "reparse":
-                _fs.AddDirectory(Root + "/OpenRGB/link").Kind = DataObjectKind.ReparsePoint;
-                _fs.AddFile(Root + "/OpenRGB/link/target.txt", "behind the link"); // must never be visited
+                _fs.AddDirectory(Root + Rel("/OpenRGB/link")).Kind = DataObjectKind.ReparsePoint;
+                _fs.AddFile(Root + Rel("/OpenRGB/link/target.txt"), "behind the link"); // must never be visited
                 break;
             case "hardlink":
-                _fs.Nodes[Root + "/config.json"].Links = 2;
+                _fs.Nodes[Root + Sep + "config.json"].Links = 2;
                 break;
             case "outside":
-                _fs.Nodes[Root + "/OpenRGB/OpenRGB.json"].FinalOverride = "/Windows/System32/x";
+                _fs.Nodes[Root + Rel("/OpenRGB/OpenRGB.json")].FinalOverride = Abs("/Windows/System32/x");
                 break;
             case "other":
-                _fs.AddFile(Root + "/device", "").Kind = DataObjectKind.Other;
+                _fs.AddFile(Root + Sep + "device", "").Kind = DataObjectKind.Other;
                 break;
             default:
                 _fs.Nodes[Root].Kind = DataObjectKind.ReparsePoint;
@@ -521,12 +549,12 @@ public sealed class DataDirectoryRepairTests
         }
         var opened = new List<string>();
         _fs.OnOpen = (path, _) => opened.Add(path);
-        var before = _fs.Snapshot("/pd");
+        var before = _fs.Snapshot(Pd);
         var console = new ScriptedConsole(DataDirectoryRepair.ConfirmationWord);
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(console).Repair(Root, []));
-        Assert.Equal(before, _fs.Snapshot("/pd"));
+        Assert.Equal(before, _fs.Snapshot(Pd));
         Assert.Null(BackupOf(_fs));
-        Assert.DoesNotContain(Root + "/OpenRGB/link/target.txt", opened);
+        Assert.DoesNotContain(Root + Rel("/OpenRGB/link/target.txt"), opened);
         Assert.Equal(0, _fs.SecurityChanges);
         Assert.Contains("Nothing was changed", console.Text, StringComparison.Ordinal);
     }
@@ -534,23 +562,23 @@ public sealed class DataDirectoryRepairTests
     [Fact]
     public void Plan_excludes_rejected_objects_and_does_not_enter_links()
     {
-        _fs.AddDirectory(Root + "/junction").Kind = DataObjectKind.ReparsePoint;
-        _fs.AddFile(Root + "/junction/inside", "x");
-        _fs.Nodes[Root + "/stranger.txt"].Links = 2;
+        _fs.AddDirectory(Root + Sep + "junction").Kind = DataObjectKind.ReparsePoint;
+        _fs.AddFile(Root + Rel("/junction/inside"), "x");
+        _fs.Nodes[Root + Sep + "stranger.txt"].Links = 2;
         var scan = DataDirectoryScanner.Scan(_fs, Root, DataDirectoryPolicy.TrustedSids);
         Assert.False(scan.Repairable);
         Assert.DoesNotContain(scan.Plan, e => e.RelativePath == "junction" || e.RelativePath == "stranger.txt");
-        Assert.DoesNotContain(scan.Entries, e => e.RelativePath.StartsWith("junction/", StringComparison.Ordinal));
+        Assert.DoesNotContain(scan.Entries, e => e.RelativePath.StartsWith(Rel("junction/"), StringComparison.Ordinal));
     }
 
     [Fact]
     public void Failed_preconditions_or_missing_confirmation_change_nothing()
     {
-        var before = _fs.Snapshot("/pd");
+        var before = _fs.Snapshot(Pd);
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, ["The Nexus PC service is not stopped"]));
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(new ScriptedConsole("yes")).Repair(Root, []));
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(new ScriptedConsole()).Repair(Root, []));
-        Assert.Equal(before, _fs.Snapshot("/pd"));
+        Assert.Equal(before, _fs.Snapshot(Pd));
         Assert.Null(BackupOf(_fs));
     }
 
@@ -575,11 +603,11 @@ public sealed class DataDirectoryRepairTests
     [Fact]
     public void Not_enough_space_refuses_before_anything_is_created()
     {
-        _fs.Available = DataDirectoryRepair.RequiredSpace(_fs.Nodes.Where(n => n.Key.StartsWith(Root + "/", StringComparison.Ordinal)).Sum(n => (long)n.Value.Content.Length)) - 1;
-        var before = _fs.Snapshot("/pd");
+        _fs.Available = DataDirectoryRepair.RequiredSpace(_fs.Nodes.Where(n => n.Key.StartsWith(Root + Sep, StringComparison.Ordinal)).Sum(n => (long)n.Value.Content.Length)) - 1;
+        var before = _fs.Snapshot(Pd);
         var console = new ScriptedConsole(DataDirectoryRepair.ConfirmationWord);
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(console).Repair(Root, []));
-        Assert.Equal(before, _fs.Snapshot("/pd"));
+        Assert.Equal(before, _fs.Snapshot(Pd));
         Assert.Contains("Not enough free space", console.Text, StringComparison.Ordinal);
     }
 
@@ -621,23 +649,23 @@ public sealed class DataDirectoryRepairTests
         var after = DataDirectoryScanner.Scan(_fs, Root, DataDirectoryPolicy.TrustedSids);
         Assert.True(after.Trusted, string.Join("\n", after.Violations));
         Assert.False(_fs.Nodes.ContainsKey(Plugins));
-        Assert.True(_fs.Nodes.ContainsKey(Root + "/OpenRGB/plugins.disabled-20261114-100000/evil.dll"));
+        Assert.True(_fs.Nodes.ContainsKey(Root + Rel("/OpenRGB/plugins.disabled-20261114-100000/evil.dll")));
         Assert.Equal(contents, ContentsSnapshot());
 
         var backup = BackupOf(_fs)!;
         Assert.True(_fs.Nodes[backup].Protected);
-        var manifest = JsonDocument.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.ManifestName)!);
+        var manifest = JsonDocument.Parse(_fs.ReadAllText(backup + Sep + DataDirectoryRepair.ManifestName)!);
         var files = manifest.RootElement.GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("kind").GetString() == "file").ToList();
         Assert.Equal(6, files.Count);
         foreach (var file in files)
         {
-            var copy = _fs.Nodes[backup + "/data/" + file.GetProperty("path").GetString()];
+            var copy = _fs.Nodes[backup + Rel("/data/") + file.GetProperty("path").GetString()];
             Assert.Equal(file.GetProperty("sha256").GetString(), Convert.ToHexStringLower(SHA256.HashData(copy.Content)));
         }
-        Assert.Contains(DataDirectoryRepair.Fingerprint(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.ManifestName)!), console.Text, StringComparison.Ordinal);
-        var journal = JsonDocument.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!);
+        Assert.Contains(DataDirectoryRepair.Fingerprint(_fs.ReadAllText(backup + Sep + DataDirectoryRepair.ManifestName)!), console.Text, StringComparison.Ordinal);
+        var journal = JsonDocument.Parse(_fs.ReadAllText(backup + Sep + DataDirectoryRepair.JournalName)!);
         Assert.Equal(RepairJournal.Completed, journal.RootElement.GetProperty("state").GetString());
-        Assert.NotNull(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.OriginalSecurityName));
+        Assert.NotNull(_fs.ReadAllText(backup + Sep + DataDirectoryRepair.OriginalSecurityName));
         Assert.Empty(Repair(new ScriptedConsole()).FindUnfinished(Root));
     }
 
@@ -650,15 +678,15 @@ public sealed class DataDirectoryRepairTests
             if (access == DataAccess.ChangeSecurity && _fs.SecurityChanges == 0)
             {
                 var backup = BackupOf(_fs)!;
-                seenBeforeFirstChange = _fs.ReadAllText(backup + "/" + DataDirectoryRepair.OriginalSecurityName) is not null
-                    && _fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName) is not null
-                    && _fs.ReadAllText(backup + "/" + DataDirectoryRepair.ManifestName) is not null;
+                seenBeforeFirstChange = _fs.ReadAllText(backup + Sep + DataDirectoryRepair.OriginalSecurityName) is not null
+                    && _fs.ReadAllText(backup + Sep + DataDirectoryRepair.JournalName) is not null
+                    && _fs.ReadAllText(backup + Sep + DataDirectoryRepair.ManifestName) is not null;
             }
         };
-        var original = _fs.Nodes[Root + "/devices.json"];
+        var original = _fs.Nodes[Root + Sep + "devices.json"];
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, []));
         Assert.True(seenBeforeFirstChange);
-        var saved = JsonDocument.Parse(_fs.ReadAllText(BackupOf(_fs)! + "/" + DataDirectoryRepair.OriginalSecurityName)!);
+        var saved = JsonDocument.Parse(_fs.ReadAllText(BackupOf(_fs)! + Sep + DataDirectoryRepair.OriginalSecurityName)!);
         var entry = saved.RootElement.GetProperty("entries").EnumerateArray().Single(e => e.GetProperty("path").GetString() == "devices.json");
         Assert.Equal(original.Id, entry.GetProperty("fileId").GetString());
         Assert.Equal(7UL, entry.GetProperty("volume").GetUInt64());
@@ -697,7 +725,7 @@ public sealed class DataDirectoryRepairTests
     [InlineData(null)]
     public void Restore_acl_puts_back_the_original_owner_and_access_without_touching_contents(int? crashAfter)
     {
-        var originals = _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + "/", StringComparison.Ordinal))
+        var originals = _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + Sep, StringComparison.Ordinal))
             .ToDictionary(n => n.Value.Id, n => FakeDataFileSystem.Sddl(n.Value));
         var contents = ContentsSnapshot();
         _fs.CrashAfterSecurityChanges = crashAfter;
@@ -714,7 +742,7 @@ public sealed class DataDirectoryRepairTests
 
         var console = new ScriptedConsole();
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair(console).RestoreAcl(Root, backup, []));
-        foreach (var (key, node) in _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + "/", StringComparison.Ordinal)))
+        foreach (var (key, node) in _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + Sep, StringComparison.Ordinal)))
         {
             Assert.True(originals[node.Id] == FakeDataFileSystem.Sddl(node), key);
         }
@@ -729,7 +757,7 @@ public sealed class DataDirectoryRepairTests
     {
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, []));
         var backup = BackupOf(_fs)!;
-        var replaced = _fs.Nodes[Root + "/devices.json"];
+        var replaced = _fs.Nodes[Root + Sep + "devices.json"];
         replaced.Id = _fs.NewId(); // deleted and recreated under the same name
         var replacedSddl = FakeDataFileSystem.Sddl(replaced);
         var console = new ScriptedConsole();
@@ -747,7 +775,7 @@ public sealed class DataDirectoryRepairTests
     [InlineData("acl")]
     public void Object_changed_between_scan_and_change_stops_the_repair(string change)
     {
-        var target = Root + "/stranger.txt";
+        var target = Root + Sep + "stranger.txt";
         var done = false;
         string? changedSddl = null;
         _fs.OnOpen = (path, access) =>
@@ -772,7 +800,7 @@ public sealed class DataDirectoryRepairTests
         Assert.Contains("Stopped at stranger.txt", console.Text, StringComparison.Ordinal);
         Assert.Equal(changedSddl, FakeDataFileSystem.Sddl(_fs.Nodes[target])); // the changed object was not touched
         Assert.True(_fs.Nodes.ContainsKey(Plugins)); // later steps did not run
-        var journal = JsonDocument.Parse(_fs.ReadAllText(BackupOf(_fs)! + "/" + DataDirectoryRepair.JournalName)!);
+        var journal = JsonDocument.Parse(_fs.ReadAllText(BackupOf(_fs)! + Sep + DataDirectoryRepair.JournalName)!);
         Assert.Equal(RepairJournal.Stopped, journal.RootElement.GetProperty("state").GetString());
         Assert.Contains(journal.RootElement.GetProperty("problems").EnumerateArray(), p => p.GetString()!.Contains("stranger.txt", StringComparison.Ordinal));
     }

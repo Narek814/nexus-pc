@@ -843,7 +843,7 @@ public static partial class DataRepairEnvironment
                 continue;
             }
             var previous = new byte[16];
-            if (!AdjustTokenPrivileges(token, false, Privilege(luid, 2), 16, previous, 16, out _) || Marshal.GetLastPInvokeError() == 1300) // SE_PRIVILEGE_ENABLED; ERROR_NOT_ALL_ASSIGNED
+            if (!AdjustTokenPrivileges(token, false, Privilege(luid, 2), (uint)previous.Length, previous, out _) || Marshal.GetLastPInvokeError() == 1300) // SE_PRIVILEGE_ENABLED; ERROR_NOT_ALL_ASSIGNED
             {
                 scope.MissingList.Add(name);
                 continue;
@@ -883,7 +883,7 @@ public static partial class DataRepairEnvironment
             }
             foreach (var (luid, attributes) in Restore)
             {
-                AdjustTokenPrivileges(Token, false, Privilege(luid, attributes), 16, null, 0, out _);
+                AdjustTokenPrivileges(Token, false, Privilege(luid, attributes), 0, null, out _);
             }
             CloseHandle(Token);
             Token = IntPtr.Zero;
@@ -928,7 +928,8 @@ public static partial class DataRepairEnvironment
 
     [LibraryImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AdjustTokenPrivileges(IntPtr token, [MarshalAs(UnmanagedType.Bool)] bool disableAll, byte[] newState, uint length, [Out] byte[]? previousState, uint previousLength, out uint returnLength);
+    // Win32 takes six parameters: BufferLength is the size of PreviousState (0 when PreviousState is NULL).
+    private static partial bool AdjustTokenPrivileges(IntPtr token, [MarshalAs(UnmanagedType.Bool)] bool disableAll, byte[] newState, uint bufferLength, [Out] byte[]? previousState, out uint returnLength);
 
     [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

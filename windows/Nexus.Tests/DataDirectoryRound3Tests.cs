@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Nexus.Core.Storage;
 using Nexus.Setup;
+using static Nexus.Tests.TestPaths;
 
 namespace Nexus.Tests;
 
@@ -40,22 +41,22 @@ internal sealed class FakeRepairEnvironment : IRepairEnvironment
 /// <summary>Third round of T4: service start type, re-checked preconditions, vanished objects, single read, sanitising.</summary>
 public sealed class DataDirectoryRound3Tests
 {
-    private const string Root = "/pd/NexusPC";
-    private static readonly string Plugins = Root + "/OpenRGB/plugins";
+    private static readonly string Root = TestPaths.Root;
+    private static readonly string Plugins = Root + Rel("/OpenRGB/plugins");
     private readonly FakeDataFileSystem _fs = new();
     private readonly FixedTimeProvider _time = new(Shared.Now);
     private readonly FakeRepairEnvironment _env = new();
 
     public DataDirectoryRound3Tests()
     {
-        _fs.AddDirectory("/pd");
+        _fs.AddDirectory(Pd);
         _fs.AddDirectory(Root, FakeDataFileSystem.SomeUser);
-        _fs.AddFile(Root + "/config.json", """{"pcId":"x"}""");
-        _fs.AddFile(Root + "/devices.json", """[{"Name":"Phone","PublicKey":"AQID","Permissions":["power"],"PairedAt":"2026-01-01T00:00:00Z"}]""");
-        _fs.AddFile(Root + "/audit.log", "line\n", owner: FakeDataFileSystem.SomeUser);
-        _fs.AddDirectory(Root + "/OpenRGB");
+        _fs.AddFile(Root + Sep + "config.json", """{"pcId":"x"}""");
+        _fs.AddFile(Root + Sep + "devices.json", """[{"Name":"Phone","PublicKey":"AQID","Permissions":["power"],"PairedAt":"2026-01-01T00:00:00Z"}]""");
+        _fs.AddFile(Root + Sep + "audit.log", "line\n", owner: FakeDataFileSystem.SomeUser);
+        _fs.AddDirectory(Root + Sep + "OpenRGB");
         _fs.AddDirectory(Plugins);
-        _fs.AddFile(Plugins + "/evil.dll", "MZ");
+        _fs.AddFile(Plugins + Sep + "evil.dll", "MZ");
     }
 
     private DataDirectoryRepair Repair(params string[] answers) =>
@@ -64,9 +65,9 @@ public sealed class DataDirectoryRound3Tests
     private DataDirectoryRepair Repair(ScriptedConsole console) => new(_fs, console, _time, _env);
 
     private string Backup => _fs.Nodes.Keys.Single(k => k.StartsWith(Root + DataDirectoryRepair.BackupInfix, StringComparison.Ordinal)
-        && !k[(Root.Length + 1)..].Contains('/', StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal));
+        && !k[(Root.Length + 1)..].Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal));
 
-    private JsonElement Journal => JsonElement.Parse(_fs.ReadAllText(Backup + "/" + DataDirectoryRepair.JournalName)!);
+    private JsonElement Journal => JsonElement.Parse(_fs.ReadAllText(Backup + Sep + DataDirectoryRepair.JournalName)!);
 
     // ------------------------------------------------------------ service start type (owner decision 2)
 
@@ -149,10 +150,10 @@ public sealed class DataDirectoryRound3Tests
     public void Precondition_failing_after_the_confirmation_refuses_before_anything_is_created()
     {
         _env.FailuresAt = n => n == 1 ? ["The Nexus PC service is not stopped (state 4)."] : [];
-        var before = _fs.Snapshot("/pd");
+        var before = _fs.Snapshot(Pd);
         var console = new ScriptedConsole(DataDirectoryRepair.ConfirmationWord);
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(console).Repair(Root, []));
-        Assert.Equal(before, _fs.Snapshot("/pd"));
+        Assert.Equal(before, _fs.Snapshot(Pd));
         Assert.Equal(0, _fs.SecurityChanges);
         Assert.Empty(_env.StartTypeChanges);
         Assert.Contains("not stopped", console.Text, StringComparison.Ordinal);
@@ -176,13 +177,13 @@ public sealed class DataDirectoryRound3Tests
     public void Object_that_vanishes_between_listing_and_opening_is_not_a_violation()
     {
         var fs = new FakeDataFileSystem();
-        fs.AddDirectory("/pd");
+        fs.AddDirectory(Pd);
         fs.AddDirectory(Root).Protected = true;
-        fs.AddFile(Root + "/audit.log.1", "old");
-        fs.AddFile(Root + "/config.json", "{}");
+        fs.AddFile(Root + Sep + "audit.log.1", "old");
+        fs.AddFile(Root + Sep + "config.json", "{}");
         fs.OnOpen = (path, _) =>
         {
-            if (path == Root + "/audit.log.1")
+            if (path == Root + Sep + "audit.log.1")
             {
                 fs.Nodes.Remove(path); // rotated away by the service
             }
@@ -196,7 +197,7 @@ public sealed class DataDirectoryRound3Tests
     public void Vanished_data_folder_itself_is_still_reported()
     {
         var fs = new FakeDataFileSystem();
-        fs.AddDirectory("/pd");
+        fs.AddDirectory(Pd);
         var scan = DataDirectoryScanner.Scan(fs, Root, DataDirectoryPolicy.TrustedSids);
         Assert.Contains(scan.Violations, v => v.Kind == DataViolationKind.Unreadable);
     }
@@ -204,7 +205,7 @@ public sealed class DataDirectoryRound3Tests
     [Fact]
     public void Refusal_names_what_was_found()
     {
-        _fs.Nodes[Root + "/config.json"].Links = 2;
+        _fs.Nodes[Root + Sep + "config.json"].Links = 2;
         var scan = DataDirectoryScanner.Scan(_fs, Root, DataDirectoryPolicy.TrustedSids);
         Assert.Equal([DataViolationKind.HardLinks], DataDirectoryRepair.BlockingKinds(scan));
         Assert.Contains("hard links", DataDirectoryRepair.BlockingSummary(scan), StringComparison.Ordinal);
@@ -223,7 +224,7 @@ public sealed class DataDirectoryRound3Tests
         var opens = 0;
         _fs.OnOpen = (path, access) =>
         {
-            if (path == Root + "/devices.json" && access == DataAccess.Read && !_fs.Nodes.Keys.Any(k => k.Contains(".backup-", StringComparison.Ordinal)))
+            if (path == Root + Sep + "devices.json" && access == DataAccess.Read && !_fs.Nodes.Keys.Any(k => k.Contains(".backup-", StringComparison.Ordinal)))
             {
                 opens++;
             }
@@ -238,7 +239,7 @@ public sealed class DataDirectoryRound3Tests
         var shown = false;
         _fs.OnOpen = (path, access) =>
         {
-            if (path == Root + "/devices.json" && access == DataAccess.Read)
+            if (path == Root + Sep + "devices.json" && access == DataAccess.Read)
             {
                 if (shown)
                 {
@@ -262,7 +263,7 @@ public sealed class DataDirectoryRound3Tests
     {
         _fs.OnOpen = (path, access) =>
         {
-            if (access == DataAccess.Read && path.EndsWith("/data/config.json", StringComparison.Ordinal))
+            if (access == DataAccess.Read && path.EndsWith(Rel("/data/config.json"), StringComparison.Ordinal))
             {
                 _fs.Nodes[path].Id = _fs.NewId();
             }
@@ -311,9 +312,9 @@ public sealed class DataDirectoryRound3Tests
     public void Root_that_inherits_access_fails_the_check_and_repair_fixes_it()
     {
         var fs = new FakeDataFileSystem();
-        fs.AddDirectory("/pd");
+        fs.AddDirectory(Pd);
         fs.AddDirectory(Root).Protected = false; // trusted owner and entries, but inherits from the parent
-        fs.AddFile(Root + "/config.json", "{}");
+        fs.AddFile(Root + Sep + "config.json", "{}");
         var scan = DataDirectoryScanner.Scan(fs, Root, DataDirectoryPolicy.TrustedSids);
         var violation = Assert.Single(scan.Violations);
         Assert.Equal(DataViolationKind.InheritedAccess, violation.Kind);

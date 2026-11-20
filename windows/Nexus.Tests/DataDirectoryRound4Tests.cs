@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Nexus.Core.Storage;
 using Nexus.Setup;
+using static Nexus.Tests.TestPaths;
 
 namespace Nexus.Tests;
 
@@ -13,32 +14,32 @@ namespace Nexus.Tests;
 /// </summary>
 public sealed class DataDirectoryRound4Tests
 {
-    private const string Root = "/pd/NexusPC";
-    private static readonly string Plugins = Root + "/OpenRGB/plugins";
+    private static readonly string Root = TestPaths.Root;
+    private static readonly string Plugins = Root + Rel("/OpenRGB/plugins");
     private readonly FakeDataFileSystem _fs = new();
     private readonly FixedTimeProvider _time = new(Shared.Now);
     private readonly FakeRepairEnvironment _env = new();
 
     public DataDirectoryRound4Tests()
     {
-        _fs.AddDirectory("/pd");
+        _fs.AddDirectory(Pd);
         _fs.AddDirectory(Root, FakeDataFileSystem.SomeUser);
-        _fs.AddFile(Root + "/config.json", """{"pcId":"x"}""");
-        _fs.AddFile(Root + "/devices.json", "[]", aces: [.. FakeDataFileSystem.TrustedAces(), new DataAce(FakeDataFileSystem.Users, true, 0x1F01FF, 0x10)]);
-        _fs.AddDirectory(Root + "/OpenRGB");
+        _fs.AddFile(Root + Sep + "config.json", """{"pcId":"x"}""");
+        _fs.AddFile(Root + Sep + "devices.json", "[]", aces: [.. FakeDataFileSystem.TrustedAces(), new DataAce(FakeDataFileSystem.Users, true, 0x1F01FF, 0x10)]);
+        _fs.AddDirectory(Root + Sep + "OpenRGB");
         _fs.AddDirectory(Plugins);
-        _fs.AddFile(Plugins + "/evil.dll", "MZ");
+        _fs.AddFile(Plugins + Sep + "evil.dll", "MZ");
     }
 
     private DataDirectoryRepair Repair(ScriptedConsole? console = null) =>
         new(_fs, console ?? new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), _time, _env);
 
     private IReadOnlyList<string> Backups => [.. _fs.Nodes.Keys.Where(k => k.StartsWith(Root + DataDirectoryRepair.BackupInfix, StringComparison.Ordinal)
-        && !k[(Root.Length + 1)..].Contains('/', StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal)).Order(StringComparer.Ordinal)];
+        && !k[(Root.Length + 1)..].Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal)).Order(StringComparer.Ordinal)];
 
     private string Backup => Assert.Single(Backups);
 
-    private string State(string backup) => JsonElement.Parse(_fs.ReadAllText(backup + "/" + DataDirectoryRepair.JournalName)!).GetProperty("state").GetString()!;
+    private string State(string backup) => JsonElement.Parse(_fs.ReadAllText(backup + Sep + DataDirectoryRepair.JournalName)!).GetProperty("state").GetString()!;
 
     /// <summary>A repair interrupted after two changes, then undone by restore-acl.</summary>
     private void InterruptAndUndo()
@@ -49,12 +50,12 @@ public sealed class DataDirectoryRound4Tests
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole()).RestoreAcl(Root, Backup, []));
     }
 
-    private void WithoutPluginContent() => _fs.Nodes.Remove(Plugins + "/evil.dll");
+    private void WithoutPluginContent() => _fs.Nodes.Remove(Plugins + Sep + "evil.dll");
 
     /// <summary>What an administrator does by hand: trusted owner and entries everywhere, protected root.</summary>
     private void FixByHand()
     {
-        foreach (var (path, node) in _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + "/", StringComparison.Ordinal)))
+        foreach (var (path, node) in _fs.Nodes.Where(n => n.Key == Root || n.Key.StartsWith(Root + Sep, StringComparison.Ordinal)))
         {
             node.Owner = DataDirectoryPolicy.Administrators;
             node.Aces = FakeDataFileSystem.TrustedAces();
@@ -130,8 +131,8 @@ public sealed class DataDirectoryRound4Tests
         var seen = new List<(string Path, string? StartType)>();
         _fs.OnOpen = (path, _) => seen.Add((path, _env.StartType));
         Assert.Equal(DataDirectoryRepair.ExitOk, Repair(console).Finalize(Root, Backup, []));
-        Assert.Contains(seen, s => s.Path.StartsWith(Root + "/", StringComparison.Ordinal));
-        Assert.Contains(seen, s => s.Path.StartsWith(Backup + "/data/", StringComparison.Ordinal));
+        Assert.Contains(seen, s => s.Path.StartsWith(Root + Sep, StringComparison.Ordinal));
+        Assert.Contains(seen, s => s.Path.StartsWith(Backup + Rel("/data/"), StringComparison.Ordinal));
         Assert.All(seen, s => Assert.Equal("disabled", s.StartType)); // every read before the start type went back
         Assert.Equal("auto", _env.StartType);
         Assert.Equal(RepairJournal.Completed, State(Backup));
@@ -166,7 +167,7 @@ public sealed class DataDirectoryRound4Tests
         WithoutPluginContent(); // a manual fix may change access only: contents must still match the manifest
         InterruptAndUndo();
         FixByHand();
-        var copy = _fs.Nodes.Keys.Single(k => k.StartsWith(Backup + "/data/", StringComparison.Ordinal) && k.EndsWith("config.json", StringComparison.Ordinal));
+        var copy = _fs.Nodes.Keys.Single(k => k.StartsWith(Backup + Rel("/data/"), StringComparison.Ordinal) && k.EndsWith("config.json", StringComparison.Ordinal));
         _fs.Nodes[copy].Content = Encoding.UTF8.GetBytes("""{"pcId":"z"}""");
         var console = new ScriptedConsole();
         Assert.Equal(DataDirectoryRepair.ExitRefused, Repair(console).Finalize(Root, Backup, []));
@@ -259,7 +260,7 @@ public sealed class DataDirectoryRound4Tests
         _fs.CrashAfterSecurityChanges = 2;
         Assert.Throws<SimulatedCrashException>(() => Repair().Repair(Root, []));
         _fs.CrashAfterSecurityChanges = null;
-        var path = Backup + "/" + DataDirectoryRepair.JournalName;
+        var path = Backup + Sep + DataDirectoryRepair.JournalName;
         var json = JsonNode.Parse(_fs.ReadAllText(path)!)!.AsObject();
         json["serviceDisabled"] = false; // say someone re-enabled it by hand
         _fs.Nodes[path].Content = Encoding.UTF8.GetBytes(json.ToJsonString());
@@ -328,7 +329,7 @@ public sealed class DataDirectoryRound4Tests
     private string CloneBackup(string source)
     {
         var clone = source + "-other";
-        foreach (var (key, node) in _fs.Nodes.Where(n => n.Key == source || n.Key.StartsWith(source + "/", StringComparison.Ordinal)).ToList())
+        foreach (var (key, node) in _fs.Nodes.Where(n => n.Key == source || n.Key.StartsWith(source + Sep, StringComparison.Ordinal)).ToList())
         {
             _fs.Nodes[clone + key[source.Length..]] = new FakeDataFileSystem.Node
             {
