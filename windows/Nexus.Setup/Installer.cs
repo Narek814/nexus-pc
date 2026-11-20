@@ -5,6 +5,8 @@ using System.Security.AccessControl;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 using Microsoft.Win32;
+using Nexus.Core.Storage;
+using Nexus.Windows;
 
 namespace Nexus.Setup;
 
@@ -22,7 +24,14 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             Say("Нужны права администратора: запустите установщик ещё раз и нажмите «Да» в окне Windows.");
             return 2;
         }
-        return options.Uninstall ? Uninstall() : Install();
+        if (options.DataDirectory is { } command)
+        {
+            return DataDirectoryCommand.Run(command, new InstallerConsole(log)); // takes the protected lock itself
+        }
+        // Installation and removal hold the same protected lock as the datadir commands for their whole run (N2):
+        // none of them can work on the data folder or the service while another one does.
+        return ExclusiveRun.Run(new ProtectedDataDirectoryLock(), text => Say(SetupPlan.LockRefusalText(text)), SetupPlan.ExitLockedByAnotherRun,
+            () => options.Uninstall ? Uninstall() : Install());
     }
 
     private int Install()
@@ -44,6 +53,17 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             return 3;
         }
         var newVersion = ReadVersion(payload);
+
+        // Before anything else is changed on disk (and before the service is stopped).
+        using (var report = new StringWriter())
+        {
+            var refused = DataDirectoryGate(DataDirectory, report);
+            if (refused is { } code)
+            {
+                Say(report.ToString().TrimEnd());
+                return code;
+            }
+        }
 
         var agentExe = SetupPlan.AgentExe(Root);
         var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion?.Split('+')[0] : null;
@@ -89,7 +109,18 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         }
         if (File.Exists(SetupPlan.OpenRgbExe(Root)))
         {
-            Step("Настройки подсветки (OpenRGB)", ImportOpenRgbSettings);
+            try
+            {
+                Step("Настройки подсветки (OpenRGB)", ImportOpenRgbSettings);
+            }
+            catch (DataDirectoryRecheckException refused)
+            {
+                // The folder failed the check again after the import (R11-1): the same refusal as the first
+                // check, exit code 6, installation stops here. Every other failure keeps exit code 5.
+                Console.WriteLine();
+                Say(refused.Message);
+                return refused.ExitCode;
+            }
         }
 
         Step("Настраиваю службу Windows", () =>
@@ -141,6 +172,13 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     private int Uninstall()
     {
         Say(options.Purge ? "Nexus PC — полное удаление (вместе с данными)" : "Nexus PC — удаление (данные и сопряжения сохраняются)");
+        // Removing the service in the middle of a repair would leave nothing to finish it with (and --purge would
+        // take the folder the journal refers to). Refuse, changing nothing, until the repair is finished.
+        if (UnfinishedRepairBlocksUninstall(DataDirectory) is { } blocked)
+        {
+            Say(blocked);
+            return SetupPlan.ExitDataDirectoryUntrusted;
+        }
         Step("Останавливаю Nexus PC", () =>
         {
             StopTray();
@@ -191,6 +229,15 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
                 }
             });
             Say("Ваш список программ и профилей остаётся в %LOCALAPPDATA%\\NexusPC — удалите папку вручную, если не нужен.");
+            var backups = SetupPlan.RemainingBackups(DataDirectory);
+            if (backups.Count > 0)
+            {
+                Say("Резервные копии папки данных не удаляются автоматически. Остались (удалите вручную, если не нужны):");
+                foreach (var backup in backups)
+                {
+                    Say("  " + DataText.Clean(backup, 400));
+                }
+            }
         }
         Say("Драйвер PawnIO не удаляется: им могут пользоваться другие программы. Удалить: Параметры → Приложения → PawnIO.");
         Say("Готово.");
@@ -264,35 +311,209 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     /// </summary>
     private void ImportOpenRgbSettings()
     {
-        EnsureSecureDataDirectory();
+        // Runs only after DataDirectoryGate accepted (or created) the data folder.
         var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenRGB");
         var target = Path.Combine(DataDirectory, "OpenRGB");
         var files = SetupPlan.OpenRgbFilesToImport(source, target);
+        var fs = new DataDirectoryFileSystem();
         foreach (var relative in files)
         {
             var destination = Path.Combine(target, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(Path.Combine(source, relative), destination, overwrite: true);
+            CreateOwnedDirectories(fs, DataDirectory, Path.GetDirectoryName(destination)!);
+            // Every imported file is a new file owned by Administrators (not by the account running the
+            // installer), access inherited, put in place by rename: an existing file is replaced, not rewritten.
+            var temp = destination + ".import-tmp";
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+            using (var input = File.OpenRead(Path.Combine(source, relative)))
+            using (var output = fs.CreateFile(temp))
+            {
+                input.CopyTo(output);
+                fs.FlushToDisk(output);
+            }
+            File.Move(temp, destination, overwrite: true);
         }
         log.WriteLine($"OpenRGB settings imported: {files.Count} file(s) from {source}");
+        // The folder must still pass the start-up check of the service after the import.
+        RecheckAfterImport(DataDirectory, DataRepairEnvironment.ReadPrivileges);
         if (files.Count > 0)
         {
             Write("перенесены из вашего OpenRGB — ", ConsoleColor.DarkGray);
         }
     }
 
-    /// <summary>Same protection the agent gives its data folder: SYSTEM and Administrators only.</summary>
-    private static void EnsureSecureDataDirectory()
+    /// <summary>
+    /// The check again after the OpenRGB import: any refusal of <see cref="DataDirectoryGate(string, TextWriter, IReadOnlyList{string})"/>
+    /// (including missing privileges) becomes <see cref="DataDirectoryRecheckException"/> with the gate's recheck text
+    /// (service stopped, program files updated: no "nothing changed") and its exit code. Tests only pass other <paramref name="privileges"/>.
+    /// </summary>
+    internal static void RecheckAfterImport(string path, IReadOnlyList<string> privileges)
     {
-        var directory = Directory.CreateDirectory(DataDirectory);
-        var security = new DirectorySecurity();
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        foreach (var sid in new[] { WellKnownSidType.LocalSystemSid, WellKnownSidType.BuiltinAdministratorsSid })
+        using var check = new StringWriter();
+        if (DataDirectoryGate(path, check, privileges, recheck: true) is { } code)
         {
-            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), FileSystemRights.FullControl,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            throw new DataDirectoryRecheckException(code, check.ToString().TrimEnd());
         }
-        directory.SetAccessControl(security);
+    }
+
+    private static void CreateOwnedDirectories(DataDirectoryFileSystem fs, string root, string directory)
+    {
+        if (Directory.Exists(directory) || DataDirectoryPolicy.SamePath(directory, root))
+        {
+            return;
+        }
+        CreateOwnedDirectories(fs, root, Path.GetDirectoryName(directory)!);
+        fs.CreateDirectory(directory);
+    }
+
+    /// <summary>
+    /// The data folder before the installer writes anything: missing — created with owner Administrators and
+    /// a protected SYSTEM/Administrators DACL in one call (ERROR_ALREADY_EXISTS means it is there, not that it
+    /// is fine); present — the same handle-based check as the service (SYSTEM, Administrators, TrustedInstaller
+    /// only, no links, no hard links, no non-empty OpenRGB plugins). Null to go on; otherwise the exit code,
+    /// with nothing changed. Shared code: Nexus.Core.Storage and Nexus.Windows, no copy here.
+    /// </summary>
+    internal static int? DataDirectoryGate(string path, TextWriter output) => DataDirectoryGate(path, output, DataRepairEnvironment.ReadPrivileges);
+
+    /// <summary>Tests only pass other <paramref name="privileges"/> (a name Windows does not know, to see the refusal).</summary>
+    internal static int? DataDirectoryGate(string path, TextWriter output, IReadOnlyList<string> privileges) => DataDirectoryGate(path, output, privileges, recheck: false);
+
+    /// <summary><paramref name="recheck"/>: the check again after the OpenRGB import; only the "stopped" wording differs (SetupPlan.GateStoppedText).</summary>
+    internal static int? DataDirectoryGate(string path, TextWriter output, IReadOnlyList<string> privileges, bool recheck)
+    {
+        var error = DataDirectoryFileSystem.TryCreateProtectedDirectory(path, withOwner: true);
+        if (error == 0)
+        {
+            return null;
+        }
+        if (!DataDirectoryFileSystem.IsAlreadyExists(error))
+        {
+            throw new IOException($"Не удалось создать папку данных {path}: {new System.ComponentModel.Win32Exception(error).Message}");
+        }
+        DataScan scan;
+        IReadOnlyList<UnfinishedRepair> unfinished;
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        using (var enabled = DataRepairEnvironment.EnablePrivileges(privileges))
+        {
+            // Without them the check cannot see protected objects: refuse instead of checking partly (R10-2).
+            if (SetupPlan.MissingPrivilegesText(enabled.Missing, uninstall: false, recheck) is { } refusal)
+            {
+                output.WriteLine(refusal);
+                return SetupPlan.ExitDataDirectoryUntrusted;
+            }
+            var fs = new DataDirectoryFileSystem();
+            scan = DataDirectoryScanner.Scan(fs, root, DataDirectoryPolicy.TrustedSids);
+            unfinished = [.. new DataDirectoryRepair(fs, new NullConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign)];
+        }
+        if (scan.Trusted && unfinished.Count == 0)
+        {
+            return null;
+        }
+        if (unfinished.Count > 0)
+        {
+            output.WriteLine($"Восстановление папки данных {path} не завершено. {SetupPlan.GateStoppedText(recheck)}");
+            foreach (var repair in unfinished)
+            {
+                var backup = DataText.Clean(repair.Backup, 400);
+                if (repair.State == RepairJournal.Restored)
+                {
+                    output.WriteLine($"  Права возвращены, восстановление не завершено ({backup}).");
+                    output.WriteLine("  Завершить:       NexusPC-Setup.exe --datadir-repair (новое исправление)");
+                    output.WriteLine($"  или, если папка исправлена вручную: NexusPC-Setup.exe --datadir-finalize \"{backup}\"");
+                    continue;
+                }
+                if (repair.State is DataDirectoryRepair.Tampered or DataDirectoryRepair.TooManyBackups)
+                {
+                    output.WriteLine($"  {backup}: {DataText.Clean(repair.Detail, 400)}");
+                    output.WriteLine("  Что делать: " + DataDirectoryRepair.FinishCommand(repair) + " (docs/SETUP.md, «Восстановление папки данных»).");
+                    continue;
+                }
+                if (repair.State == RepairJournal.RestoreFailed)
+                {
+                    output.WriteLine($"  Повторить возврат прав: NexusPC-Setup.exe --datadir-restore-acl \"{backup}\"");
+                    continue;
+                }
+                output.WriteLine($"  Продолжить:      NexusPC-Setup.exe --datadir-repair --continue \"{backup}\"");
+                output.WriteLine($"  Вернуть права:   NexusPC-Setup.exe --datadir-restore-acl \"{backup}\"");
+            }
+            output.WriteLine("Команды выполняются в командной строке от имени администратора. Подробно: docs/SETUP.md, «Восстановление папки данных».");
+            return SetupPlan.ExitDataDirectoryUntrusted;
+        }
+        output.WriteLine($"Папка данных Nexus PC {path} защищена не так, как нужно. {SetupPlan.GateStoppedText(recheck)}");
+        output.WriteLine("Найдено:");
+        foreach (var violation in scan.Violations.Take(50))
+        {
+            output.WriteLine("  " + violation);
+        }
+        if (scan.Violations.Count > 50)
+        {
+            output.WriteLine($"  … и ещё {scan.Violations.Count - 50}");
+        }
+        output.WriteLine("Что делать: откройте командную строку от имени администратора, остановите службу Nexus PC, если она есть, и выполните");
+        output.WriteLine("  NexusPC-Setup.exe --datadir-check    — подробный отчёт, ничего не меняет;");
+        output.WriteLine("  NexusPC-Setup.exe --datadir-repair   — резервная копия, затем исправление прав.");
+        output.WriteLine(scan.Repairable
+            ? "Потом запустите установщик ещё раз. Подробно: docs/SETUP.md, «Восстановление папки данных»."
+            : $"Автоматическое исправление откажется: в папке найдены {string.Join(", ", DataDirectoryRepair.BlockingKinds(scan).Select(SetupPlan.BlockingKindText))}. Разберите это вручную (docs/SETUP.md, «Восстановление папки данных»).");
+        return SetupPlan.ExitDataDirectoryUntrusted;
+    }
+
+    /// <summary>Null when no repair of the data folder is unfinished; otherwise what to tell the person (nothing is changed).</summary>
+    internal static string? UnfinishedRepairBlocksUninstall(string dataDirectory) => UnfinishedRepairBlocksUninstall(dataDirectory, DataRepairEnvironment.ReadPrivileges);
+
+    /// <summary>Tests only pass other <paramref name="privileges"/> (a name Windows does not know, to see the refusal).</summary>
+    internal static string? UnfinishedRepairBlocksUninstall(string dataDirectory, IReadOnlyList<string> privileges)
+    {
+        if (!Directory.Exists(dataDirectory))
+        {
+            return null;
+        }
+        IReadOnlyList<UnfinishedRepair> unfinished;
+        using (var enabled = DataRepairEnvironment.EnablePrivileges(privileges))
+        {
+            // Without them an unfinished repair could stay unseen: refuse, the caller exits with 6 (R10-2).
+            if (SetupPlan.MissingPrivilegesText(enabled.Missing, uninstall: true) is { } refusal)
+            {
+                return refusal;
+            }
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataDirectory));
+            unfinished = [.. new DataDirectoryRepair(new DataDirectoryFileSystem(), new NullConsole(), TimeProvider.System).FindUnfinished(root).Where(r => !r.Foreign)];
+        }
+        if (unfinished.Count == 0)
+        {
+            return null;
+        }
+        var text = new System.Text.StringBuilder();
+        text.AppendLine("Удаление остановлено, ничего не изменено: восстановление папки данных не завершено.");
+        foreach (var repair in unfinished)
+        {
+            text.AppendLine($"  {DataText.Clean(repair.Backup, 400)} ({DataText.Clean(repair.State)})");
+            text.AppendLine("  Завершить: " + SetupPlan.InstallerFinishText(repair));
+        }
+        text.Append("Затем запустите удаление ещё раз. Подробно: docs/SETUP.md, «Восстановление папки данных».");
+        return text.ToString();
+    }
+
+    private sealed class NullConsole : IRepairConsole
+    {
+        public void WriteLine(string text)
+        {
+        }
+
+        public string? ReadLine() => null;
+    }
+
+    private sealed class InstallerConsole(TextWriter log) : IRepairConsole
+    {
+        public void WriteLine(string text)
+        {
+            Console.WriteLine(text);
+            log.WriteLine(text);
+        }
+
+        public string? ReadLine() => Console.ReadLine();
     }
 
     /// <summary>The OpenRGB copy in Program Files\NexusPC (the service's server, or a window left open): its DLLs would be locked.</summary>

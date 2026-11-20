@@ -3,6 +3,7 @@ using Nexus.Agent.Admin;
 using Nexus.Agent.Hosting;
 using Nexus.Agent.Storage;
 using Nexus.Core.Pairing;
+using Nexus.Core.Storage;
 
 namespace Nexus.Agent;
 
@@ -21,8 +22,20 @@ internal static class Program
           Nexus.Agent status                show agent status
           Nexus.Agent openrgb               open the OpenRGB window installed with Nexus PC (device set-up);
                                             lighting from the phone keeps working while it is open
+          Nexus.Agent datadir check         check the data folder (owner, access, links); changes nothing
+          Nexus.Agent datadir repair        back up the data folder, verify the backup, then fix its access
+          Nexus.Agent datadir repair --continue <backup>
+                                            continue an interrupted repair
+          Nexus.Agent datadir restore-acl <backup>
+                                            put back the access saved by a repair; contents are not touched
+                                            (the repair stays unfinished and the service blocked until finished)
+          Nexus.Agent datadir finalize <backup>
+                                            finish a repair after all checks (folder, access, backup);
+                                            puts back the saved service start type as the last step
+                                            (datadir option: --data-dir <...\NexusPC>, default C:\ProgramData\NexusPC)
 
         Admin commands talk to the running agent and need an elevated (Administrator) prompt.
+        datadir repair and restore-acl run without the agent: the service must be stopped.
         """;
 
     // Readable console output: keep Cyrillic and '+' as is (display only, never sent anywhere).
@@ -58,6 +71,7 @@ internal static class Program
                     }).ConfigureAwait(false),
                 "status" => await PrintAsync(new JsonObject { ["op"] = "status" }).ConfigureAwait(false),
                 "openrgb" when args.Length == 1 => await OpenRgbWindowAsync().ConfigureAwait(false),
+                "datadir" => DataDirectory(args[1..]),
                 _ => PrintUsage(),
             };
         }
@@ -72,6 +86,32 @@ internal static class Program
     {
         Console.WriteLine(Usage);
         return 1;
+    }
+
+    /// <summary>
+    /// "datadir": runs here in the elevated console (the service must be stopped). Errors are reported by
+    /// the command itself with its own exit codes, never as "Cannot reach the agent".
+    /// </summary>
+    private static int DataDirectory(string[] args)
+    {
+        if (DataDirectoryCommandLine.Parse(args) is not { } command)
+        {
+            Console.WriteLine("Usage: Nexus.Agent datadir check | repair | repair --continue <backup> | restore-acl <backup> | finalize <backup>  [--data-dir <...\\NexusPC>]");
+            return 1;
+        }
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("datadir works on Windows only.");
+            return 1;
+        }
+        return Nexus.Windows.DataDirectoryCommand.Run(command, new ConsoleRepairConsole());
+    }
+
+    private sealed class ConsoleRepairConsole : IRepairConsole
+    {
+        public void WriteLine(string text) => Console.WriteLine(text);
+
+        public string? ReadLine() => Console.ReadLine();
     }
 
     private static bool TryCopyToClipboard(string text)

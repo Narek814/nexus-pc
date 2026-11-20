@@ -6,8 +6,22 @@ namespace Nexus.Setup;
 
 internal sealed record SetupOptions(bool Uninstall, bool Purge, bool Quiet, bool NoTray, string? From)
 {
+    /// <summary>
+    /// "--datadir-check", "--datadir-repair [--continue &lt;backup&gt;]", "--datadir-restore-acl &lt;backup&gt;"
+    /// [--data-dir …\NexusPC] [--quiet]: the agent's datadir command, also before any agent is installed.
+    /// </summary>
+    public Nexus.Core.Storage.DataDirectoryCommandLine? DataDirectory { get; init; }
+
     public static SetupOptions? Parse(IReadOnlyList<string> args)
     {
+        ArgumentNullException.ThrowIfNull(args);
+        if (args.Count > 0 && args[0] is "--datadir-check" or "--datadir-repair" or "--datadir-restore-acl" or "--datadir-finalize")
+        {
+            var rest = args.Skip(1).ToList();
+            var quietDataDir = rest.Remove("--quiet");
+            var command = Nexus.Core.Storage.DataDirectoryCommandLine.Parse([args[0]["--datadir-".Length..], .. rest]);
+            return command is null ? null : new SetupOptions(false, false, quietDataDir, true, null) { DataDirectory = command };
+        }
         bool uninstall = false, purge = false, quiet = false, noTray = false;
         string? from = null;
         for (var i = 0; i < args.Count; i++)
@@ -43,6 +57,94 @@ internal static partial class SetupPlan
     public const string RunValue = "NexusPC.Tray"; // same value the tray's own "Start with Windows" uses
 
     public static string InstallRoot(string programFiles) => Path.Combine(programFiles, "NexusPC");
+
+    /// <summary>Exit code: the existing data folder failed the check; the installer changed nothing (docs/SETUP.md).</summary>
+    public const int ExitDataDirectoryUntrusted = 6;
+
+    /// <summary>
+    /// Null when every privilege the data folder check needs was enabled; otherwise the refusal (exit code 6,
+    /// nothing changed): without them protected objects cannot be read, so the check was not done (R10-2).
+    /// </summary>
+    public static string? MissingPrivilegesText(IReadOnlyList<string> missing, bool uninstall) => MissingPrivilegesText(missing, uninstall, recheck: false);
+
+    /// <summary>
+    /// <paramref name="recheck"/>: the check again after the OpenRGB import (R11-1), when the service is already
+    /// stopped and the program files are updated, so "nothing changed" would not be true.
+    /// </summary>
+    public static string? MissingPrivilegesText(IReadOnlyList<string> missing, bool uninstall, bool recheck)
+    {
+        ArgumentNullException.ThrowIfNull(missing);
+        if (missing.Count == 0)
+        {
+            return null;
+        }
+        const string reason = "роверка папки данных Nexus PC не выполнена, потому что Windows не дала установщику права, нужные для чтения защищённых файлов. ";
+        const string advice = "Запустите установщик от имени администратора (учётная запись с полными правами администратора) и повторите. Подробно: docs/SETUP.md, «Восстановление папки данных».";
+        if (recheck && !uninstall)
+        {
+            return RecheckStoppedText + " П" + reason + advice;
+        }
+        return (uninstall ? "Удаление остановлено, ничего не изменено" : "Установка остановлена, ничего не изменено") + ": п" + reason + advice;
+    }
+
+    /// <summary>What the installer has already done when the folder fails the check again after the OpenRGB import (exit code 6).</summary>
+    public const string RecheckStoppedText =
+        "Установка прервана после переноса настроек OpenRGB: служба Nexus PC остановлена и не запущена, файлы программы уже обновлены, настройки подсветки перенесены. Если служба была установлена раньше, после перезагрузки Windows она запустится, только если её собственная проверка папки данных при старте пройдёт; иначе служба не запустится и запишет причину в журнал событий Windows. Исправьте папку данных и запустите установщик ещё раз.";
+
+    /// <summary>The "stopped" sentence of the data folder check: the first check changed nothing; the recheck after the import did.</summary>
+    public static string GateStoppedText(bool recheck) => recheck ? RecheckStoppedText : "Установка остановлена, ничего не изменено.";
+
+    /// <summary>Exit code: another installation, removal or datadir command holds the protected lock, or the lock is unavailable; nothing was changed.</summary>
+    public const int ExitLockedByAnotherRun = 7;
+
+    /// <summary>The installer's own words for the two refusals of the shared lock (busy, unavailable).</summary>
+    public static string LockRefusalText(string coreText) =>
+        string.Equals(coreText, Nexus.Core.Storage.ExclusiveRun.BusyText, StringComparison.Ordinal)
+            ? "Сейчас уже выполняется установка, удаление или команда восстановления папки данных Nexus PC. Ничего не изменено; дождитесь её окончания и запустите установщик ещё раз."
+            : "Не удалось создать или открыть защищённую блокировку Nexus PC, поэтому установщик не может исключить одновременную работу с папкой данных. Ничего не изменено. "
+              + (coreText.Length > Nexus.Core.Storage.ExclusiveRun.UnavailableText.Length ? "Подробности: " + coreText[Nexus.Core.Storage.ExclusiveRun.UnavailableText.Length..].Trim() : "");
+
+    /// <summary>How an unfinished repair is finished, written with the installer's own commands (not the agent's).</summary>
+    public static string InstallerFinishText(Nexus.Core.Storage.UnfinishedRepair repair)
+    {
+        ArgumentNullException.ThrowIfNull(repair);
+        var backup = Nexus.Core.Storage.DataText.Clean(repair.Backup, 400);
+        return repair.State switch
+        {
+            Nexus.Core.Storage.RepairJournal.Restored =>
+                $"NexusPC-Setup.exe --datadir-repair (новое исправление) или, если права исправлены вручную, NexusPC-Setup.exe --datadir-finalize \"{backup}\"",
+            Nexus.Core.Storage.RepairJournal.RestoreFailed =>
+                $"NexusPC-Setup.exe --datadir-restore-acl \"{backup}\" (ещё раз), затем NexusPC-Setup.exe --datadir-repair",
+            Nexus.Core.Storage.DataDirectoryRepair.Tampered =>
+                $"копия изменена, ни одна команда ей не доверяет. Проверьте её вручную и, чтобы снять блокировку, переименуйте (от имени администратора) так, чтобы имя не начиналось с NexusPC.backup-; затем NexusPC-Setup.exe --datadir-check",
+            Nexus.Core.Storage.DataDirectoryRepair.TooManyBackups =>
+                "удалите папки NexusPC.backup-…, которых вы не создавали, затем NexusPC-Setup.exe --datadir-check",
+            _ => $"NexusPC-Setup.exe --datadir-repair --continue \"{backup}\" (или вернуть права: NexusPC-Setup.exe --datadir-restore-acl \"{backup}\")",
+        };
+    }
+
+    /// <summary>What the installer says it found, by kind of structural problem (not always "links").</summary>
+    public static string BlockingKindText(Nexus.Core.Storage.DataViolationKind kind) => kind switch
+    {
+        Nexus.Core.Storage.DataViolationKind.ReparsePoint => "ссылки (точки соединения, символические ссылки, точки подключения или файлы облачных хранилищ)",
+        Nexus.Core.Storage.DataViolationKind.HardLinks => "файлы с жёсткими ссылками",
+        Nexus.Core.Storage.DataViolationKind.NotDirectoryOrFile => "объекты, которые не являются ни папкой, ни обычным файлом, или недопустимые имена",
+        Nexus.Core.Storage.DataViolationKind.OutsidePath => "объекты, ведущие за пределы папки",
+        Nexus.Core.Storage.DataViolationKind.Unreadable => "объекты, которые не удаётся прочитать",
+        Nexus.Core.Storage.DataViolationKind.TooLarge => "слишком много объектов или слишком глубокая вложенность",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>Backups made by "datadir repair" next to the data folder; never deleted automatically (not even by --purge).</summary>
+    public static IReadOnlyList<string> RemainingBackups(string dataDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(dataDirectory);
+        var trimmed = Path.TrimEndingDirectorySeparator(dataDirectory);
+        var parent = Path.GetDirectoryName(trimmed);
+        return parent is null || !Directory.Exists(parent)
+            ? []
+            : [.. Directory.EnumerateDirectories(parent, Path.GetFileName(trimmed) + Nexus.Core.Storage.DataDirectoryRepair.BackupInfix + "*").Order(StringComparer.OrdinalIgnoreCase)];
+    }
 
     /// <summary>Start menu entry for all users (C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Nexus PC.lnk).</summary>
     public static string StartMenuShortcut(string commonPrograms) => Path.Combine(commonPrograms, "Nexus PC.lnk");
