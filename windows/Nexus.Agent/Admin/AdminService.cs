@@ -34,8 +34,10 @@ internal sealed class AdminService(AgentServices services)
                 "pair.decide" => PairDecide(request, state),
                 "pair.cancel" => PairCancel(state),
                 "devices.list" => DevicesList(),
-                "devices.revoke" => DevicesRevoke(request),
-                "devices.permissions" => DevicesPermissions(request),
+                "devices.revoke" => await DevicesRevokeAsync(request, cancellationToken).ConfigureAwait(false),
+                "devices.permissions" => await DevicesPermissionsAsync(request, cancellationToken).ConfigureAwait(false),
+                "automations.owners" => AutomationsOwners(),
+                "automations.assign" => await AutomationsAssignAsync(request, cancellationToken).ConfigureAwait(false),
                 "openrgb.pause" => OpenRgbPause(true),
                 "openrgb.resume" => OpenRgbPause(false),
                 _ => Error("unknown operation"),
@@ -160,21 +162,72 @@ internal sealed class AdminService(AgentServices services)
             ["deviceId"] = d.DeviceId.ToString("D"),
             ["name"] = d.Name,
             ["permissions"] = new JsonArray([.. Permissions.ToWireNames(d.Permissions).Select(p => (JsonNode)p)]),
+            ["fingerprint"] = DeviceCrypto.DeviceKeyFingerprint(d.PublicKeySpki),
             ["pairedAt"] = d.PairedAt.ToString("O", CultureInfo.InvariantCulture),
         })]),
     });
 
-    private JsonObject DevicesRevoke(JsonObject request) =>
-        services.Devices.Remove(ParseDeviceId(request)) ? Ok([]) : Error("device not found");
+    private async Task<JsonObject> DevicesRevokeAsync(JsonObject request, CancellationToken cancellationToken)
+    {
+        var deviceId = ParseDeviceId(request);
+        if (services.Automations is not { } automations)
+        {
+            return services.Devices.Remove(deviceId) ? Ok([]) : Error("device not found");
+        }
+        var outcome = await automations.RevokeDeviceAsync(deviceId, () => services.Devices.Remove(deviceId), cancellationToken).ConfigureAwait(false);
+        if (!outcome.Changed)
+        {
+            return Error("device not found");
+        }
+        var result = new JsonObject();
+        if (outcome.HasPowerRules)
+        {
+            // Optional field: the device has shutdown/restart rules; a shutdown one of them scheduled is not cancelled.
+            result["warning"] = AutomationService.PowerRulesWarning;
+        }
+        return Ok(result);
+    }
 
-    private JsonObject DevicesPermissions(JsonObject request)
+    private async Task<JsonObject> DevicesPermissionsAsync(JsonObject request, CancellationToken cancellationToken)
     {
         var names = request["permissions"]?.AsArray().Select(n => n!.GetValue<string>()) ?? [];
         if (!Permissions.TryParse(names, out var permissions))
         {
             return Error("unknown permission name");
         }
-        return services.Devices.SetPermissions(ParseDeviceId(request), permissions) ? Ok([]) : Error("device not found");
+        var deviceId = ParseDeviceId(request);
+        return await ChangeDeviceAsync(deviceId, () => services.Devices.SetPermissions(deviceId, permissions), cancellationToken).ConfigureAwait(false)
+            ? Ok([])
+            : Error("device not found");
+    }
+
+    /// <summary>Device changes go through the automations' revocation gate, so no rule step starts on stale rights.</summary>
+    private Task<bool> ChangeDeviceAsync(Guid deviceId, Func<bool> change, CancellationToken cancellationToken) =>
+        services.Automations is { } automations
+            ? automations.ChangeDeviceAsync(deviceId, change, cancellationToken)
+            : Task.FromResult(change());
+
+    private JsonObject AutomationsOwners() => services.Automations is { } automations
+        ? Ok(new JsonObject { ["automations"] = automations.Ownerless() })
+        : Error("automations are not available");
+
+    private async Task<JsonObject> AutomationsAssignAsync(JsonObject request, CancellationToken cancellationToken)
+    {
+        if (services.Automations is not { } automations)
+        {
+            return Error("automations are not available");
+        }
+        var automationId = request["automationId"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(automationId))
+        {
+            return Error("automationId is required");
+        }
+        if (!Guid.TryParse(request["deviceId"]?.GetValue<string>(), out var deviceId))
+        {
+            return Error("deviceId is not a valid id");
+        }
+        var error = await automations.AssignOwnerAsync(automationId, deviceId, request["fingerprint"]?.GetValue<string>(), cancellationToken).ConfigureAwait(false);
+        return error is null ? Ok(new JsonObject { ["automationId"] = automationId, ["deviceId"] = deviceId.ToString("D") }) : Error(error);
     }
 
     private static Guid ParseDeviceId(JsonObject request) =>

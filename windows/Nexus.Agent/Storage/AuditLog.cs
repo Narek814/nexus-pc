@@ -26,7 +26,23 @@ internal sealed class AuditLog
     {
         // `type` may come from an unauthenticated client: cap it so the log cannot be bloated.
         var safeType = type.Length > 64 ? type[..64] : type;
-        var line = JsonSerializer.Serialize(new { ts = _time.GetUtcNow(), device = deviceId, type = safeType, ok, error, remote });
+        Append(JsonSerializer.Serialize(new { ts = _time.GetUtcNow(), device = deviceId, type = safeType, ok, error, remote }));
+    }
+
+    /// <summary>An administrator giving an ownerless automation to a device: also which rule and whose it was.</summary>
+    public void RecordAutomationAssign(string deviceId, string automationId, string? formerOwner, bool ok, string? error)
+    {
+        var safeId = automationId.Length > 64 ? automationId[..64] : automationId;
+        var safeFormer = formerOwner is { Length: > 64 } ? formerOwner[..64] : formerOwner;
+        Append(JsonSerializer.Serialize(new
+        {
+            ts = _time.GetUtcNow(), device = deviceId, type = "automations.assign", ok, error, remote = "admin",
+            automationId = safeId, formerOwner = safeFormer,
+        }));
+    }
+
+    private void Append(string line)
+    {
         lock (_lock)
         {
             var info = new FileInfo(_path);

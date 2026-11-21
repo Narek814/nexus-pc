@@ -14,11 +14,15 @@ internal static class Program
 
           Nexus.Agent                       run the agent (as a Windows service or in this console)
           Nexus.Agent pair                  open pairing for 2 minutes and approve a device
-          Nexus.Agent devices               list paired devices
+          Nexus.Agent devices               list paired devices (with each device's key fingerprint)
           Nexus.Agent devices revoke <id>   remove a device; its connections lose access at once
           Nexus.Agent devices permissions <id> <p1,p2,...>
                                             set permissions: power, apps, monitoring, input, screen,
                                             files, clipboard, rgb, automation, ai (or "none")
+          Nexus.Agent automations owners    list automations that have no owner (they do not run)
+          Nexus.Agent automations assign <automationId> <deviceId> <fingerprint>
+                                            give such an automation to a paired device; the fingerprint
+                                            must match the one "devices" shows for it
           Nexus.Agent status                show agent status
           Nexus.Agent openrgb               open the OpenRGB window installed with Nexus PC (device set-up);
                                             lighting from the phone keeps working while it is open
@@ -68,6 +72,16 @@ internal static class Program
                         ["op"] = "devices.permissions",
                         ["deviceId"] = args[2],
                         ["permissions"] = args[3] == "none" ? new JsonArray() : new JsonArray([.. args[3].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => (JsonNode)p)]),
+                    }).ConfigureAwait(false),
+                "automations" when args.Length == 2 && args[1] == "owners" =>
+                    await PrintAsync(new JsonObject { ["op"] = "automations.owners" }).ConfigureAwait(false),
+                "automations" when args.Length == 5 && args[1] == "assign" =>
+                    await PrintAsync(new JsonObject
+                    {
+                        ["op"] = "automations.assign",
+                        ["automationId"] = args[2],
+                        ["deviceId"] = args[3],
+                        ["fingerprint"] = args[4],
                     }).ConfigureAwait(false),
                 "status" => await PrintAsync(new JsonObject { ["op"] = "status" }).ConfigureAwait(false),
                 "openrgb" when args.Length == 1 => await OpenRgbWindowAsync().ConfigureAwait(false),

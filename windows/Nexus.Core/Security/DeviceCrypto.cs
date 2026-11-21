@@ -32,6 +32,25 @@ public static class DeviceCrypto
             $"nexuspc-auth-v1\n{pcId:D}\n{deviceId:D}\n{Convert.ToBase64String(nonce)}\n{certificateFingerprint.ToUpperInvariant()}");
     }
 
+    /// <summary>
+    /// Short fingerprint of a paired device's public key: the first 8 bytes of SHA-256 over the SPKI,
+    /// uppercase hex (16 characters). Shown by "devices" and checked by "automations assign", so the
+    /// administrator confirms which phone gets a rule, not just which id was typed.
+    /// </summary>
+    public static string DeviceKeyFingerprint(ReadOnlySpan<byte> spki) =>
+        Convert.ToHexString(SHA256.HashData(spki).AsSpan(0, 8));
+
+    /// <summary>Compares a typed fingerprint ignoring case and the separators people add (space, ':' and '-').</summary>
+    public static bool DeviceKeyFingerprintMatches(ReadOnlySpan<byte> spki, string? typed)
+    {
+        if (string.IsNullOrWhiteSpace(typed))
+        {
+            return false;
+        }
+        var normalized = new string([.. typed.Where(c => c is not (' ' or ':' or '-'))]).ToUpperInvariant();
+        return string.Equals(normalized, DeviceKeyFingerprint(spki), StringComparison.Ordinal);
+    }
+
     /// <summary>Accepts only uncompressed P-256 keys encoded as SubjectPublicKeyInfo.</summary>
     public static bool IsValidP256PublicKey(ReadOnlySpan<byte> spki)
     {

@@ -27,4 +27,23 @@ public enum DeviceCrypto {
     public static func certificateFingerprint(der: Data) -> String {
         SHA256.hash(data: der).map { String(format: "%02X", $0) }.joined()
     }
+
+    /// Short fingerprint of this device's public key, as the agent shows it ("devices") and checks it
+    /// ("automations assign"): the first 8 bytes of SHA-256 over the SPKI DER, uppercase hex (16 characters).
+    /// Counterpart of C# `DeviceCrypto.DeviceKeyFingerprint`.
+    public static func deviceKeyFingerprint(publicKey spki: Data) -> String {
+        SHA256.hash(data: spki).prefix(8).map { String(format: "%02X", $0) }.joined()
+    }
+
+    /// The same fingerprint in groups of four for reading it off the screen ("EBE0 01F7 42CB A123").
+    /// The agent ignores spaces when the administrator types it.
+    public static func grouped(_ fingerprint: String, by size: Int = 4) -> String {
+        var groups: [String] = []
+        var rest = Substring(fingerprint)
+        while !rest.isEmpty {
+            groups.append(String(rest.prefix(size)))
+            rest = rest.dropFirst(size)
+        }
+        return groups.joined(separator: " ")
+    }
 }

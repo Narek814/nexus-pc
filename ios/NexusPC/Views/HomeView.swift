@@ -310,6 +310,19 @@ struct HomeView: View {
 
     private var forgetButton: some View {
         VStack(spacing: 14) {
+            // What the administrator types in "automations assign" on the PC (T3), next to what "devices" shows.
+            if let fingerprint = controller.deviceKeyFingerprint {
+                VStack(spacing: 2) {
+                    Text("Отпечаток ключа этого iPhone")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textMuted)
+                    Text(DeviceCrypto.grouped(fingerprint))
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(Theme.textPrimary)
+                        .textSelection(.enabled)
+                }
+                .accessibilityElement(children: .combine)
+            }
             // If the PC moved to another address and was not found automatically: scan its QR again.
             Button {
                 pairingLink = nil

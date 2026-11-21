@@ -90,6 +90,31 @@ final class DeviceKeyFormatTests: XCTestCase {
         XCTAssertEqual(Array(spki.prefix(2)), [0x30, 0x59]) // SEQUENCE, 89 bytes
     }
 
+    /// Keys are the fixed test keys of shared/protocol/fixtures/crypto.v1.json; the expected values were
+    /// produced by the agent's C# `Nexus.Core.Security.DeviceCrypto.DeviceKeyFingerprint` (T3).
+    func testDeviceKeyFingerprintMatchesCSharp() throws {
+        let vectors = [
+            ("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBBsArFozQrIlVzJEfzWLidQhjKnGu7ggMkAcVV3BfBOMssi8oT021AyyhMtbd/qwLBVy3i61mgMWD8IV6BeWTA==",
+             "EBE001F742CBA123"),
+            ("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEwvM5vwVswtosj1HP5qCdUX1PRMMyhbblcc9E4YyLgy0iou1ww+nsRW6kKYvJZzXWXUA7BFHXFvTkAcRdKYaHdg==",
+             "A94C1A10709C20F0"),
+        ]
+        for (key, expected) in vectors {
+            let spki = try XCTUnwrap(Data(base64Encoded: key))
+            XCTAssertEqual(DeviceCrypto.deviceKeyFingerprint(publicKey: spki), expected)
+        }
+        XCTAssertEqual(DeviceCrypto.grouped("EBE001F742CBA123"), "EBE0 01F7 42CB A123")
+    }
+
+    /// A real signer's key gives the same 16-character form (what the iPhone shows next to the PC).
+    func testDeviceKeyFingerprintOfSigner() {
+        let signer = SoftwareSigner()
+        let fingerprint = DeviceCrypto.deviceKeyFingerprint(publicKey: signer.publicKeySPKI)
+        XCTAssertEqual(fingerprint.count, 16)
+        XCTAssertEqual(fingerprint, fingerprint.uppercased())
+        XCTAssertTrue(fingerprint.allSatisfy(\.isHexDigit))
+    }
+
     func testSignatureRoundTripsAsDer() throws {
         let key = P256.Signing.PrivateKey()
         let data = Data("nexuspc".utf8)

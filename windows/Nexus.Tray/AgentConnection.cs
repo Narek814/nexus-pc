@@ -14,6 +14,12 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
 {
     private const string PipeName = "NexusPC.Session";
     private const string ServiceName = "NexusPCAgent";
+
+    /// <summary>
+    /// The agent did not answer within the call's timeout. Local to tray ↔ agent: never sent to a phone,
+    /// so it is not one of the wire codes in <see cref="Nexus.Core.Protocol.ErrorCodes"/>.
+    /// </summary>
+    public const string SessionTimeout = "session.timeout";
     private readonly CancellationTokenSource _stop = new();
     private JsonLineChannel? _channel;
 
@@ -36,7 +42,12 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
         {
             return await channel.CallAsync(op, args, timeout ?? TimeSpan.FromSeconds(15), _stop.Token).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or ObjectDisposedException)
+        catch (TimeoutException)
+        {
+            // The agent may still finish the call (a revocation waits for a running automation step).
+            return RpcResult.Failure(SessionTimeout, "Служба Nexus PC Agent не ответила вовремя.");
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
         {
             return RpcResult.Failure("session.unavailable", "Служба Nexus PC Agent не ответила.");
         }

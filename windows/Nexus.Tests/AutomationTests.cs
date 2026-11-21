@@ -237,22 +237,283 @@ public sealed class AutomationProtocolTests : IAsyncLifetime
         Assert.StartsWith("остановлена", summary, StringComparison.Ordinal);
     }
 
+    // Rewritten for owner-only automations (SEC-5). Before, a revoked creator's rule still started from its
+    // trigger and failed at its first step. Now it is ownerless: the trigger skips it ("пропущена") and the rule
+    // is kept for an administrator to reassign. A run started anyway still fails the fresh per-step check with
+    // the same "отозвано" entry as before, so nothing that was checked before is checked less.
     [Fact]
     public async Task Revoking_the_creator_stops_its_rules_from_acting()
     {
-        await using var tray = await _host.ConnectTrayAsync();
         var (client, deviceId, key) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
         await using var _ = client;
         using var __ = key;
-        await client.RequestAsync("automations.upsert", Upsert("""{"id":"lock","name":"Lock","trigger":{"type":"pcStarted"},"actions":[{"type":"lock"}]}"""));
+        Assert.True((await client.RequestAsync("automations.upsert", Upsert("""{"id":"lock","name":"Lock","trigger":{"type":"userSignedIn"},"actions":[{"type":"lock"}]}"""))).IsOk());
 
-        _host.Services.Devices.Remove(deviceId);
-        Assert.True(_host.Services.Automations!.Start(_host.Services.Automations.Find("lock")!, "test"));
+        Assert.True((await AdminAsync(new JsonObject { ["op"] = "devices.revoke", ["deviceId"] = deviceId.ToString("D") })).IsOk());
+        await using var tray = await _host.ConnectTrayAsync(); // the sign-in trigger fires
+        await AgentIntegrationTests.WaitUntil(() => _host.Services.History.List(20, null).Any(e => e.Title == "Автоматизация «Lock»: пропущена"));
+        Assert.NotNull(_host.Services.Automations!.Find("lock")); // kept, not deleted
+
+        Assert.True(_host.Services.Automations.Start(_host.Services.Automations.Find("lock")!, "test"));
         await _host.Services.Automations.IdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
         Assert.DoesNotContain("lock", tray.Desktop.Calls);
         var entry = _host.Services.History.List(5, null).First(e => e.Kind == "automation");
         Assert.False(entry.Ok);
         Assert.Contains("отозвано", entry.Detail, StringComparison.Ordinal);
+    }
+
+    private Task<JsonObject> AdminAsync(JsonObject request) =>
+        _host.Admin.HandleAsync(request, new Nexus.Agent.Admin.AdminConnectionState(), CancellationToken.None);
+
+    private static JsonObject Ref(string id) => new() { ["automationId"] = id };
+
+    private async Task RestartWithRulesAsync(string rulesJson)
+    {
+        var dir = _host.DataDirectory;
+        await _host.DisposeAsync();
+        File.WriteAllText(Path.Combine(dir, "automations.json"), rulesJson);
+        _host = await AgentTestHost.StartAsync(dataDirectory: dir, metrics: new FakeMetricsSource());
+    }
+
+    private int HistoryCount(string title) => _host.Services.History.List(200, null).Count(e => e.Title == title);
+
+    [Fact]
+    public async Task Another_device_cannot_list_run_stop_change_or_delete_a_rule()
+    {
+        await using var tray = await _host.ConnectTrayAsync();
+        var (a, _, aKey) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var _ = a;
+        using var __ = aKey;
+        var (b, _, bKey) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var ___ = b;
+        using var ____ = bKey;
+
+        Assert.True((await a.RequestAsync("automations.upsert", Upsert("""{"id":"mine","name":"Mine","trigger":{"type":"time","time":"03:00"},"actions":[{"type":"wait","seconds":3600},{"type":"lock"}]}"""))).IsOk());
+        var before = AutomationJson.ToJson(_host.Services.Automations!.Find("mine")!).ToJsonString();
+
+        Assert.Empty((await b.RequestAsync("automations.list"))["payload"]!["automations"]!.AsArray());
+        Assert.Equal(ErrorCodes.AutomationNotFound, (await b.RequestAsync("automations.run", Ref("mine"))).ErrorCode());
+        Assert.Equal(ErrorCodes.AutomationNotFound, (await b.RequestAsync("automations.upsert", Upsert("""{"id":"mine","name":"Taken","trigger":{"type":"pcStarted"},"actions":[{"type":"lock"}]}"""))).ErrorCode());
+        Assert.Equal(ErrorCodes.AutomationNotFound, (await b.RequestAsync("automations.delete", Ref("mine"))).ErrorCode());
+
+        // While it runs: B cannot stop it either, and it is still running afterwards.
+        Assert.True((await a.RequestAsync("automations.run", Ref("mine"))).IsOk());
+        Assert.Equal(ErrorCodes.AutomationNotFound, (await b.RequestAsync("automations.stop", Ref("mine"))).ErrorCode());
+        Assert.True((await a.RequestAsync("automations.list"))["payload"]!["automations"]![0]!["running"]!.GetValue<bool>());
+        Assert.Equal(before, AutomationJson.ToJson(_host.Services.Automations.Find("mine")!).ToJsonString());
+
+        // The owner still can.
+        Assert.True((await a.RequestAsync("automations.stop", Ref("mine")))["payload"]!["stopped"]!.GetValue<bool>());
+        await _host.Services.Automations.IdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True((await a.RequestAsync("automations.delete", Ref("mine"))).IsOk());
+        Assert.Null(_host.Services.Automations.Find("mine"));
+        Assert.DoesNotContain("lock", tray.Desktop.Calls);
+    }
+
+    [Fact]
+    public async Task Manual_run_needs_the_callers_permissions_and_confirmation_for_shutdown()
+    {
+        var (client, deviceId, key) = await ClientWith(Permission.Automation | Permission.Monitoring | Permission.Power);
+        await using var _ = client;
+        using var __ = key;
+        const string shutdown = """{"id":"bed","name":"Bed","trigger":{"type":"time","time":"01:30"},"actions":[{"type":"shutdown","delaySeconds":600}]}""";
+        Assert.True((await client.RequestAsync("automations.upsert", Upsert(shutdown), confirmed: true)).IsOk());
+
+        _host.Services.Devices.SetPermissions(deviceId, Permission.Automation | Permission.Monitoring);
+        var denied = await client.RequestAsync("automations.run", Ref("bed"), confirmed: true);
+        Assert.Equal(ErrorCodes.PermissionDenied, denied.ErrorCode());
+        Assert.Contains("power", denied["error"]!["message"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        _host.Services.Devices.SetPermissions(deviceId, Permission.Automation | Permission.Monitoring | Permission.Power);
+        Assert.Equal(ErrorCodes.ConfirmationRequired, (await client.RequestAsync("automations.run", Ref("bed"))).ErrorCode());
+        Assert.Empty(_host.Power!.Calls);
+
+        Assert.True((await client.RequestAsync("automations.run", Ref("bed"), confirmed: true)).IsOk());
+        await _host.Services.Automations!.IdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(_host.Power.Calls, c => c.StartsWith("Shutdown:600:False", StringComparison.Ordinal));
+        Assert.Equal(ErrorCodes.AutomationNotFound, (await client.RequestAsync("automations.run", Ref("nothing"))).ErrorCode());
+    }
+
+    [Fact]
+    public async Task Ownerless_rule_is_skipped_by_its_sensor_once_kept_and_not_counted()
+    {
+        await using var tray = await _host.ConnectTrayAsync();
+        var (b, bId, bKey) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var _ = b;
+        using var __ = bKey;
+        Assert.True((await b.RequestAsync("automations.upsert", Upsert("""{"id":"hot","name":"Hot","trigger":{"type":"metric","metric":"gpuTemperature","above":55},"actions":[{"type":"lock"}]}"""))).IsOk());
+        Assert.True((await AdminAsync(new JsonObject { ["op"] = "devices.revoke", ["deviceId"] = bId.ToString("D") })).IsOk());
+
+        for (var i = 0; i < 3; i++)
+        {
+            _host.Services.Metrics.SampleNow(); // the fake GPU stays at 60 °C
+            _host.Services.Automations!.Tick();
+        }
+        await AgentIntegrationTests.WaitUntil(() => HistoryCount("Автоматизация «Hot»: пропущена") == 1);
+        await Task.Delay(TimeSpan.FromSeconds(2.5)); // the service's own 2-second tick must not repeat it either
+        _host.Services.Metrics.SampleNow();
+        _host.Services.Automations!.Tick();
+        Assert.Equal(1, HistoryCount("Автоматизация «Hot»: пропущена"));
+        Assert.DoesNotContain("lock", tray.Desktop.Calls);
+        Assert.NotNull(_host.Services.Automations.Find("hot"));
+
+        // 32 places are still free for rules that have an owner; the 33rd is refused.
+        var (a, _, aKey) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var ___ = a;
+        using var ____ = aKey;
+        for (var i = 0; i < AutomationRules.MaxAutomations; i++)
+        {
+            var saved = await a.RequestAsync("automations.upsert", Upsert($$"""{"id":"r{{i}}","name":"R{{i}}","trigger":{"type":"time","time":"04:00"},"actions":[{"type":"lock"}]}"""));
+            Assert.True(saved.IsOk(), saved.ToJsonString());
+        }
+        Assert.Equal(ErrorCodes.AutomationLimit, (await a.RequestAsync("automations.upsert", Upsert("""{"id":"r99","name":"R99","trigger":{"type":"time","time":"04:00"},"actions":[{"type":"lock"}]}"""))).ErrorCode());
+        Assert.Equal(AutomationRules.MaxAutomations + 1, _host.Services.Automations.Rules.Count);
+    }
+
+    [Fact]
+    public async Task Ownerless_rule_is_skipped_by_its_schedule()
+    {
+        var now = DateTimeOffset.Now;
+        if (now.Second >= 50)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(61 - now.Second)); // stay inside one minute
+            now = DateTimeOffset.Now;
+        }
+        var time = TimeZoneInfo.ConvertTime(now, TimeZoneInfo.Local).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        // One rule from an old version (no creator), one whose creator was never paired here.
+        await RestartWithRulesAsync($$"""
+            [{"id":"old","name":"Old","trigger":{"type":"time","time":"{{time}}"},"actions":[{"type":"sleep"}]},
+             {"id":"gone","name":"Gone","trigger":{"type":"time","time":"{{time}}"},"actions":[{"type":"sleep"}],"createdBy":"{{Guid.NewGuid():D}}"}]
+            """);
+        Assert.Equal(2, _host.Services.Automations!.Rules.Count);
+        _host.Services.Automations.Tick();
+        await AgentIntegrationTests.WaitUntil(() => HistoryCount("Автоматизация «Old»: пропущена") == 1 && HistoryCount("Автоматизация «Gone»: пропущена") == 1);
+        _host.Services.Automations.Tick();
+        await Task.Delay(TimeSpan.FromSeconds(2.5));
+        Assert.Equal(1, HistoryCount("Автоматизация «Old»: пропущена"));
+        Assert.Equal(1, HistoryCount("Автоматизация «Gone»: пропущена"));
+        await _host.Services.Automations.IdleAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.DoesNotContain("Sleep", _host.Power!.Calls);
+        Assert.Equal(2, _host.Services.Automations.Rules.Count);
+    }
+
+    [Theory]
+    [InlineData("devices.revoke")]
+    [InlineData("devices.permissions")]
+    public async Task A_change_while_a_step_runs_waits_for_it_and_stops_the_next_step(string op)
+    {
+        await using var tray = await _host.ConnectTrayAsync();
+        using var hold = new ManualResetEventSlim();
+        tray.Desktop.HoldLock = hold;
+        var (client, deviceId, key) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var _ = client;
+        using var __ = key;
+        Assert.True((await client.RequestAsync("automations.upsert", Upsert("""{"id":"two","name":"Two","trigger":{"type":"pcStarted"},"actions":[{"type":"lock"},{"type":"sleep"}]}"""))).IsOk());
+        Assert.True((await client.RequestAsync("automations.run", Ref("two"))).IsOk());
+        Assert.True(tray.Desktop.LockEntered.Wait(TimeSpan.FromSeconds(10)));
+
+        var request = new JsonObject { ["op"] = op, ["deviceId"] = deviceId.ToString("D") };
+        if (op == "devices.permissions")
+        {
+            request["permissions"] = new JsonArray("automation", "monitoring"); // power removed
+        }
+        var change = AdminAsync(request);
+        await Task.Delay(300);
+        Assert.False(change.IsCompleted); // waits for the step that already started
+        hold.Set();
+        Assert.True((await change.WaitAsync(TimeSpan.FromSeconds(10))).IsOk());
+
+        await _host.Services.Automations!.IdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.DoesNotContain("Sleep", _host.Power!.Calls);
+        var entry = _host.Services.History.List(5, null).First(e => e.Kind == "automation");
+        Assert.False(entry.Ok);
+    }
+
+    [Fact]
+    public async Task Administrator_assigns_an_ownerless_rule_only_to_a_verified_device()
+    {
+        var (b, bId, bKey) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var _ = b;
+        using var __ = bKey;
+        Assert.True((await b.RequestAsync("automations.upsert", Upsert("""{"id":"night","name":"Night","trigger":{"type":"time","time":"23:00"},"actions":[{"type":"lock"}]}"""))).IsOk());
+        Assert.True((await AdminAsync(new JsonObject { ["op"] = "devices.revoke", ["deviceId"] = bId.ToString("D") })).IsOk());
+
+        var (a, aId, aKey) = await ClientWith(Permission.Automation | Permission.Monitoring);
+        await using var ___ = a;
+        using var ____ = aKey;
+        var owners = await AdminAsync(new JsonObject { ["op"] = "automations.owners" });
+        var listed = Assert.Single(owners["automations"]!.AsArray());
+        Assert.Equal("night", listed!["automationId"]!.GetValue<string>());
+
+        var devices = await AdminAsync(new JsonObject { ["op"] = "devices.list" });
+        var fingerprint = devices["devices"]!.AsArray().Single(d => d!["deviceId"]!.GetValue<string>() == aId.ToString("D"))!["fingerprint"]!.GetValue<string>();
+        Assert.Equal(DeviceCrypto.DeviceKeyFingerprint(aKey.ExportSubjectPublicKeyInfo()), fingerprint);
+        Assert.Matches("^[0-9A-F]{16}$", fingerprint);
+
+        JsonObject Assign(Guid device, string fp) => new() { ["op"] = "automations.assign", ["automationId"] = "night", ["deviceId"] = device.ToString("D"), ["fingerprint"] = fp };
+        var stored = AutomationJson.ToJson(_host.Services.Automations!.Find("night")!).ToJsonString();
+
+        var wrong = await AdminAsync(Assign(aId, "0000000000000000"));
+        Assert.False(wrong.IsOk());
+        Assert.Contains("fingerprint", wrong["error"]!.GetValue<string>(), StringComparison.Ordinal);
+        var unpaired = await AdminAsync(Assign(Guid.NewGuid(), fingerprint));
+        Assert.Contains("not paired", unpaired["error"]!.GetValue<string>(), StringComparison.Ordinal);
+        var revoked = await AdminAsync(Assign(bId, DeviceCrypto.DeviceKeyFingerprint(bKey.ExportSubjectPublicKeyInfo())));
+        Assert.Contains("not paired", revoked["error"]!.GetValue<string>(), StringComparison.Ordinal);
+        var weak = await AdminAsync(Assign(aId, fingerprint));
+        Assert.Contains("power", weak["error"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal(stored, AutomationJson.ToJson(_host.Services.Automations.Find("night")!).ToJsonString());
+        Assert.Empty((await a.RequestAsync("automations.list"))["payload"]!["automations"]!.AsArray());
+
+        _host.Services.Devices.SetPermissions(aId, Permissions.DefaultAfterPairing | Permission.Automation);
+        // The file cannot be written (a folder is where the temporary copy goes): clear error, rule unchanged, audited.
+        var blocker = Path.Combine(_host.DataDirectory, "automations.json.tmp");
+        Directory.CreateDirectory(blocker);
+        var unsaved = await AdminAsync(Assign(aId, fingerprint));
+        Directory.Delete(blocker);
+        Assert.False(unsaved.IsOk());
+        Assert.Contains("could not save", unsaved["error"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal(stored, AutomationJson.ToJson(_host.Services.Automations.Find("night")!).ToJsonString());
+        Assert.Empty((await a.RequestAsync("automations.list"))["payload"]!["automations"]!.AsArray());
+        var saveFailure = File.ReadAllLines(_host.Services.Audit.FilePath).Last(l => l.Contains("\"automations.assign\"", StringComparison.Ordinal));
+        Assert.Contains("\"ok\":false", saveFailure, StringComparison.Ordinal);
+        Assert.Contains("could not save", saveFailure, StringComparison.Ordinal);
+        Assert.Contains("\"automationId\":\"night\"", saveFailure, StringComparison.Ordinal);
+
+        var grouped = string.Join("-", fingerprint.ToLowerInvariant().Chunk(4).Select(c => new string(c)));
+        Assert.True((await AdminAsync(Assign(aId, grouped))).IsOk());
+        Assert.Equal(aId, Guid.Parse(_host.Services.Automations.Find("night")!.CreatedBy!));
+        Assert.Equal("night", (await a.RequestAsync("automations.list"))["payload"]!["automations"]![0]!["id"]!.GetValue<string>());
+        Assert.Empty((await AdminAsync(new JsonObject { ["op"] = "automations.owners" }))["automations"]!.AsArray());
+        Assert.Contains("already has an owner", (await AdminAsync(Assign(aId, fingerprint)))["error"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        var audit = File.ReadAllLines(_host.Services.Audit.FilePath).Where(l => l.Contains("\"automations.assign\"", StringComparison.Ordinal)).ToList();
+        Assert.Contains(audit, l => l.Contains("\"ok\":true", StringComparison.Ordinal) && l.Contains(aId.ToString("D"), StringComparison.Ordinal)
+            && l.Contains("\"automationId\":\"night\"", StringComparison.Ordinal) && l.Contains($"\"formerOwner\":\"{bId:D}\"", StringComparison.Ordinal));
+        Assert.True(audit.Count(l => l.Contains("\"ok\":false", StringComparison.Ordinal)) >= 5);
+    }
+
+    [Fact]
+    public async Task Owner_ids_are_compared_as_guids_and_need_a_paired_device_with_a_valid_key()
+    {
+        var (client, deviceId, key) = await ClientWith(Permissions.DefaultAfterPairing | Permission.Automation);
+        await using var _ = client;
+        using var __ = key;
+        var automations = _host.Services.Automations!;
+        var rule = new AutomationDefinition("x", "X", true, new AutomationTrigger(TriggerKind.PcStarted), null, [], deviceId.ToString("N").ToUpperInvariant());
+        Assert.True(automations.IsConfirmedOwner(rule, deviceId.ToString("D")));
+        Assert.True(automations.IsConfirmedOwner(rule, deviceId.ToString("B")));
+        Assert.True(automations.HasConfirmedOwner(rule));
+        Assert.False(automations.IsConfirmedOwner(rule, Guid.NewGuid().ToString("D")));
+        Assert.False(automations.IsConfirmedOwner(rule, "not-a-guid"));
+        Assert.False(automations.IsConfirmedOwner(rule, null));
+        Assert.False(automations.HasConfirmedOwner(rule with { CreatedBy = null }));
+        Assert.False(automations.HasConfirmedOwner(rule with { CreatedBy = Guid.Empty.ToString("D") }));
+
+        // A record whose key is not a valid P-256 key is not an owner (damaged or foreign devices.json entry).
+        var broken = Guid.NewGuid();
+        _host.Services.Devices.Add(new DeviceRecord(broken, "Broken", [1, 2, 3], Permissions.DefaultAfterPairing | Permission.Automation, DateTimeOffset.UtcNow));
+        Assert.False(automations.IsConfirmedOwner(rule with { CreatedBy = broken.ToString("D") }, broken.ToString("D")));
     }
 
     [Fact]

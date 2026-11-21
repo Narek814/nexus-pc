@@ -10,6 +10,31 @@ struct AutomationsView: View {
     @State private var rules: [AutomationDraft] = []
     @State private var status: String?
     @State private var editing: AutomationDraft?
+    @State private var confirming: PendingConfirmation?
+
+    /// A rule that shuts down or restarts the PC: the agent wants `confirmed`, so the person is asked first (T3).
+    enum PendingConfirmation: Identifiable {
+        case run(AutomationDraft)
+        case setEnabled(AutomationDraft, Bool)
+
+        var id: String {
+            switch self {
+            case let .run(rule): "run-\(rule.id)"
+            case let .setEnabled(rule, value): "enable-\(rule.id)-\(value)"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case let .run(rule):
+                "«\(rule.name)» выключает или перезагружает ПК. Windows покажет отсчёт, его можно отменить. Запустить сейчас?"
+            case let .setEnabled(rule, value):
+                value
+                    ? "«\(rule.name)» выключает или перезагружает ПК. Windows покажет отсчёт, его можно отменить. Включить автоматизацию?"
+                    : "Отключить автоматизацию «\(rule.name)»? Она выключает или перезагружает ПК, поэтому ПК просит подтвердить изменение."
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -58,6 +83,16 @@ struct AutomationsView: View {
         .sheet(item: $editing) { draft in
             AutomationEditor(controller: controller, draft: draft) { await load() }
         }
+        .confirmationDialog(confirming?.title ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                            titleVisibility: .visible, presenting: confirming) { pending in
+            switch pending {
+            case let .run(rule):
+                Button("Запустить", role: .destructive) { Task { await command("automations.run", rule, confirmed: true) } }
+            case let .setEnabled(rule, value):
+                Button(value ? "Включить" : "Отключить", role: value ? .destructive : nil) { Task { await setEnabled(rule, value) } }
+            }
+            Button("Отмена", role: .cancel) {}
+        }
     }
 
     private func ruleCard(_ rule: AutomationDraft) -> some View {
@@ -69,7 +104,14 @@ struct AutomationsView: View {
                         Text(rule.triggerSummary).font(.caption).foregroundStyle(Theme.cyan)
                     }
                     Spacer()
-                    Toggle("", isOn: Binding(get: { rule.enabled }, set: { value in Task { await setEnabled(rule, value) } }))
+                    // Until the person agrees, the switch keeps showing the saved state (it reads `rules`).
+                    Toggle("", isOn: Binding(get: { rule.enabled }, set: { value in
+                        if rule.needsConfirmation {
+                            confirming = .setEnabled(rule, value)
+                        } else {
+                            Task { await setEnabled(rule, value) }
+                        }
+                    }))
                         .labelsHidden()
                         .tint(Theme.violet)
                 }
@@ -86,7 +128,13 @@ struct AutomationsView: View {
                         Button("Остановить") { Task { await command("automations.stop", rule) } }
                             .foregroundStyle(.orange)
                     } else {
-                        Button("Запустить сейчас") { Task { await command("automations.run", rule) } }
+                        Button("Запустить сейчас") {
+                            if rule.needsConfirmation {
+                                confirming = .run(rule)
+                            } else {
+                                Task { await command("automations.run", rule) }
+                            }
+                        }
                             .foregroundStyle(Theme.cyan)
                     }
                     Button("Изменить") { editing = rule }
@@ -122,16 +170,17 @@ struct AutomationsView: View {
         var changed = rule
         changed.enabled = value
         do {
+            // Only reached for a shutdown/restart rule after the person agreed in the dialog.
             apply(try await controller.fetch("automations.upsert", payload: ["automation": changed.payload], confirmed: changed.needsConfirmation))
             status = nil
         } catch {
-            status = AutomationDraft.describe(error, controller: controller)
+            await show(error)
         }
     }
 
-    private func command(_ type: String, _ rule: AutomationDraft) async {
+    private func command(_ type: String, _ rule: AutomationDraft, confirmed: Bool = false) async {
         do {
-            let result = try await controller.fetch(type, payload: ["automationId": rule.id])
+            let result = try await controller.fetch(type, payload: ["automationId": rule.id], confirmed: confirmed)
             if type == "automations.delete" {
                 apply(result)
             } else {
@@ -140,8 +189,16 @@ struct AutomationsView: View {
             }
             status = type == "automations.run" ? "«\(rule.name)» запущена" : nil
         } catch {
-            status = AutomationDraft.describe(error, controller: controller)
+            await show(error)
         }
+    }
+
+    /// A rule the PC does not know (deleted, or not this iPhone's): the list is reloaded so it disappears.
+    private func show(_ error: Error) async {
+        if (error as? NexusError)?.code == "automations.notFound" {
+            await load()
+        }
+        status = AutomationDraft.describe(error, controller: controller)
     }
 }
 
@@ -308,6 +365,9 @@ struct AutomationEditor: View {
             await onSaved()
             dismiss()
         } catch {
+            if (error as? NexusError)?.code == "automations.notFound" {
+                await onSaved() // reloads the list behind the editor
+            }
             self.error = AutomationDraft.describe(error, controller: controller)
         }
     }
@@ -601,8 +661,17 @@ struct AutomationDraft: Identifiable {
     @MainActor
     static func describe(_ error: Error, controller: PCController) -> String {
         let nexus = error as? NexusError
+        if nexus?.code == "automations.notFound" {
+            // Deleted, or not created by this iPhone (the PC does not tell which). Not a permission problem.
+            return "Такой автоматизации нет. Список обновлён."
+        }
         if nexus?.code == "auth.permissionDenied", case let .server(_, message)? = nexus, message.contains("разрешения:") {
             return message + " Добавьте их этому iPhone командой администратора на ПК."
+        }
+        // The command-level check ("Device lacks permission for 'automations.…'"): this iPhone has no
+        // "automation" permission. Any other refusal shows the PC's own text instead of the grant-all advice.
+        if nexus?.code == "auth.permissionDenied", case let .server(_, message)? = nexus, !message.contains("automations.") {
+            return message
         }
         if nexus?.code == "auth.permissionDenied" {
             let id = controller.pc?.deviceId.uuidString.lowercased() ?? "<deviceId>"
