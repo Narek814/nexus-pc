@@ -157,6 +157,11 @@ internal sealed class DevicesForm : Form
         }
         var result = await _agent.CallAsync(SessionOps.DevicesRevoke, new JsonObject { ["deviceId"] = item.Id });
         _status.Text = result.Ok ? $"«{item.Name}» отключено." : "Не удалось: " + result.Message;
+        // Optional: the device had shutdown or restart automations; one of them may have scheduled a shutdown already.
+        if (result.Ok && result.Result?["warning"] is JsonValue value && value.TryGetValue<string>(out var warning) && warning.Length > 0)
+        {
+            MessageBox.Show(this, warning, "Nexus PC", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
         await LoadAsync();
     }
 }

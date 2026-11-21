@@ -22,8 +22,11 @@ namespace Nexus.Agent.Server;
 /// give it to a paired device (<see cref="AssignOwnerAsync"/>).
 /// <para>
 /// Revocation gate: every step that acts on the PC runs inside <c>_gate</c>, after a fresh check of the
-/// owner and its permissions; <see cref="ChangeDeviceAsync"/> changes devices inside the same gate. So a
-/// step either started before the change (and the change waits for it) or sees the change and does not start.
+/// owner and its permissions; <see cref="ChangeDeviceAsync"/> and <see cref="RevokeDeviceAsync"/> change devices
+/// inside the same gate. So a step either started before the change (and the change waits for it) or sees the
+/// change and does not start. A revocation also marks the device (<c>_revoking</c>) before it waits for the gate:
+/// from then on no rule of that device starts, no waiting step of it begins, and its running rules are cancelled,
+/// except the one step already inside the gate (<c>_inFlightRuleId</c>), which the revocation waits for.
 /// Lock order: <c>_gate</c> (async, outermost) → <c>_lock</c> → the device store's own lock. Nothing waits for
 /// <c>_gate</c> while holding <c>_lock</c>, and "wait" steps never hold <c>_gate</c>.
 /// </para>
@@ -41,6 +44,12 @@ internal sealed partial class AutomationService : BackgroundService
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (DateTimeOffset At, bool Ok, string Summary)> _lastRun = new(StringComparer.Ordinal);
+    // Devices being revoked, with a count for parallel revocations of the same device. Under _lock.
+    private readonly Dictionary<Guid, int> _revoking = [];
+    // The rule whose step is inside _gate right now (at most one: _gate is SemaphoreSlim(1, 1)). Under _lock.
+    private string? _inFlightRuleId;
+    // Runs that left _running but have not written their history entry yet (IdleAsync). Under _lock.
+    private int _finishing;
     private List<AutomationDefinition> _rules;
     private DateTimeOffset _lastSignIn = DateTimeOffset.MinValue;
     private DateTimeOffset _lastEvaluated;
@@ -251,20 +260,135 @@ internal sealed partial class AutomationService : BackgroundService
         }
         if (changed)
         {
+            StopNotAllowed(deviceId);
+        }
+        return changed;
+    }
+
+    /// <summary>Stops the device's running rules that are no longer allowed.</summary>
+    private void StopNotAllowed(Guid deviceId)
+    {
+        lock (_lock)
+        {
+            // Collect first: a cancelled run may finish inline and remove itself from _running.
+            var stop = _running
+                .Where(r => _rules.FirstOrDefault(x => x.Id == r.Key) is { } rule && OwnerGuid(rule.CreatedBy) == deviceId && OwnerProblem(rule) is not null)
+                .Select(r => r.Value)
+                .ToList();
+            foreach (var cts in stop)
+            {
+                cts.Cancel();
+            }
+        }
+    }
+
+    /// <summary>What a revocation did.</summary>
+    /// <param name="Changed">The device existed and was removed.</param>
+    /// <param name="HasPowerRules">
+    /// The device has a rule with a shutdown or restart step. This does not mean that a shutdown is scheduled.
+    /// </param>
+    public sealed record RevokeOutcome(bool Changed, bool HasPowerRules);
+
+    /// <summary>For a revoked device with shutdown or restart rules. Conditional: nothing is claimed to be scheduled.</summary>
+    public const string PowerRulesWarning =
+        "У этого устройства есть автоматизации с выключением или перезагрузкой. Если одна из них уже запланировала выключение, отзыв его не отменяет.";
+
+    /// <summary>
+    /// Revokes a device. An unknown device changes nothing (no cancellation, no mark). Otherwise the device is
+    /// marked first (no new runs, no waiting step of it begins), its running rules are cancelled except the step
+    /// already inside the gate, and <paramref name="remove"/> runs inside the gate once that step has finished.
+    /// The mark is removed afterwards whatever happens (false, exception, cancellation).
+    /// </summary>
+    public async Task<RevokeOutcome> RevokeDeviceAsync(Guid deviceId, Func<bool> remove, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remove);
+        if (_services.Devices.Find(deviceId) is null)
+        {
+            return new RevokeOutcome(false, false);
+        }
+        bool hasPowerRules;
+        lock (_lock)
+        {
+            _revoking[deviceId] = _revoking.GetValueOrDefault(deviceId) + 1;
+            // From the stored rules, whether or not they ever ran.
+            hasPowerRules = _rules.Any(r => OwnerGuid(r.CreatedBy) == deviceId && AutomationRules.NeedsConfirmation(r));
+            // Collect first: a cancelled run may finish inline and remove itself from _running. The CTS stays
+            // RunAsync's to dispose (it removes itself from _running under this lock before it does).
+            var stop = _running
+                .Where(r => r.Key != _inFlightRuleId && _rules.FirstOrDefault(x => x.Id == r.Key) is { } rule && OwnerGuid(rule.CreatedBy) == deviceId)
+                .Select(r => r.Value)
+                .ToList();
+            foreach (var cts in stop)
+            {
+                cts.Cancel();
+            }
+        }
+        try
+        {
+            bool changed;
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                changed = remove();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+            if (changed)
+            {
+                StopNotAllowed(deviceId);
+                if (hasPowerRules)
+                {
+                    _services.History.Record("automation", "Устройство отозвано: у него есть автоматизации с выключением или перезагрузкой", true,
+                        "Если одна из них уже запланировала выключение или перезагрузку, отзыв его не отменяет.");
+                }
+            }
+            return new RevokeOutcome(changed, hasPowerRules);
+        }
+        finally
+        {
             lock (_lock)
             {
-                // Collect first: a cancelled run may finish inline and remove itself from _running.
-                var stop = _running
-                    .Where(r => _rules.FirstOrDefault(x => x.Id == r.Key) is { } rule && OwnerGuid(rule.CreatedBy) == deviceId && OwnerProblem(rule) is not null)
-                    .Select(r => r.Value)
-                    .ToList();
-                foreach (var cts in stop)
+                if (_revoking.TryGetValue(deviceId, out var count) && count > 1)
                 {
-                    cts.Cancel();
+                    _revoking[deviceId] = count - 1;
+                }
+                else
+                {
+                    _revoking.Remove(deviceId);
                 }
             }
         }
-        return changed;
+    }
+
+    /// <summary>True while a revocation of <paramref name="deviceId"/> is in progress (tests).</summary>
+    public bool IsRevoking(Guid deviceId)
+    {
+        lock (_lock)
+        {
+            return _revoking.ContainsKey(deviceId);
+        }
+    }
+
+    /// <summary>The rule whose step is inside the revocation gate right now, if any (tests).</summary>
+    public string? InFlightRuleId
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _inFlightRuleId;
+            }
+        }
+    }
+
+    private bool IsRevokingOwner(AutomationDefinition rule)
+    {
+        lock (_lock)
+        {
+            return OwnerGuid(rule.CreatedBy) is { } owner && _revoking.ContainsKey(owner);
+        }
     }
 
     /// <summary>Rules without a confirmed owner (administrator: "automations owners").</summary>
@@ -369,21 +493,33 @@ internal sealed partial class AutomationService : BackgroundService
         return null;
     }
 
-    /// <returns>False if it is already running.</returns>
-    public bool Start(AutomationDefinition rule, string reason)
+    /// <returns>False if it is already running, or its owner is being revoked.</returns>
+    public bool Start(AutomationDefinition rule, string reason) => TryStart(rule, reason) == StartResult.Started;
+
+    private enum StartResult
+    {
+        Started,
+        Running,
+        Revoking,
+    }
+
+    private StartResult TryStart(AutomationDefinition rule, string reason)
     {
         ArgumentNullException.ThrowIfNull(rule);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_stopping);
         lock (_lock)
         {
-            if (!_running.TryAdd(rule.Id, cts))
+            var refused = IsRevokingOwner(rule) ? StartResult.Revoking
+                : !_running.TryAdd(rule.Id, cts) ? StartResult.Running
+                : StartResult.Started;
+            if (refused != StartResult.Started)
             {
                 cts.Dispose();
-                return false;
+                return refused;
             }
         }
         _ = Task.Run(() => RunAsync(rule, reason, cts), CancellationToken.None);
-        return true;
+        return StartResult.Started;
     }
 
     /// <summary>
@@ -394,7 +530,16 @@ internal sealed partial class AutomationService : BackgroundService
     {
         if (HasConfirmedOwner(rule))
         {
-            Start(rule, reason);
+            // The revocation is checked under _lock together with the start (TryStart).
+            if (TryStart(rule, reason) == StartResult.Revoking)
+            {
+                lock (_lock)
+                {
+                    _lastRun[rule.Id] = (_services.Time.GetUtcNow(), false, "пропущена: устройство отзывается");
+                }
+                _services.History.Record("automation", $"Автоматизация «{rule.Name}»: пропущена", false,
+                    $"Пропущена: устройство отзывается ({reason})");
+            }
             return;
         }
         const string summary = "пропущена: у автоматизации нет владельца";
@@ -432,14 +577,14 @@ internal sealed partial class AutomationService : BackgroundService
         }
     }
 
-    /// <summary>Waits until no automation is running (tests).</summary>
+    /// <summary>Waits until no automation is running and every finished run is in history (tests).</summary>
     public async Task IdleAsync()
     {
         while (true)
         {
             lock (_lock)
             {
-                if (_running.Count == 0)
+                if (_running.Count == 0 && _finishing == 0)
                 {
                     return;
                 }
@@ -501,8 +646,29 @@ internal sealed partial class AutomationService : BackgroundService
                     try
                     {
                         cts.Token.ThrowIfCancellationRequested();
-                        problem = OwnerProblem(rule);
-                        error = problem is null ? await ExecuteAsync(rule, action, cts.Token).ConfigureAwait(false) : null;
+                        lock (_lock)
+                        {
+                            // Check and mark together: a revocation either sees this step in flight or the step sees it.
+                            problem = OwnerProblem(rule);
+                            if (problem is null)
+                            {
+                                _inFlightRuleId = rule.Id;
+                            }
+                        }
+                        try
+                        {
+                            error = problem is null ? await ExecuteAsync(rule, action, cts.Token).ConfigureAwait(false) : null;
+                        }
+                        finally
+                        {
+                            lock (_lock)
+                            {
+                                if (_inFlightRuleId == rule.Id)
+                                {
+                                    _inFlightRuleId = null;
+                                }
+                            }
+                        }
                     }
                     finally
                     {
@@ -539,6 +705,7 @@ internal sealed partial class AutomationService : BackgroundService
             lock (_lock)
             {
                 _running.Remove(rule.Id);
+                _finishing++; // until its history entry is written (IdleAsync)
             }
             cts.Dispose();
         }
@@ -547,16 +714,26 @@ internal sealed partial class AutomationService : BackgroundService
         var summary = stopped ? $"остановлена ({done} из {rule.Actions.Count})"
             : ok ? $"выполнено ({reason})"
             : $"с ошибками ({reason}): {string.Join("; ", failures)}";
-        lock (_lock)
+        try
         {
-            _lastRun[rule.Id] = (_services.Time.GetUtcNow(), ok, summary);
+            lock (_lock)
+            {
+                _lastRun[rule.Id] = (_services.Time.GetUtcNow(), ok, summary);
+            }
+            _services.History.Record("automation", $"Автоматизация «{rule.Name}»: {(stopped ? "остановлена" : ok ? "выполнена" : "с ошибками")}", ok, summary);
         }
-        _services.History.Record("automation", $"Автоматизация «{rule.Name}»: {(stopped ? "остановлена" : ok ? "выполнена" : "с ошибками")}", ok, summary);
+        finally
+        {
+            lock (_lock)
+            {
+                _finishing--;
+            }
+        }
     }
 
     /// <summary>
     /// Fresh check before each step: the owner is still paired and still holds every permission the
-    /// rule needs (as when it was saved), not just this step's.
+    /// rule needs (as when it was saved), not just this step's; and no revocation of it has begun.
     /// </summary>
     private string? OwnerProblem(AutomationDefinition rule)
     {
@@ -564,6 +741,13 @@ internal sealed partial class AutomationService : BackgroundService
         if (OwnerOf(rule) is not { } device)
         {
             return "устройство, создавшее автоматизацию, отозвано";
+        }
+        lock (_lock)
+        {
+            if (_revoking.ContainsKey(device.DeviceId))
+            {
+                return "устройство, создавшее автоматизацию, отзывается";
+            }
         }
         return (device.Permissions & required) == required ? null : $"у устройства «{device.Name}» больше нет нужного разрешения";
     }

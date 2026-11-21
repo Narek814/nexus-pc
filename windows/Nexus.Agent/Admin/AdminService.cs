@@ -170,9 +170,22 @@ internal sealed class AdminService(AgentServices services)
     private async Task<JsonObject> DevicesRevokeAsync(JsonObject request, CancellationToken cancellationToken)
     {
         var deviceId = ParseDeviceId(request);
-        return await ChangeDeviceAsync(deviceId, () => services.Devices.Remove(deviceId), cancellationToken).ConfigureAwait(false)
-            ? Ok([])
-            : Error("device not found");
+        if (services.Automations is not { } automations)
+        {
+            return services.Devices.Remove(deviceId) ? Ok([]) : Error("device not found");
+        }
+        var outcome = await automations.RevokeDeviceAsync(deviceId, () => services.Devices.Remove(deviceId), cancellationToken).ConfigureAwait(false);
+        if (!outcome.Changed)
+        {
+            return Error("device not found");
+        }
+        var result = new JsonObject();
+        if (outcome.HasPowerRules)
+        {
+            // Optional field: the device has shutdown/restart rules; a shutdown one of them scheduled is not cancelled.
+            result["warning"] = AutomationService.PowerRulesWarning;
+        }
+        return Ok(result);
     }
 
     private async Task<JsonObject> DevicesPermissionsAsync(JsonObject request, CancellationToken cancellationToken)
