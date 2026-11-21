@@ -155,8 +155,11 @@ internal sealed class DevicesForm : Form
         {
             return;
         }
-        var result = await _agent.CallAsync(SessionOps.DevicesRevoke, new JsonObject { ["deviceId"] = item.Id });
-        _status.Text = result.Ok ? $"«{item.Name}» отключено." : "Не удалось: " + result.Message;
+        // A revocation waits for an automation step that has already started (up to 15 s per step).
+        var result = await _agent.CallAsync(SessionOps.DevicesRevoke, new JsonObject { ["deviceId"] = item.Id }, TimeSpan.FromSeconds(60));
+        _status.Text = result.Ok ? $"«{item.Name}» отключено."
+            : result.ErrorCode == AgentConnection.SessionTimeout ? $"Отзыв «{item.Name}» ещё выполняется. Обновите список чуть позже."
+            : "Не удалось: " + result.Message;
         // Optional: the device had shutdown or restart automations; one of them may have scheduled a shutdown already.
         if (result.Ok && result.Result?["warning"] is JsonValue value && value.TryGetValue<string>(out var warning) && warning.Length > 0)
         {

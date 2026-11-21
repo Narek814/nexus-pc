@@ -410,7 +410,8 @@ internal sealed partial class AutomationService : BackgroundService
     /// Gives an ownerless rule to a device paired with this installation. The administrator types the
     /// device's key fingerprint (from "devices"), so an id alone is not enough. The device must hold every
     /// permission the rule needs. Nothing changes on any failure. Runs inside the revocation gate, so the
-    /// device cannot be revoked between the checks and the assignment.
+    /// device cannot be revoked between the checks and the assignment. A device whose revocation has already
+    /// started (marked, still waiting for the gate) is refused with "device is being revoked".
     /// </summary>
     /// <returns>Null on success, otherwise why not.</returns>
     public async Task<string?> AssignOwnerAsync(string automationId, Guid deviceId, string? fingerprint, CancellationToken cancellationToken)
@@ -464,6 +465,10 @@ internal sealed partial class AutomationService : BackgroundService
         if (_services.Devices.Find(deviceId) is not { } device || !DeviceCrypto.IsValidP256PublicKey(device.PublicKeySpki))
         {
             return "device is not paired with this PC";
+        }
+        if (_revoking.ContainsKey(deviceId))
+        {
+            return "device is being revoked";
         }
         if (!DeviceCrypto.DeviceKeyFingerprintMatches(device.PublicKeySpki, fingerprint))
         {

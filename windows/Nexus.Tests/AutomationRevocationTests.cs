@@ -326,6 +326,46 @@ public sealed class AutomationRevocationTests : IAsyncLifetime
         Assert.Empty(_host.Power!.Calls);
     }
 
+    [Fact]
+    public async Task T9_assign_to_a_device_whose_revocation_has_started_is_refused()
+    {
+        await using var tray = await _host.ConnectTrayAsync();
+        var (gone, _) = await DeviceAsync();
+        Save(gone, Rule("orphan", """[{"type":"lock"}]""", """{"type":"time","time":"04:00"}"""));
+        Assert.True((await RevokeAsync(gone)).IsOk());
+        var (a, _) = await DeviceAsync();
+        var (b, bKey) = await DeviceAsync();
+        var holder = Save(a, Rule("holder", """[{"type":"lock"}]"""));
+        var stored = AutomationJson.ToJson(Automations.Find("orphan")!).ToJsonString();
+
+        using var hold = new ManualResetEventSlim();
+        tray.Desktop.HoldLock = hold;
+        Assert.True(Automations.Start(holder, "test"));
+        Assert.True(tray.Desktop.LockEntered.Wait(TimeSpan.FromSeconds(10)));
+        // The assignment is queued at the gate first; the revocation of b marks b and queues behind it.
+        var assign = Automations.AssignOwnerAsync("orphan", b, DeviceCrypto.DeviceKeyFingerprint(bKey.ExportSubjectPublicKeyInfo()), CancellationToken.None);
+        Assert.False(assign.IsCompleted);
+        var revoke = RevokeAsync(b);
+        await AgentIntegrationTests.WaitUntil(() => Automations.IsRevoking(b));
+        Assert.False(assign.IsCompleted);
+        Assert.False(revoke.IsCompleted);
+        Assert.NotNull(_host.Services.Devices.Find(b)); // still paired: only the mark refuses it
+
+        hold.Set();
+        Assert.Equal("device is being revoked", await assign.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.True((await revoke.WaitAsync(TimeSpan.FromSeconds(10))).IsOk());
+        await Automations.IdleAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(stored, AutomationJson.ToJson(Automations.Find("orphan")!).ToJsonString());
+        Assert.False(Automations.HasConfirmedOwner(Automations.Find("orphan")!));
+        Assert.DoesNotContain(History(), e => e.Title == "Автоматизация «orphan»: назначен владелец");
+        var audit = File.ReadAllLines(_host.Services.Audit.FilePath).Last(l => l.Contains("\"automations.assign\"", StringComparison.Ordinal));
+        Assert.Contains("\"ok\":false", audit, StringComparison.Ordinal);
+        Assert.Contains("device is being revoked", audit, StringComparison.Ordinal);
+        Assert.Contains("\"automationId\":\"orphan\"", audit, StringComparison.Ordinal);
+        Assert.Contains(b.ToString("D"), audit, StringComparison.Ordinal);
+    }
+
     private void FillToTheLimit(Guid owner)
     {
         for (var i = 0; i < AutomationRules.MaxAutomations; i++)
