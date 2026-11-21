@@ -49,6 +49,8 @@ final class PCController {
     private(set) var profiles: [RemoteProfile] = []
     private(set) var pendingPower: String?
     private(set) var metrics: MetricsReading?
+    /// This iPhone's key fingerprint for the paired PC, as the agent's "devices" shows it (T3).
+    private(set) var deviceKeyFingerprint: String?
     var banner: String?
 
     private var connection: NexusConnection?
@@ -57,10 +59,12 @@ final class PCController {
     init() {
         pc = PairingStore.load().first
         state = pc == nil ? .notPaired : .offline("Подключение…")
+        deviceKeyFingerprint = Self.keyFingerprint(for: pc)
     }
 
     func paired(_ newPC: PairedPC) {
         pc = newPC
+        deviceKeyFingerprint = Self.keyFingerprint(for: newPC)
         connection?.close()
         connection = nil
         Task { await refresh() }
@@ -74,6 +78,7 @@ final class PCController {
         connection = nil
         PairingStore.forget(pc)
         self.pc = nil
+        deviceKeyFingerprint = nil
         status = nil
         apps = []
         profiles = []
@@ -190,6 +195,14 @@ final class PCController {
 
     func can(_ command: String) -> Bool {
         capabilities.contains(command)
+    }
+
+    /// Fingerprint of the public half of this phone's key for the PC; the private key stays in the Secure Enclave.
+    private static func keyFingerprint(for pc: PairedPC?) -> String? {
+        guard let pc, let signer = try? PairingStore.signer(for: pc) else {
+            return nil
+        }
+        return DeviceCrypto.deviceKeyFingerprint(publicKey: signer.publicKeySPKI)
     }
 
     // MARK: - Internals

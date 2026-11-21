@@ -360,44 +360,64 @@ internal sealed class CommandDispatcher(AgentServices services)
         return Deferred(id, response, session, command.Spec.Type, () => services.Power.Schedule(action, TimeSpan.Zero, payload.Force, reason));
     }
 
+    /// <summary>
+    /// Owner-only (SEC-5): every command acts only on the caller's own rules. Another device's rule, or an
+    /// ownerless one, is answered exactly like a missing one, before any other check, so nothing about it leaks.
+    /// </summary>
     private static HandlerResult Automations(Guid id, ValidatedCommand command, ConnectionSession session, AutomationService automations)
     {
+        var client = session.CurrentClient();
         switch (command.Payload)
         {
             case Nexus.Core.Automation.AutomationUpsertPayload upsert:
-                var client = session.CurrentClient();
                 var required = Nexus.Core.Automation.AutomationRules.RequiredFor(upsert.Automation);
                 if ((client.Permissions & required) != required)
                 {
                     // No escalation: a rule can only do what its creator may do directly.
-                    var missing = string.Join(", ", Permissions.ToWireNames(required & ~client.Permissions));
-                    return Fail(id, ErrorCodes.PermissionDenied, $"Для этих действий у устройства нет разрешения: {missing}.");
+                    return MissingPermissions(id, required, client.Permissions);
                 }
                 if (Nexus.Core.Automation.AutomationRules.NeedsConfirmation(upsert.Automation) && !command.Envelope.Confirmed)
                 {
                     return Fail(id, ErrorCodes.ConfirmationRequired, "Автоматизация выключает или перезагружает ПК: подтвердите сохранение.");
                 }
-                var rule = upsert.Automation with { CreatedBy = client.DeviceId };
-                return automations.Upsert(rule) is { } limit
-                    ? Fail(id, ErrorCodes.AutomationLimit, limit)
-                    : Ok(id, automations.ToJson());
+                return automations.Upsert(upsert.Automation, client.DeviceId) is { } refused
+                    ? Fail(id, refused.Code, refused.Message)
+                    : Ok(id, automations.ToJson(client.DeviceId));
             case Nexus.Core.Automation.AutomationRefPayload reference when command.Spec.Type == "automations.delete":
-                return automations.Delete(reference.AutomationId)
-                    ? Ok(id, automations.ToJson())
+                return automations.Delete(reference.AutomationId, client.DeviceId)
+                    ? Ok(id, automations.ToJson(client.DeviceId))
                     : Fail(id, ErrorCodes.AutomationNotFound, "Такой автоматизации нет.");
             case Nexus.Core.Automation.AutomationRefPayload reference when command.Spec.Type == "automations.run":
-                if (automations.Find(reference.AutomationId) is not { } found)
+                if (automations.FindOwned(reference.AutomationId, client.DeviceId) is not { } found)
                 {
                     return Fail(id, ErrorCodes.AutomationNotFound, "Такой автоматизации нет.");
+                }
+                // A manual run is a direct command of the caller: its own permissions and confirmation, as for upsert.
+                var needed = Nexus.Core.Automation.AutomationRules.RequiredFor(found);
+                if ((client.Permissions & needed) != needed)
+                {
+                    return MissingPermissions(id, needed, client.Permissions);
+                }
+                if (Nexus.Core.Automation.AutomationRules.NeedsConfirmation(found) && !command.Envelope.Confirmed)
+                {
+                    return Fail(id, ErrorCodes.ConfirmationRequired, "Автоматизация выключает или перезагружает ПК: подтвердите запуск.");
                 }
                 return automations.Start(found, "вручную с телефона")
                     ? Ok(id, new JsonObject { ["started"] = true })
                     : Fail(id, ErrorCodes.AutomationBusy, "Эта автоматизация уже выполняется.");
             case Nexus.Core.Automation.AutomationRefPayload reference:
-                return Ok(id, new JsonObject { ["stopped"] = automations.Stop(reference.AutomationId) });
+                return automations.Stop(reference.AutomationId, client.DeviceId) is { } stopped
+                    ? Ok(id, new JsonObject { ["stopped"] = stopped })
+                    : Fail(id, ErrorCodes.AutomationNotFound, "Такой автоматизации нет.");
             default:
-                return Ok(id, automations.ToJson());
+                return Ok(id, automations.ToJson(client.DeviceId));
         }
+    }
+
+    private static HandlerResult MissingPermissions(Guid id, Permission required, Permission held)
+    {
+        var missing = string.Join(", ", Permissions.ToWireNames(required & ~held));
+        return Fail(id, ErrorCodes.PermissionDenied, $"Для этих действий у устройства нет разрешения: {missing}.");
     }
 
     private readonly InputAuditThrottle _historyThrottle = new(services.Time, TimeSpan.FromMinutes(10));

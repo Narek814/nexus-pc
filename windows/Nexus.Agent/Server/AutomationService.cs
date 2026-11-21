@@ -15,6 +15,19 @@ namespace Nexus.Agent.Server;
 /// fixed kinds in <see cref="AutomationRules"/>; each run re-checks that the device that created the
 /// rule still exists and still holds the permissions its actions need (revoking a phone stops its rules).
 /// </summary>
+/// <remarks>
+/// Owner-only (SEC-5): a rule belongs to the paired device in CreatedBy. Only that device sees, changes,
+/// runs or stops it; anyone else gets "not found". A rule whose owner is gone (revoked, never recorded,
+/// damaged key) is ownerless: it never runs, does not count towards the limit, and an administrator can
+/// give it to a paired device (<see cref="AssignOwnerAsync"/>).
+/// <para>
+/// Revocation gate: every step that acts on the PC runs inside <c>_gate</c>, after a fresh check of the
+/// owner and its permissions; <see cref="ChangeDeviceAsync"/> changes devices inside the same gate. So a
+/// step either started before the change (and the change waits for it) or sees the change and does not start.
+/// Lock order: <c>_gate</c> (async, outermost) → <c>_lock</c> → the device store's own lock. Nothing waits for
+/// <c>_gate</c> while holding <c>_lock</c>, and "wait" steps never hold <c>_gate</c>.
+/// </para>
+/// </remarks>
 internal sealed partial class AutomationService : BackgroundService
 {
     public static readonly TimeSpan PcStartedDelay = TimeSpan.FromSeconds(15);
@@ -25,6 +38,7 @@ internal sealed partial class AutomationService : BackgroundService
     private readonly string _path;
     private readonly AutomationEngine _engine;
     private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (DateTimeOffset At, bool Ok, string Summary)> _lastRun = new(StringComparer.Ordinal);
     private List<AutomationDefinition> _rules;
@@ -61,7 +75,7 @@ internal sealed partial class AutomationService : BackgroundService
             await Task.Delay(PcStartedDelay, _services.Time, stoppingToken).ConfigureAwait(false);
             foreach (var rule in _engine.ForEvent(Rules, TriggerKind.PcStarted, _services.Time.GetUtcNow()))
             {
-                Start(rule, "ПК включился");
+                StartTriggered(rule, "ПК включился");
             }
 
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2), _services.Time);
@@ -96,7 +110,7 @@ internal sealed partial class AutomationService : BackgroundService
         }
         foreach (var rule in _engine.Due(Rules, _services.Time.GetUtcNow(), readings))
         {
-            Start(rule, rule.Trigger.Kind == TriggerKind.Time ? "по расписанию" : "по датчику");
+            StartTriggered(rule, rule.Trigger.Kind == TriggerKind.Time ? "по расписанию" : "по датчику");
         }
     }
 
@@ -114,48 +128,72 @@ internal sealed partial class AutomationService : BackgroundService
         }
         foreach (var rule in _engine.ForEvent(Rules, TriggerKind.UserSignedIn, now))
         {
-            Start(rule, "вход в Windows");
+            StartTriggered(rule, "вход в Windows");
         }
     }
 
-    public string? Upsert(AutomationDefinition automation)
+    /// <summary>A refusal with its protocol error code.</summary>
+    public sealed record Refusal(string Code, string Message);
+
+    private static readonly Refusal NotFound = new(ErrorCodes.AutomationNotFound, "Такой автоматизации нет.");
+
+    /// <summary>
+    /// Saves a rule for <paramref name="caller"/>. An existing id that belongs to another device, or to
+    /// nobody, is "not found" and stays as it is (no take-over, and its existence is not revealed).
+    /// </summary>
+    public Refusal? Upsert(AutomationDefinition automation, string? caller)
     {
+        ArgumentNullException.ThrowIfNull(automation);
+        if (OwnerGuid(caller) is not { } owner)
+        {
+            return NotFound;
+        }
+        var rule = automation with { CreatedBy = owner.ToString("D") };
         lock (_lock)
         {
-            var index = _rules.FindIndex(r => r.Id == automation.Id);
-            if (index < 0 && _rules.Count >= AutomationRules.MaxAutomations)
+            var index = _rules.FindIndex(r => r.Id == rule.Id);
+            if (index >= 0 && !IsConfirmedOwner(_rules[index], caller))
             {
-                return $"Не больше {AutomationRules.MaxAutomations} автоматизаций.";
+                return NotFound;
+            }
+            // Ownerless rules never run, so they do not take places from rules that do.
+            if (index < 0 && _rules.Count(HasConfirmedOwner) >= AutomationRules.MaxAutomations)
+            {
+                return new Refusal(ErrorCodes.AutomationLimit, $"Не больше {AutomationRules.MaxAutomations} автоматизаций.");
             }
             if (index >= 0)
             {
-                _rules[index] = automation;
+                _rules[index] = rule;
             }
             else
             {
-                _rules.Add(automation);
+                _rules.Add(rule);
             }
-            Save();
+            Save(_rules);
         }
-        if (!automation.Enabled)
+        if (!rule.Enabled)
         {
-            Stop(automation.Id);
+            Stop(rule.Id);
         }
         return null;
     }
 
-    public bool Delete(string id)
+    /// <returns>False if there is no such rule of <paramref name="caller"/>.</returns>
+    public bool Delete(string id, string? caller)
     {
         bool removed;
         lock (_lock)
         {
-            removed = _rules.RemoveAll(r => r.Id == id) > 0;
+            removed = _rules.RemoveAll(r => r.Id == id && IsConfirmedOwner(r, caller)) > 0;
             if (removed)
             {
-                Save();
+                Save(_rules);
             }
         }
-        Stop(id);
+        if (removed)
+        {
+            Stop(id);
+        }
         return removed;
     }
 
@@ -167,9 +205,174 @@ internal sealed partial class AutomationService : BackgroundService
         }
     }
 
+    /// <summary>The rule only if <paramref name="caller"/> is its confirmed owner.</summary>
+    public AutomationDefinition? FindOwned(string id, string? caller)
+    {
+        lock (_lock)
+        {
+            return _rules.FirstOrDefault(r => r.Id == id && IsConfirmedOwner(r, caller));
+        }
+    }
+
+    /// <summary>
+    /// A rule has a confirmed owner when CreatedBy is a device id (any Guid format) of a device paired with
+    /// this installation whose stored key is a valid P-256 key.
+    /// </summary>
+    public bool HasConfirmedOwner(AutomationDefinition rule) => OwnerOf(rule) is not null;
+
+    /// <summary>Compares ids as Guids (not strings), so case and format do not matter.</summary>
+    public bool IsConfirmedOwner(AutomationDefinition rule, string? caller) =>
+        OwnerGuid(caller) is { } id && OwnerOf(rule) is { } owner && owner.DeviceId == id;
+
+    private DeviceRecord? OwnerOf(AutomationDefinition rule) =>
+        OwnerGuid(rule.CreatedBy) is { } id && _services.Devices.Find(id) is { } device
+        && DeviceCrypto.IsValidP256PublicKey(device.PublicKeySpki) ? device : null;
+
+    private static Guid? OwnerGuid(string? id) =>
+        id is not null && Guid.TryParse(id, out var guid) && guid != Guid.Empty ? guid : null;
+
+    /// <summary>
+    /// Changes a device (revoke, permissions) inside the revocation gate, so no automation step is between
+    /// its check and its start while the change happens; then stops the device's running rules that are no
+    /// longer allowed. Waits for a step that has already started (at most one tray call).
+    /// </summary>
+    public async Task<bool> ChangeDeviceAsync(Guid deviceId, Func<bool> change, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        bool changed;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            changed = change();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        if (changed)
+        {
+            lock (_lock)
+            {
+                // Collect first: a cancelled run may finish inline and remove itself from _running.
+                var stop = _running
+                    .Where(r => _rules.FirstOrDefault(x => x.Id == r.Key) is { } rule && OwnerGuid(rule.CreatedBy) == deviceId && OwnerProblem(rule) is not null)
+                    .Select(r => r.Value)
+                    .ToList();
+                foreach (var cts in stop)
+                {
+                    cts.Cancel();
+                }
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>Rules without a confirmed owner (administrator: "automations owners").</summary>
+    public JsonArray Ownerless()
+    {
+        lock (_lock)
+        {
+            return new JsonArray([.. _rules.Where(r => !HasConfirmedOwner(r)).Select(r => (JsonNode)new JsonObject
+            {
+                ["automationId"] = r.Id,
+                ["name"] = r.Name,
+                ["formerOwner"] = r.CreatedBy,
+                ["requiredPermissions"] = new JsonArray([.. Permissions.ToWireNames(AutomationRules.RequiredFor(r)).Select(p => (JsonNode)p)]),
+            })]);
+        }
+    }
+
+    /// <summary>
+    /// Gives an ownerless rule to a device paired with this installation. The administrator types the
+    /// device's key fingerprint (from "devices"), so an id alone is not enough. The device must hold every
+    /// permission the rule needs. Nothing changes on any failure. Runs inside the revocation gate, so the
+    /// device cannot be revoked between the checks and the assignment.
+    /// </summary>
+    /// <returns>Null on success, otherwise why not.</returns>
+    public async Task<string?> AssignOwnerAsync(string automationId, Guid deviceId, string? fingerprint, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(automationId);
+        // Every attempt is audited, whatever ends it (refusal, failed save, cancellation): the default is a failure.
+        string? error = "not completed";
+        string? name = null;
+        string? formerOwner = null;
+        try
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                lock (_lock)
+                {
+                    error = Assign(automationId, deviceId, fingerprint, out name, out formerOwner);
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+        finally
+        {
+            _services.Audit.RecordAutomationAssign(deviceId.ToString("D"), automationId, formerOwner, error is null, error);
+        }
+        if (error is null)
+        {
+            _services.History.Record("automation", $"Автоматизация «{name}»: назначен владелец", true, _services.Devices.Find(deviceId)?.Name);
+        }
+        return error;
+    }
+
+    private string? Assign(string automationId, Guid deviceId, string? fingerprint, out string? name, out string? formerOwner)
+    {
+        name = null;
+        formerOwner = null;
+        var index = _rules.FindIndex(r => r.Id == automationId);
+        if (index < 0)
+        {
+            return "automation not found";
+        }
+        var rule = _rules[index];
+        formerOwner = rule.CreatedBy;
+        if (HasConfirmedOwner(rule))
+        {
+            return "automation already has an owner";
+        }
+        if (_services.Devices.Find(deviceId) is not { } device || !DeviceCrypto.IsValidP256PublicKey(device.PublicKeySpki))
+        {
+            return "device is not paired with this PC";
+        }
+        if (!DeviceCrypto.DeviceKeyFingerprintMatches(device.PublicKeySpki, fingerprint))
+        {
+            return "fingerprint does not match the device";
+        }
+        var required = AutomationRules.RequiredFor(rule);
+        if ((device.Permissions & required) != required)
+        {
+            return "device lacks permissions: " + string.Join(", ", Permissions.ToWireNames(required & ~device.Permissions));
+        }
+        if (_rules.Count(HasConfirmedOwner) >= AutomationRules.MaxAutomations)
+        {
+            return $"limit of {AutomationRules.MaxAutomations} automations reached";
+        }
+        var updated = new List<AutomationDefinition>(_rules);
+        updated[index] = rule with { CreatedBy = deviceId.ToString("D") };
+        try
+        {
+            Save(updated); // first on disk: if this fails, the rule stays as it was
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return "could not save automations.json: " + ex.Message;
+        }
+        _rules = updated;
+        name = rule.Name;
+        return null;
+    }
+
     /// <returns>False if it is already running.</returns>
     public bool Start(AutomationDefinition rule, string reason)
     {
+        ArgumentNullException.ThrowIfNull(rule);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_stopping);
         lock (_lock)
         {
@@ -183,7 +386,40 @@ internal sealed partial class AutomationService : BackgroundService
         return true;
     }
 
-    public bool Stop(string id)
+    /// <summary>
+    /// A trigger fired: rules without a confirmed owner do not run; history notes it once per firing
+    /// (the engine fires a rule once per time, event or threshold crossing, not on every tick).
+    /// </summary>
+    private void StartTriggered(AutomationDefinition rule, string reason)
+    {
+        if (HasConfirmedOwner(rule))
+        {
+            Start(rule, reason);
+            return;
+        }
+        const string summary = "пропущена: у автоматизации нет владельца";
+        lock (_lock)
+        {
+            _lastRun[rule.Id] = (_services.Time.GetUtcNow(), false, summary);
+        }
+        _services.History.Record("automation", $"Автоматизация «{rule.Name}»: пропущена", false,
+            $"{reason}: устройство, создавшее автоматизацию, больше не сопряжено с этим ПК");
+    }
+
+    /// <returns>Null if there is no such rule of <paramref name="caller"/>; otherwise whether it was running.</returns>
+    public bool? Stop(string id, string? caller)
+    {
+        lock (_lock)
+        {
+            if (!_rules.Any(r => r.Id == id && IsConfirmedOwner(r, caller)))
+            {
+                return null;
+            }
+            return Stop(id);
+        }
+    }
+
+    private bool Stop(string id)
     {
         lock (_lock)
         {
@@ -212,12 +448,13 @@ internal sealed partial class AutomationService : BackgroundService
         }
     }
 
-    public JsonObject ToJson()
+    /// <summary>The rules of <paramref name="caller"/> only.</summary>
+    public JsonObject ToJson(string? caller)
     {
         var list = new JsonArray();
         lock (_lock)
         {
-            foreach (var rule in _rules)
+            foreach (var rule in _rules.Where(r => IsConfirmedOwner(r, caller)))
             {
                 var json = AutomationJson.ToJson(rule);
                 json.Remove("createdBy");
@@ -251,12 +488,32 @@ internal sealed partial class AutomationService : BackgroundService
             foreach (var action in rule.Actions)
             {
                 cts.Token.ThrowIfCancellationRequested();
-                if (CreatorProblem(rule, action) is { } problem)
+                string? error;
+                if (action.Kind == "wait")
                 {
-                    failures.Add(problem);
-                    break;
+                    error = await ExecuteAsync(rule, action, cts.Token).ConfigureAwait(false); // never inside the gate
                 }
-                var error = await ExecuteAsync(rule, action, cts.Token).ConfigureAwait(false);
+                else
+                {
+                    // Check and start of the step inside the gate: a revocation is either before (seen here) or after.
+                    await _gate.WaitAsync(cts.Token).ConfigureAwait(false);
+                    string? problem;
+                    try
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+                        problem = OwnerProblem(rule);
+                        error = problem is null ? await ExecuteAsync(rule, action, cts.Token).ConfigureAwait(false) : null;
+                    }
+                    finally
+                    {
+                        _gate.Release();
+                    }
+                    if (problem is not null)
+                    {
+                        failures.Add(problem);
+                        break;
+                    }
+                }
                 if (error is null)
                 {
                     done++;
@@ -297,10 +554,14 @@ internal sealed partial class AutomationService : BackgroundService
         _services.History.Record("automation", $"Автоматизация «{rule.Name}»: {(stopped ? "остановлена" : ok ? "выполнена" : "с ошибками")}", ok, summary);
     }
 
-    private string? CreatorProblem(AutomationDefinition rule, AutomationAction action)
+    /// <summary>
+    /// Fresh check before each step: the owner is still paired and still holds every permission the
+    /// rule needs (as when it was saved), not just this step's.
+    /// </summary>
+    private string? OwnerProblem(AutomationDefinition rule)
     {
-        var required = AutomationRules.RequiredFor(action) | Permission.Automation;
-        if (rule.CreatedBy is null || !Guid.TryParse(rule.CreatedBy, out var id) || _services.Devices.Find(id) is not { } device)
+        var required = AutomationRules.RequiredFor(rule);
+        if (OwnerOf(rule) is not { } device)
         {
             return "устройство, создавшее автоматизацию, отозвано";
         }
@@ -394,8 +655,7 @@ internal sealed partial class AutomationService : BackgroundService
     }
 
     private bool HasCreatorPermission(AutomationDefinition rule, Permission permission) =>
-        rule.CreatedBy is not null && Guid.TryParse(rule.CreatedBy, out var id)
-        && _services.Devices.Find(id) is { } device && device.Permissions.HasFlag(permission);
+        OwnerOf(rule) is { } device && device.Permissions.HasFlag(permission);
 
     private static string Describe(AutomationAction action) => action.Kind switch
     {
@@ -410,9 +670,9 @@ internal sealed partial class AutomationService : BackgroundService
         _ => action.Kind,
     };
 
-    private void Save()
+    private void Save(IEnumerable<AutomationDefinition> rules)
     {
-        var json = new JsonArray([.. _rules.Select(r => (JsonNode)AutomationJson.ToJson(r))]);
+        var json = new JsonArray([.. rules.Select(r => (JsonNode)AutomationJson.ToJson(r))]);
         var temp = _path + ".tmp";
         File.WriteAllText(temp, json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temp, _path, overwrite: true);

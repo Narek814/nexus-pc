@@ -25,9 +25,16 @@ internal sealed class FakeDesktop : IDesktop
         return new DesktopResult(true, "closed");
     }
 
+    /// <summary>When set, Lock() signals <see cref="LockEntered"/> and blocks until it is set (race tests).</summary>
+    public ManualResetEventSlim? HoldLock { get; set; }
+
+    public ManualResetEventSlim LockEntered { get; } = new();
+
     public DesktopResult Lock()
     {
         Calls.Enqueue("lock");
+        LockEntered.Set();
+        HoldLock?.Wait(TimeSpan.FromSeconds(10));
         return DesktopResult.Success;
     }
 
