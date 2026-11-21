@@ -17,6 +17,58 @@ public sealed class SetupPlanTests
         Assert.Equal(["create", "NexusPCAgent", "binPath=", "\"" + AgentExe + "\"", "start=", "auto", "DisplayName=", "Nexus PC Agent"], create.Args);
     }
 
+    [Theory]
+    [InlineData(false, "Установка остановлена")]
+    [InlineData(true, "Удаление остановлено")]
+    public void Missing_privileges_refuse_the_data_folder_check_without_internal_names(bool uninstall, string stopped)
+    {
+        Assert.Null(SetupPlan.MissingPrivilegesText([], uninstall));
+        var text = SetupPlan.MissingPrivilegesText(["SeBackupPrivilege"], uninstall);
+        Assert.NotNull(text);
+        Assert.StartsWith(stopped + ", ничего не изменено", text, StringComparison.Ordinal);
+        Assert.Contains("проверка папки данных Nexus PC не выполнена", text, StringComparison.Ordinal);
+        Assert.Contains("права", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Se", text, StringComparison.Ordinal);
+        Assert.Equal(6, SetupPlan.ExitDataDirectoryUntrusted);
+    }
+
+    [Fact]
+    public void Recheck_texts_tell_that_the_service_is_stopped_and_never_claim_nothing_changed()
+    {
+        var recheck = SetupPlan.MissingPrivilegesText(["SeBackupPrivilege"], uninstall: false, recheck: true);
+        Assert.NotNull(recheck);
+        Assert.StartsWith(SetupPlan.RecheckStoppedText, recheck, StringComparison.Ordinal);
+        Assert.Contains("Проверка папки данных Nexus PC не выполнена", recheck, StringComparison.Ordinal);
+        Assert.DoesNotContain("Se", recheck, StringComparison.Ordinal);
+        Assert.Null(SetupPlan.MissingPrivilegesText([], uninstall: false, recheck: true));
+        foreach (var text in new[] { recheck, SetupPlan.GateStoppedText(recheck: true) })
+        {
+            Assert.Contains("служба Nexus PC остановлена", text, StringComparison.Ordinal);
+            Assert.Contains("файлы программы уже обновлены", text, StringComparison.Ordinal);
+            Assert.Contains("запустите установщик ещё раз", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("ничего не изменено", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("служба не остановлена", text, StringComparison.OrdinalIgnoreCase);
+            // SA-T4-R12-2: the start type is not changed, so the text tells what happens after a reboot.
+            Assert.Contains("после перезагрузки Windows", text, StringComparison.Ordinal);
+            Assert.Contains("проверка папки данных при старте", text, StringComparison.Ordinal);
+            Assert.Contains("журнал событий", text, StringComparison.Ordinal);
+        }
+        // The first check keeps its wording.
+        Assert.Equal("Установка остановлена, ничего не изменено.", SetupPlan.GateStoppedText(recheck: false));
+        Assert.Equal(SetupPlan.MissingPrivilegesText(["SeBackupPrivilege"], uninstall: false), SetupPlan.MissingPrivilegesText(["SeBackupPrivilege"], uninstall: false, recheck: false));
+        Assert.StartsWith("Установка остановлена, ничего не изменено: проверка папки данных Nexus PC не выполнена", SetupPlan.MissingPrivilegesText(["SeBackupPrivilege"], uninstall: false)!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Recheck_refusal_after_the_openrgb_import_carries_code_6_and_is_not_a_step_failure()
+    {
+        // R11-1: Program turns these exception types into exit code 5; the recheck refusal must not be one of them.
+        Exception refused = new DataDirectoryRecheckException(SetupPlan.ExitDataDirectoryUntrusted, "text of the check");
+        Assert.False(refused is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception);
+        Assert.Equal(6, ((DataDirectoryRecheckException)refused).ExitCode);
+        Assert.Equal("text of the check", refused.Message);
+    }
+
     [Fact]
     public void Firewall_rule_is_for_the_agent_program_on_private_networks_only()
     {
