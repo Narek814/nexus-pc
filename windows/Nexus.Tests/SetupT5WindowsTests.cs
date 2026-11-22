@@ -328,13 +328,17 @@ public sealed class SetupT5WindowsTests(ITestOutputHelper output) : IDisposable
 
         var services = new FakeServices();
         services.Health.Enqueue("not listening");
-        var failed = new InstallTransaction(fs, services, root, TextWriter.Null).Run(staging, ["Agent"], () => { });
+        var failed = new InstallTransaction(fs, services, root, new OutputWriter(output)).Run(staging, ["Agent"], () => { });
+        if (failed.Result != TransactionResult.RolledBack)
+        {
+            Dump(root, staging, failed.Error);
+        }
         Assert.Equal(TransactionResult.RolledBack, failed.Result);
         Assert.Equal("old", File.ReadAllText(Path.Join(root, "Agent", "v.txt")));
         Assert.Equal("new", File.ReadAllText(Path.Join(staging, "Agent", "v.txt")));
         Assert.False(Directory.Exists(Path.Join(root, "Agent.old-" + id)));
 
-        var tx = new InstallTransaction(fs, new FakeServices(), root, TextWriter.Null);
+        var tx = new InstallTransaction(fs, new FakeServices(), root, new OutputWriter(output));
         Assert.Equal(TransactionResult.Committed, tx.Run(staging, ["Agent"], () => { }).Result);
         tx.Finish(staging);
         Assert.Equal("new", File.ReadAllText(Path.Join(root, "Agent", "v.txt")));
@@ -384,7 +388,11 @@ public sealed class SetupT5WindowsTests(ITestOutputHelper output) : IDisposable
             committed ? InstallJournal.Committed : InstallJournal.Replacing, [new JournalComponent("Agent", true)]).Serialize());
         Assert.Throws<UnsafeInstallObjectException>(() => fs.CheckObject(old));
 
-        var result = new InstallTransaction(fs, new FakeServices(), root, TextWriter.Null).Recover();
+        var result = new InstallTransaction(fs, new FakeServices(), root, new OutputWriter(output)).Recover();
+        if (result != (committed ? RecoveryResult.Cleaned : RecoveryResult.Failed))
+        {
+            Dump(root, staging, null);
+        }
         Assert.Equal(committed ? RecoveryResult.Cleaned : RecoveryResult.Failed, result);
         Assert.Equal("keep", File.ReadAllText(Path.Join(target, "precious.txt")));
         Assert.True(Directory.Exists(old)); // the junction itself is left as it was
@@ -441,6 +449,42 @@ public sealed class SetupT5WindowsTests(ITestOutputHelper output) : IDisposable
             Assert.True(top.State.DaclProtected);
             Assert.Equal(DataDirectoryPolicy.Administrators, top.State.OwnerSid);
         }
+    }
+
+    /// <summary>Diagnostics only (owner-approved): security and state of the transaction's folders after an unexpected result.</summary>
+    [SupportedOSPlatform("windows")]
+    private void Dump(string root, string staging, Exception? error)
+    {
+        output.WriteLine("Unexpected result; error: " + (error?.ToString() ?? "(none)"));
+        foreach (var path in new[] { root, Path.Join(root, "Agent"), staging, Path.Join(staging, "Agent") })
+        {
+            if (!Directory.Exists(path))
+            {
+                output.WriteLine($"{path}: does not exist");
+                continue;
+            }
+            try
+            {
+                var security = new DirectoryInfo(path).GetAccessControl();
+                output.WriteLine($"{path}: exists, owner {security.GetOwner(typeof(SecurityIdentifier))}, SDDL {security.GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.All)}");
+            }
+            catch (Exception e) when (e is UnauthorizedAccessException or IOException or InvalidOperationException or System.Security.Principal.IdentityNotMappedException)
+            {
+                output.WriteLine($"{path}: exists, security not readable: {e.Message}");
+            }
+        }
+        foreach (var path in Directory.Exists(root) ? Directory.EnumerateFileSystemEntries(root) : [])
+        {
+            output.WriteLine("in root: " + path);
+        }
+        var journal = InstallJournal.PathIn(root);
+        output.WriteLine("journal: " + (File.Exists(journal) ? File.ReadAllText(journal) : "(none)"));
+    }
+
+    /// <summary>Lets the transaction's log go to the test output.</summary>
+    private sealed class OutputWriter(ITestOutputHelper output) : StringWriter
+    {
+        public override void WriteLine(string? value) => output.WriteLine(value ?? "");
     }
 
     private static void RunCmd(params string[] args)
