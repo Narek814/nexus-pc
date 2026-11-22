@@ -346,7 +346,7 @@ public sealed class AgentLifecycleTests
             Assert.DoesNotContain("0.0.0.0", link.Hosts);
             Assert.All(link.Hosts, h => Assert.True(Nexus.Agent.Hosting.NetworkAddresses.IsAllowedLocalAddress(System.Net.IPAddress.Parse(h))));
 
-            // Any address of this machine outside loopback/private/Tailscale must be refused before TLS.
+            // Any address of this machine outside loopback/private LAN (including 100.64.0.0/10) must be refused before TLS.
             var outside = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
                 .SelectMany(n => n.GetIPProperties().UnicastAddresses)
                 .Select(u => u.Address)

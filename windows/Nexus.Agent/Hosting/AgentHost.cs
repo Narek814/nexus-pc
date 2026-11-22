@@ -67,7 +67,7 @@ internal static class AgentHost
 
         var port = options.Port ?? config.Port;
         // Production listens on all IPv4 addresses and filters every connection by the local address it
-        // arrived on (loopback, private LAN, Tailscale), before TLS. Binding to the addresses seen at start
+        // arrived on (loopback, private LAN), before TLS. Binding to the addresses seen at start
         // missed Wi-Fi that came up after the service (found on a real PC: only the WSL adapter existed at
         // boot). Public addresses are refused here and by the "Private only" firewall rule.
         var addresses = options.BindAddresses ?? [IPAddress.Any];
