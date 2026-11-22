@@ -11,7 +11,7 @@ using Nexus.Windows;
 namespace Nexus.Setup;
 
 [SupportedOSPlatform("windows")]
-internal sealed class Installer(SetupOptions options, TextWriter log)
+internal sealed class Installer(SetupOptions options, TextWriter log) : IInstallServices
 {
     private readonly string _system32 = Environment.SystemDirectory;
     private readonly string _programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
@@ -86,6 +86,33 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             Say(SetupPlan.NotEnoughSpaceText(required));
             return 3;
         }
+        // T5 section 3: an interrupted earlier run is finished or undone first, from its journal — only after the
+        // install root itself passed the path checks (nothing is moved inside a folder others could change).
+        if (Directory.Exists(Root))
+        {
+            try
+            {
+                StagingDirectory.CheckInstallRoot(Root);
+            }
+            catch (StagingRefusedException refused)
+            {
+                log.WriteLine("install root refused: " + refused.Message);
+                Say(SetupPlan.UnsafeInstallPathText(Root));
+                return SetupPlan.ExitUnsafeInstallPath;
+            }
+            var recovery = new InstallTransaction(new WindowsInstallFileSystem(), this, Root, log).Recover();
+            log.WriteLine("Recovery of earlier runs: " + recovery);
+            if (recovery == RecoveryResult.Failed)
+            {
+                Say(SetupPlan.RecoveryFailedText);
+                return SetupPlan.ExitRecoveryIncomplete;
+            }
+            if (recovery == RecoveryResult.JournalUnreadable)
+            {
+                Say(SetupPlan.JournalUnreadableText(InstallJournal.PathIn(Root)));
+                return SetupPlan.ExitRecoveryIncomplete;
+            }
+        }
         StagingDirectory staging;
         try
         {
@@ -138,73 +165,61 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion?.Split('+')[0] : null;
         Say(oldVersion is null ? $"Устанавливаю версию {newVersion}." : $"Обновляю {oldVersion} → {newVersion}. Сопряжённые устройства, автоматизации и настройки сохраняются.");
 
-        Step("Останавливаю Nexus PC", () =>
+        // T5 section 3, stages U2–U6: atomic replacement with a journal and rollback at every stage.
+        var transaction = new InstallTransaction(new WindowsInstallFileSystem(), this, Root, log, title =>
         {
-            StopTray();
-            StopService();
-            StopLeftoverAgents();
-            StopBundledOpenRgb();
+            Write("  ▸ ", ConsoleColor.Magenta);
+            Console.WriteLine($"{title}…");
+            log.WriteLine("== " + title);
         });
-        WarnAboutStandaloneOpenRgb();
-
-        // Copying from the checked staging folder is still delete-then-copy; atomic replacement with rollback is part B of T5.
-        Step("Копирую файлы в " + Root, () =>
+        var components = SetupPlan.Parts.Where(p => Directory.Exists(Path.Combine(staging.Path, p))).ToList();
+        TransactionOutcome outcome;
+        try
         {
-            foreach (var part in SetupPlan.Parts.Where(p => Directory.Exists(Path.Combine(staging.Path, p))))
+            outcome = transaction.Run(staging.Path, components, () =>
             {
-                var target = Path.Combine(Root, part);
-                Retry(() =>
+                if (File.Exists(SetupPlan.OpenRgbExe(Root)))
                 {
-                    if (Directory.Exists(target))
-                    {
-                        Directory.Delete(target, recursive: true);
-                    }
-                });
-                CopyDirectory(Path.Combine(staging.Path, part), target);
-            }
-        });
+                    ImportOpenRgbSettings(); // R11-1 recheck failure → rollback, exit code 6
+                }
+                ((IInstallServices)this).Register();
+            });
+        }
+        catch (UnsafeInstallObjectException unsafeObject)
+        {
+            // Only the first journal write is outside the stages; nothing was changed yet.
+            log.WriteLine("install folder object refused: " + unsafeObject.Message);
+            Say(SetupPlan.UnsafeInstallPathText(Root));
+            return SetupPlan.ExitUnsafeInstallPath;
+        }
+        switch (outcome.Result)
+        {
+            case TransactionResult.RecoveryFailed:
+                staging.Keep();
+                log.WriteLine($"{outcome.Stage}: {outcome.Error?.Message}");
+                Say(SetupPlan.RecoveryFailedText);
+                return SetupPlan.ExitRecoveryIncomplete;
+            case TransactionResult.RolledBack:
+                log.WriteLine($"{outcome.Stage}: {outcome.Error}");
+                Console.WriteLine();
+                if (outcome.Error is DataDirectoryRecheckException refused)
+                {
+                    Say(refused.Message);
+                }
+                Say(SetupPlan.RolledBackText(oldVersion is not null, outcome.Error?.Message, outcome.OldHealthProblem));
+                return outcome.Error is DataDirectoryRecheckException recheck ? recheck.ExitCode : 5;
+        }
 
+        // U7: PawnIO after the main installation; a failure there does not roll anything back.
         if (pawnIoHold is not null)
         {
             Step("Драйвер PawnIO (температура процессора, подсветка платы и памяти)", () => InstallPawnIo(pawnIoHold, staging.LocalPath(SetupPlan.PawnIoSetup)));
         }
-        if (File.Exists(SetupPlan.OpenRgbExe(Root)))
-        {
-            try
-            {
-                Step("Настройки подсветки (OpenRGB)", ImportOpenRgbSettings);
-            }
-            catch (DataDirectoryRecheckException refused)
-            {
-                // The folder failed the check again after the import (R11-1): the same refusal as the first
-                // check, exit code 6, installation stops here. Every other failure keeps exit code 5.
-                Console.WriteLine();
-                Say(refused.Message);
-                return refused.ExitCode;
-            }
-        }
-
-        Step("Настраиваю службу Windows", () =>
-        {
-            var exists = RunQuiet(SetupPlan.ScQuery(_system32)).Exit != 1060; // ERROR_SERVICE_DOES_NOT_EXIST
-            Must(exists ? SetupPlan.ScConfig(_system32, agentExe) : SetupPlan.ScCreate(_system32, agentExe));
-            RunQuiet(SetupPlan.ScDescription(_system32));
-            Must(SetupPlan.ScFailure(_system32));
-        });
-
-        Step("Брандмауэр: порт 47800 только для частной сети", () =>
-        {
-            RunQuiet(SetupPlan.FirewallDelete(_system32)); // also replaces the rule made by hand earlier
-            Must(SetupPlan.FirewallAdd(_system32, agentExe));
-        });
-
-        Step("Запускаю службу", () =>
-        {
-            Must(SetupPlan.ScStart(_system32));
-            WaitForState(4, TimeSpan.FromSeconds(30));
-        });
-
-        Step("Добавляю «Nexus PC» в меню «Пуск»", CreateStartMenuShortcut);
+        pawnIoHold?.Dispose();
+        var left = transaction.Finish(staging.Path);
+        log.WriteLine(left.Count == 0
+            ? "Journal: committed; staging, old folders and journal removed"
+            : "Journal: committed; left for the next run to remove: " + string.Join(", ", left));
 
         if (!options.NoTray)
         {
@@ -214,8 +229,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
                 {
                     run.SetValue(SetupPlan.RunValue, $"\"{SetupPlan.TrayExe(Root)}\"");
                 }
-                // Through Explorer, so the tray runs with normal rights, not as administrator.
-                using var _ = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), $"\"{SetupPlan.TrayExe(Root)}\""));
+                StartTray();
             });
         }
 
@@ -680,6 +694,132 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         Say("В кафе и других чужих сетях оставляйте «общественную» — там ПК закрыт для подключений.");
     }
 
+    // ------------------------------------------------------------ IInstallServices (T5 section 3)
+
+    void IInstallServices.StopAll()
+    {
+        StopTray();
+        StopService();
+        StopLeftoverAgents();
+        StopBundledOpenRgb();
+        WarnAboutStandaloneOpenRgb();
+    }
+
+    void IInstallServices.StartBack()
+    {
+        try
+        {
+            if (RunQuiet(SetupPlan.ScQuery(_system32)).Exit != 1060 && File.Exists(SetupPlan.AgentExe(Root)))
+            {
+                RunQuiet(SetupPlan.ScStart(_system32));
+                WaitForState(4, TimeSpan.FromSeconds(30));
+            }
+            if (!options.NoTray && File.Exists(SetupPlan.TrayExe(Root)))
+            {
+                StartTray();
+            }
+        }
+        catch (Exception e) when (e is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
+        {
+            log.WriteLine("Starting the installed version again: " + e.Message);
+        }
+    }
+
+    void IInstallServices.Register()
+    {
+        var agentExe = SetupPlan.AgentExe(Root);
+        var exists = RunQuiet(SetupPlan.ScQuery(_system32)).Exit != 1060; // ERROR_SERVICE_DOES_NOT_EXIST
+        Must(exists ? SetupPlan.ScConfig(_system32, agentExe) : SetupPlan.ScCreate(_system32, agentExe));
+        RunQuiet(SetupPlan.ScDescription(_system32));
+        Must(SetupPlan.ScFailure(_system32));
+        RunQuiet(SetupPlan.FirewallDelete(_system32)); // also replaces the rule made by hand earlier
+        Must(SetupPlan.FirewallAdd(_system32, agentExe));
+        CreateStartMenuShortcut();
+    }
+
+    /// <summary>
+    /// B-4: sc query (exit 1060 = no such service), "netsh advfirewall firewall show rule name=…" (exit 0 only when a rule
+    /// with that name exists) and the Start menu file. An unclear answer counts as "existed", so nothing is removed for it.
+    /// </summary>
+    RegistrationSnapshot IInstallServices.Registration()
+    {
+        var service = RunQuiet(SetupPlan.ScQuery(_system32)).Exit != 1060;
+        var firewall = RunQuiet(SetupPlan.FirewallShow(_system32)).Exit != 1;
+        var shortcut = File.Exists(SetupPlan.StartMenuShortcut(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms)));
+        log.WriteLine($"Registration before: service {service}, firewall rule {firewall}, Start menu entry {shortcut}");
+        return new RegistrationSnapshot(service, firewall, shortcut);
+    }
+
+    void IInstallServices.Unregister(RegistrationSnapshot before)
+    {
+        if (!before.Service)
+        {
+            StopService();
+            RunQuiet(SetupPlan.ScDelete(_system32));
+        }
+        if (!before.FirewallRule)
+        {
+            RunQuiet(SetupPlan.FirewallDelete(_system32));
+        }
+        var shortcut = SetupPlan.StartMenuShortcut(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms));
+        if (!before.Shortcut && File.Exists(shortcut))
+        {
+            File.Delete(shortcut);
+        }
+        log.WriteLine($"First installation rolled back; removed only what it added (service {!before.Service}, firewall rule {!before.FirewallRule}, Start menu entry {!before.Shortcut}); data kept");
+    }
+
+    void IInstallServices.Start()
+    {
+        Must(SetupPlan.ScStart(_system32));
+        WaitForState(4, TimeSpan.FromSeconds(30));
+    }
+
+    void IInstallServices.Stop()
+    {
+        StopService();
+        StopLeftoverAgents();
+        StopBundledOpenRgb();
+    }
+
+    /// <summary>Running, port 47800 listening, and "Nexus.Agent.exe status" answers over the admin channel; up to 60 s.</summary>
+    string? IInstallServices.HealthProblem()
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+        string problem;
+        do
+        {
+            var query = RunQuiet(SetupPlan.ScQuery(_system32));
+            if (SetupPlan.ServiceState(query.Exit, query.Output) != 4)
+            {
+                problem = "the service is not running";
+            }
+            else if (!System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == SetupPlan.Port))
+            {
+                problem = $"port {SetupPlan.Port} is not listening";
+            }
+            else if (RunQuiet(new Command(SetupPlan.AgentExe(Root), ["status"])).Exit != 0)
+            {
+                problem = "the admin channel does not answer status";
+            }
+            else
+            {
+                log.WriteLine("Health: service running, port listening, status answered");
+                return null;
+            }
+            Thread.Sleep(1000);
+        }
+        while (DateTime.UtcNow < deadline);
+        log.WriteLine("Health: " + problem);
+        return problem;
+    }
+
+    /// <summary>Through Explorer, so the tray runs with normal rights, not as administrator.</summary>
+    private void StartTray()
+    {
+        using var _ = Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), $"\"{SetupPlan.TrayExe(Root)}\""));
+    }
+
     private static void StopTray()
     {
         foreach (var process in Process.GetProcessesByName("Nexus.Tray"))
@@ -768,17 +908,6 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
     {
         using var reader = zip.GetEntry("version.txt") is { } entry ? new StreamReader(entry.Open()) : null;
         return reader?.ReadToEnd().Trim() is { Length: > 0 } version ? version : "dev";
-    }
-
-    private static void CopyDirectory(string source, string target)
-    {
-        Directory.CreateDirectory(target);
-        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var destination = Path.Combine(target, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            Retry(() => File.Copy(file, destination, overwrite: true));
-        }
     }
 
     private static void Retry(Action action)

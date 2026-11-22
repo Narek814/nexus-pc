@@ -20,7 +20,24 @@ internal sealed class PayloadRejectedException(string message) : Exception(messa
 [SupportedOSPlatform("windows")]
 internal sealed class StagingDirectory : IDisposable
 {
-    public const string Prefix = ".staging-";
+    public const string Prefix = StagingDirectoryName.Prefix;
+
+    private bool _keep;
+
+    /// <summary>The rollback failed (T5 section 3): staging may hold components and must stay for the next run.</summary>
+    public void Keep() => _keep = true;
+
+    /// <summary>The existing install root and everything above it, with the strict rules for NexusPC itself.</summary>
+    public static void CheckInstallRoot(string installRoot)
+    {
+        ArgumentNullException.ThrowIfNull(installRoot);
+        var components = StagingPathPolicy.Components(System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(installRoot)));
+        if (components.Count < 2)
+        {
+            throw new StagingRefusedException("unsupported install path " + installRoot);
+        }
+        CheckPath(new DataDirectoryFileSystem(), components, components.Count - 1);
+    }
 
     private readonly TextWriter _log;
 
@@ -202,7 +219,7 @@ internal sealed class StagingDirectory : IDisposable
     {
         try
         {
-            if (Directory.Exists(Path))
+            if (!_keep && Directory.Exists(Path))
             {
                 Directory.Delete(Path, recursive: true);
             }

@@ -176,8 +176,15 @@ jobs:
           $pawnio = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
           "PawnIO installed on the runner: $pawnio"
           Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'PawnIO|OpenRGB' -Context 0,2
-          Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'Staging:', 'Unpacked into', 'PawnIO process', 'PawnIO' -SimpleMatch
+          Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'Staging:', 'Unpacked into', 'PawnIO process', 'PawnIO', 'Journal:', 'Health:', 'Rolled back', 'Recovery of earlier runs' -SimpleMatch
           Check ($null -ne (Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'Unpacked into' -SimpleMatch)) "setup log has 'Unpacked into'"
+          function NoLeftovers($when) {
+            $root = "$env:ProgramFiles\NexusPC"
+            Check (-not (Test-Path -LiteralPath "$root\.install-journal.json")) "no .install-journal.json $when"
+            Check (@(Get-ChildItem -LiteralPath $root -Force -Directory -Filter '*.old-*').Count -eq 0) "no *.old-* folders $when"
+            Check (@(Get-ChildItem -LiteralPath $root -Force -Directory -Filter '.staging-*').Count -eq 0) "no .staging-* folders $when"
+          }
+          NoLeftovers 'after install'
 
           # Found on the owner's PC: an admin console still running Nexus.Agent.exe keeps the DLLs locked.
           $leftover = Start-Process -FilePath $agent -ArgumentList pair -PassThru -WindowStyle Hidden
@@ -185,6 +192,9 @@ jobs:
           Check (-not $leftover.HasExited) "leftover 'Nexus.Agent.exe pair' is running before the upgrade"
           & .\out\NexusPC-Setup.exe --quiet --no-tray; Check ($LASTEXITCODE -eq 0) "upgrade over itself while a leftover agent process runs"
           Check (Running) "service running after upgrade"
+          Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'Staging:', 'Unpacked into', 'PawnIO process', 'PawnIO', 'Journal:', 'Health:', 'Rolled back', 'Recovery of earlier runs' -SimpleMatch
+          Check ($null -ne (Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'Journal: committed' -SimpleMatch)) "setup log has 'Journal: committed' after upgrade"
+          NoLeftovers 'after upgrade'
           Check ($null -ne (OpenRgbListening)) "OpenRGB back after the upgrade (it was running, its files were replaced)"
           Check (@(Get-NetFirewallRule -DisplayName "Nexus PC Agent").Count -eq 1) "still exactly one firewall rule"
           Check (Test-Path "$env:ProgramData\NexusPC") "data kept"

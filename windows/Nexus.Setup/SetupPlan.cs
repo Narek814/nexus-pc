@@ -100,6 +100,26 @@ internal static partial class SetupPlan
     /// <summary>Exit code: the install path (C:\ → Program Files → NexusPC → staging) failed the T5 checks; nothing was changed.</summary>
     public const int ExitUnsafeInstallPath = 8;
 
+    /// <summary>Exit code: the rollback of a failed update (or of an interrupted earlier run) could not finish; nothing was deleted.</summary>
+    public const int ExitRecoveryIncomplete = 9;
+
+    public static string JournalUnreadableText(string journalPath) =>
+        $"Установка остановлена, ничего не изменено: файл журнала прошлой установки {journalPath} повреждён или не читается. " +
+        "Откройте его в Блокноте от имени администратора и проверьте; если в нём нет ничего важного для вас, удалите этот файл " +
+        "(нужны права администратора) и запустите установщик ещё раз. Сам установщик этот файл не удаляет.";
+
+    public const string RecoveryFailedText =
+        "Не удалось вернуть предыдущую версию Nexus PC: часть файлов занята. Ничего не удалено, ваши данные и сопряжения на месте. " +
+        "Перезагрузите ПК и запустите установщик ещё раз — он сам закончит восстановление.";
+
+    public static string RolledBackText(bool hadOldVersion, string? reason, string? oldHealthProblem) =>
+        (hadOldVersion
+            ? "Обновление не удалось, предыдущая версия Nexus PC восстановлена. Данные и сопряжения сохранены."
+            : "Установка не удалась, установленные файлы убраны. Данные не тронуты.")
+        + (reason is null ? "" : " Причина: " + reason)
+        + (oldHealthProblem is null ? "" : " Внимание: восстановленная версия пока не отвечает — перезагрузите ПК.")
+        + " Подробности — в журнале установки NexusPC-Setup.log.";
+
     public const string ManifestBrokenText =
         "Повреждённый установщик: файлы внутри не совпадают с проверочным списком. Ничего не изменено. Скачайте NexusPC-Setup.exe заново со страницы сборки.";
 
@@ -196,6 +216,10 @@ internal static partial class SetupPlan
 
     public static Command ScFailure(string system32) =>
         new(Sys(system32, "sc.exe"), ["failure", ServiceName, "reset=", "86400", "actions=", "restart/5000/restart/5000/restart/60000"]);
+
+    /// <summary>Exit 0 when a rule with this name exists, 1 when none matches.</summary>
+    public static Command FirewallShow(string system32) =>
+        new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "show", "rule", $"name={FirewallRuleName}"]);
 
     public static Command FirewallDelete(string system32) =>
         new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "delete", "rule", $"name={FirewallRuleName}"]);

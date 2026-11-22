@@ -297,6 +297,152 @@ public sealed class SetupT5WindowsTests(ITestOutputHelper output) : IDisposable
         return false;
     }
 
+    // ------------------------------------------------------------ part B: transaction on NTFS
+
+    [SupportedOSPlatform("windows")]
+    private string ProtectedRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "nexus-t5b-" + Guid.NewGuid().ToString("N"));
+        Assert.Equal(0, DataDirectoryFileSystem.TryCreateProtectedDirectory(root, withOwner: true));
+        _cleanup.Add(root);
+        using var open = new DataDirectoryFileSystem().Open(root, DataAccess.Inspect);
+        return open.State.FinalPath ?? root; // long path: staging final-path checks compare against it
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void Components_are_replaced_by_atomic_renames_and_rolled_back_on_ntfs()
+    {
+        if (!Elevated() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = ProtectedRoot();
+        var id = Guid.NewGuid().ToString("N");
+        var staging = Path.Join(root, ".staging-" + id);
+        Directory.CreateDirectory(Path.Join(root, "Agent"));
+        File.WriteAllText(Path.Join(root, "Agent", "v.txt"), "old");
+        Directory.CreateDirectory(Path.Join(staging, "Agent"));
+        File.WriteAllText(Path.Join(staging, "Agent", "v.txt"), "new");
+        var fs = new WindowsInstallFileSystem();
+
+        var services = new FakeServices();
+        services.Health.Enqueue("not listening");
+        var failed = new InstallTransaction(fs, services, root, TextWriter.Null).Run(staging, ["Agent"], () => { });
+        Assert.Equal(TransactionResult.RolledBack, failed.Result);
+        Assert.Equal("old", File.ReadAllText(Path.Join(root, "Agent", "v.txt")));
+        Assert.Equal("new", File.ReadAllText(Path.Join(staging, "Agent", "v.txt")));
+        Assert.False(Directory.Exists(Path.Join(root, "Agent.old-" + id)));
+
+        var tx = new InstallTransaction(fs, new FakeServices(), root, TextWriter.Null);
+        Assert.Equal(TransactionResult.Committed, tx.Run(staging, ["Agent"], () => { }).Result);
+        tx.Finish(staging);
+        Assert.Equal("new", File.ReadAllText(Path.Join(root, "Agent", "v.txt")));
+        Assert.False(Directory.Exists(Path.Join(root, "Agent.old-" + id)));
+        Assert.False(Directory.Exists(staging));
+        Assert.False(File.Exists(InstallJournal.PathIn(root)));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void Rename_never_replaces_an_existing_folder()
+    {
+        if (!Windows() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = TempFolder();
+        Directory.CreateDirectory(Path.Join(root, "a"));
+        Directory.CreateDirectory(Path.Join(root, "b"));
+        Assert.Throws<IOException>(() => AtomicMove.Rename(Path.Join(root, "a"), Path.Join(root, "b")));
+        AtomicMove.Rename(Path.Join(root, "a"), Path.Join(root, "c"));
+        Assert.True(Directory.Exists(Path.Join(root, "c")));
+        Assert.False(Directory.Exists(Path.Join(root, "a")));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [SupportedOSPlatform("windows")]
+    public void Junction_in_place_of_an_old_folder_is_refused_and_its_target_untouched(bool committed)
+    {
+        if (!Elevated() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = ProtectedRoot();
+        var id = Guid.NewGuid().ToString("N");
+        var staging = Path.Join(root, ".staging-" + id);
+        Assert.Equal(0, DataDirectoryFileSystem.TryCreateProtectedDirectory(staging, withOwner: true));
+        var target = TempFolder();
+        File.WriteAllText(Path.Join(target, "precious.txt"), "keep");
+        Directory.CreateDirectory(Path.Join(root, "Agent"));
+        var old = InstallJournal.OldPath(root, "Agent", id);
+        RunCmd("/c", "mklink", "/J", old, target);
+        var fs = new WindowsInstallFileSystem();
+        fs.WriteJournal(InstallJournal.PathIn(root), new InstallJournal(id, staging, false,
+            committed ? InstallJournal.Committed : InstallJournal.Replacing, [new JournalComponent("Agent", true)]).Serialize());
+        Assert.Throws<UnsafeInstallObjectException>(() => fs.CheckObject(old));
+
+        var result = new InstallTransaction(fs, new FakeServices(), root, TextWriter.Null).Recover();
+        Assert.Equal(committed ? RecoveryResult.Cleaned : RecoveryResult.Failed, result);
+        Assert.Equal("keep", File.ReadAllText(Path.Join(target, "precious.txt")));
+        Assert.True(Directory.Exists(old)); // the junction itself is left as it was
+        Assert.True(Directory.Exists(Path.Join(root, "Agent"))); // nothing was moved before the refusal
+        Directory.Delete(old); // removes the junction only
+        Assert.Equal("keep", File.ReadAllText(Path.Join(target, "precious.txt")));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void Journal_survives_an_interrupted_write()
+    {
+        if (!Windows() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var path = InstallJournal.PathIn(TempFolder());
+        var fs = new WindowsInstallFileSystem();
+        fs.WriteJournal(path, "first");
+        File.WriteAllText(path + ".tmp", "half writ"); // a write cut off before its rename
+        Assert.Equal("first", fs.ReadJournal(path));
+        fs.WriteJournal(path, "second");
+        Assert.Equal("second", fs.ReadJournal(path));
+        Assert.False(File.Exists(path + ".tmp"));
+        fs.DeleteJournal(path);
+        Assert.Null(fs.ReadJournal(path));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void Installed_folders_let_users_read_and_run_but_not_write()
+    {
+        if (!Elevated() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var dir = Path.Join(ProtectedRoot(), "Tray");
+        Directory.CreateDirectory(Path.Join(dir, "sub"));
+        File.WriteAllText(Path.Join(dir, "sub", "x.dll"), "x");
+        new WindowsInstallFileSystem().ProtectInstalled(dir);
+        var fs = new DataDirectoryFileSystem();
+        foreach (var path in new[] { dir, Path.Join(dir, "sub"), Path.Join(dir, "sub", "x.dll") })
+        {
+            using var open = fs.Open(path, DataAccess.Inspect);
+            var users = open.State.Dacl.Where(a => a.Sid == "S-1-5-32-545").ToList();
+            Assert.NotEmpty(users);
+            Assert.All(users, a => Assert.Equal(0u, a.Mask & StagingPathPolicy.WriteRightsOnOwnFolders));
+            Assert.All(users, a => Assert.Equal(0x1200A9u, a.Mask & 0x1200A9u));
+            Assert.All(open.State.Dacl, a => Assert.Contains(a.Sid, new[] { DataDirectoryPolicy.LocalSystem, DataDirectoryPolicy.Administrators, "S-1-5-32-545" }));
+            output.WriteLine($"{path}: {open.State.SecurityDescriptor}");
+        }
+        using (var top = fs.Open(dir, DataAccess.Inspect))
+        {
+            Assert.True(top.State.DaclProtected);
+            Assert.Equal(DataDirectoryPolicy.Administrators, top.State.OwnerSid);
+        }
+    }
+
     private static void RunCmd(params string[] args)
     {
         var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe")) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
