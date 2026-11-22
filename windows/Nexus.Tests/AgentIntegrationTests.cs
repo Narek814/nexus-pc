@@ -113,6 +113,26 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Account_refresh_needs_login_is_not_advertised_and_is_not_implemented_yet()
+    {
+        await using (var anonymous = await _host.ConnectAsync())
+        {
+            Assert.Equal(ErrorCodes.AuthRequired, (await anonymous.RequestAsync("account.refresh")).ErrorCode());
+            var before = await anonymous.RequestAsync("system.hello");
+            Assert.Null(before["payload"]!["plan"]);
+            Assert.Null(before["payload"]!["entitlementState"]);
+        }
+
+        var (client, _, key) = await _host.PairedClientAsync();
+        await using var _ = client;
+        using var __ = key;
+        var hello = await client.RequestAsync("system.hello");
+        Assert.DoesNotContain("account.refresh", hello["payload"]!["capabilities"]!.AsArray().Select(n => n!.GetValue<string>()));
+        Assert.DoesNotContain("entitlements.v1", hello["payload"]!["capabilities"]!.AsArray().Select(n => n!.GetValue<string>()));
+        Assert.Equal(ErrorCodes.NotImplemented, (await client.RequestAsync("account.refresh")).ErrorCode());
+    }
+
+    [Fact]
     public async Task Wrong_certificate_pin_refuses_to_connect()
     {
         var wrong = new string('0', 64);

@@ -3702,6 +3702,75 @@
         "ok": true
       },
       "schemaValid": true
+    },
+    {
+      "name": "account.refresh after auth without any permission",
+      "context": {
+        "authenticated": true,
+        "permissions": [],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-0000000e0126",
+        "kind": "request",
+        "type": "account.refresh",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": true
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "account.refresh without auth",
+      "context": {
+        "authenticated": false,
+        "permissions": [],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-0000000e0127",
+        "kind": "request",
+        "type": "account.refresh",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {}
+      },
+      "expect": {
+        "ok": false,
+        "error": "auth.required"
+      },
+      "schemaValid": true
+    },
+    {
+      "name": "account.refresh with unknown payload field",
+      "context": {
+        "authenticated": true,
+        "permissions": [
+          "monitoring"
+        ],
+        "now": "2026-11-14T10:00:00Z"
+      },
+      "message": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-0000000e0128",
+        "kind": "request",
+        "type": "account.refresh",
+        "ts": "2026-11-14T10:00:00Z",
+        "pcId": "7d1c3b0a-5f7e-4c1e-9a52-2f0d9c4e8b11",
+        "payload": {
+          "force": true
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "command.invalidPayload"
+      },
+      "schemaValid": false
     }
   ]
 }

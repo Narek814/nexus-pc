@@ -49,6 +49,10 @@ public static class ErrorCodes
     public const string AutomationNotFound = "automations.notFound";
     public const string AutomationLimit = "automations.limit";
     public const string AutomationBusy = "automations.running";
+    /// <summary>Feature needs Pro (ENT-1). Only after device permissions passed; optional details { feature, state }.</summary>
+    public const string PlanRequired = "plan.required";
+    /// <summary>Free-plan limit reached (ENT-1). Only after device permissions passed; optional details { feature, limit }.</summary>
+    public const string PlanLimit = "plan.limit";
     public const string Internal = "internal";
 }
 

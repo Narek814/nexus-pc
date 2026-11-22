@@ -61,7 +61,8 @@
               "clipboard.get",
               "automations.list",
               "screen.start",
-              "screen.stop"
+              "screen.stop",
+              "account.refresh"
             ]
           }
         }
@@ -593,7 +594,8 @@
             "screen.start",
             "screen.frame",
             "screen.stop",
-            "screen.video"
+            "screen.video",
+            "account.refresh"
           ]
         }
       }

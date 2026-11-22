@@ -559,7 +559,9 @@ public sealed class CapabilityTests
     [Fact]
     public void Every_catalog_command_is_implemented_or_forwarded_to_the_tray()
     {
-        var known = Nexus.Agent.Server.CommandDispatcher.Implemented.Concat(Nexus.Agent.Server.CommandDispatcher.ViaTray).ToHashSet(StringComparer.Ordinal);
+        // NotYet: in the protocol, answered with command.notImplemented and never advertised (account.refresh until ENT-2).
+        var known = Nexus.Agent.Server.CommandDispatcher.Implemented.Concat(Nexus.Agent.Server.CommandDispatcher.ViaTray)
+            .Concat(Nexus.Agent.Server.CommandDispatcher.NotYet.Keys).ToHashSet(StringComparer.Ordinal);
         var missing = CommandCatalog.V1.All.Select(c => c.Type).Where(t => !known.Contains(t)).ToList();
         Assert.Empty(missing);
     }

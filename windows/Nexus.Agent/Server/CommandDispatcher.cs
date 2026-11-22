@@ -42,7 +42,12 @@ internal sealed class CommandDispatcher(AgentServices services)
     private static bool IsHighFrequency(string type) =>
         type.StartsWith("input.", StringComparison.Ordinal) || type is "files.upload.chunk" or "files.read" or "screen.frame" or "screen.video";
 
-    private static readonly Dictionary<string, string> NotYet = new(StringComparer.Ordinal);
+    /// <summary>In the protocol but without a handler in this build: answered with command.notImplemented, never listed in capabilities.</summary>
+    internal static readonly IReadOnlyDictionary<string, string> NotYet = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        // ENT-1 adds the command to protocol v1; the agent handles it in ENT-2.
+        ["account.refresh"] = "'account.refresh' is not available in this build yet.",
+    };
 
     /// <summary>
     /// Minimum countdown for a shutdown/restart without force when it has to go through the service,

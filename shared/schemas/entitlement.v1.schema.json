@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "nexuspc:entitlement/v1",
+  "title": "Nexus PC entitlement token payload v1",
+  "description": "Decoded payload of an entitlement token: kid \".\" base64url(payload JSON) \".\" base64url(ES256 signature over the ASCII bytes of kid \".\" payload-segment), see docs/API.md «Токен прав». The kid lives only in the first segment, never in the payload. The payload is parsed only after the signature verified, by a strict parser: duplicate keys at any depth and non-integer number literals (fraction, exponent, -0) are rejected before this schema applies. Unknown fields are rejected. Time fields are Unix seconds. Relations between times (exp - iat <= 86400, 0 <= graceUntil - exp <= 604800, iat <= now + 300), iss and pcId are checked by the agent, not by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "typ", "iss", "aud", "sub", "pcId", "plan", "features", "iat", "exp", "graceUntil", "jti"],
+  "properties": {
+    "v": { "const": 1 },
+    "typ": { "const": "nexus-ent+v1" },
+    "iss": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[\\x21-\\x7e]+$" },
+    "aud": { "const": "nexus-agent" },
+    "sub": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[\\x21-\\x7e]+$", "description": "Opaque account subject. Never forwarded to clients." },
+    "pcId": { "$ref": "#/$defs/uuid" },
+    "plan": { "enum": ["free", "pro"] },
+    "features": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9]*){0,3}$" }
+    },
+    "iat": { "$ref": "#/$defs/unixSeconds" },
+    "exp": { "$ref": "#/$defs/unixSeconds" },
+    "graceUntil": { "$ref": "#/$defs/unixSeconds" },
+    "jti": { "$ref": "#/$defs/uuid" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "unixSeconds": { "type": "integer", "minimum": 1700000000, "maximum": 4102444800 }
+  }
+}
