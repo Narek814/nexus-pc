@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Lighting unavailable: another program on the PC has taken it over": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подсветка недоступна: её перехватила другая программа на ПК"
+          }
+        }
+      }
+    },
     "PC Status": {
       "localizations": {
         "ru": {

@@ -65,7 +65,8 @@ internal sealed class AgentTestHost : IAsyncDisposable
     public static async Task<AgentTestHost> StartAsync(
         string? dataDirectory = null, IPowerController? power = null, bool fakePower = true,
         string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null,
-        IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, int? openRgbPort = null)
+        IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, int? openRgbPort = null,
+        Nexus.Core.Security.IConnectionOwnerSource? openRgbOwners = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         TrustTestAccount();
@@ -87,6 +88,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
             MetricsSource = metrics ?? new FakeMetricsSource(),
             OpenRgbExecutable = null, // the real OpenRGB is never started by tests
             OpenRgbPort = openRgbPort ?? 1, // port 1: nothing listens, OpenRGB "not running" unless a test provides one
+            OpenRgbOwners = openRgbOwners,
         });
         await app.StartAsync();
         return new AgentTestHost(app, dataDirectory, power, sessionPipe);

@@ -24,7 +24,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Test
-        run: dotnet test windows/Nexus.slnx --configuration Release
+        run: dotnet test windows/Nexus.slnx --configuration Release --logger "console;verbosity=detailed"
 
   schemas:
     name: Schema fixtures
@@ -83,6 +83,10 @@ jobs:
           Copy-Item windows/ThirdParty/OpenRGB/LICENSE staging/OpenRGB/LICENSE.txt
           Copy-Item windows/ThirdParty/README.md staging/OpenRGB/NEXUS-PC-NOTICE.md
           if (-not (Test-Path staging/OpenRGB/OpenRGB.exe)) { Write-Error "OpenRGB.exe missing"; exit 1 }
+          # The agent starts only this exact OpenRGB.exe (OpenRgbHost.PinnedSha256); keep both values equal.
+          $openRgbExeSha = (Get-FileHash staging/OpenRGB/OpenRGB.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($openRgbExeSha -ne "e26ae71162795a8abcfb90c05c1572a00ba06ca63b886aca57392a0138963b1e") { Write-Error "SHA-256 mismatch for OpenRGB.exe : $openRgbExeSha"; exit 1 }
+          "ok: OpenRGB.exe $openRgbExeSha"
 
           New-Item -ItemType Directory staging/PawnIO | Out-Null
           Fetch "https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe" "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032" staging/PawnIO/PawnIO_setup.exe
@@ -130,6 +134,10 @@ jobs:
           $proc = Get-Process OpenRGB -ErrorAction SilentlyContinue | Where-Object Path -eq $openrgb
           Check ($null -ne $proc) "OpenRGB runs from Program Files"
           Check (@(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object DisplayName -like '*OpenRGB*').Count -eq 0) "no firewall rule for OpenRGB"
+          function OpenRgbState { $st = $null; for ($i = 0; $i -lt 60; $i++) { $st = (& $agent status | Out-String | ConvertFrom-Json).openRgb; if ($st -eq 'running') { return $st }; Start-Sleep 1 }; $st }
+          $rgbState = OpenRgbState
+          "agent reports openRgb: $rgbState"
+          Check ($rgbState -eq 'running') "agent owns the bundled OpenRGB (state running, not conflict)"
           $pawnio = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
           "PawnIO installed on the runner: $pawnio"
           Get-Content $env:TEMP\NexusPC-Setup.log | Select-String -Pattern 'PawnIO|OpenRGB' -Context 0,2

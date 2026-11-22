@@ -23,6 +23,7 @@ public sealed class OpenRgbClient : IRgbAdapter
     private readonly TcpClient _tcp;
     private readonly NetworkStream _stream;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private IDisposable? _peer;
 
     private OpenRgbClient(TcpClient tcp)
     {
@@ -32,21 +33,32 @@ public sealed class OpenRgbClient : IRgbAdapter
 
     public string Name => "OpenRGB";
 
-    public static async Task<OpenRgbClient> ConnectAsync(string host, int port, CancellationToken cancellationToken)
+    public static Task<OpenRgbClient> ConnectAsync(string host, int port, CancellationToken cancellationToken) =>
+        ConnectAsync(host, port, verifyPeer: null, cancellationToken);
+
+    /// <summary>
+    /// Connects, then — before a single byte is sent — lets <paramref name="verifyPeer"/> check the process that
+    /// accepted this connection (T2). It throws to refuse (the socket is closed with nothing sent) or returns a
+    /// lease held for the life of the client (the open process handle).
+    /// </summary>
+    public static async Task<OpenRgbClient> ConnectAsync(string host, int port, Func<TcpClient, IDisposable>? verifyPeer, CancellationToken cancellationToken)
     {
-        var tcp = new TcpClient { NoDelay = true };
+        var tcp = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true };
+        IDisposable? peer = null;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
             await tcp.ConnectAsync(host, port, timeout.Token).ConfigureAwait(false);
-            var client = new OpenRgbClient(tcp);
+            peer = verifyPeer?.Invoke(tcp);
+            var client = new OpenRgbClient(tcp) { _peer = peer };
             await client.SendAsync(0, SetClientName, Encoding.ASCII.GetBytes("Nexus PC\0"), cancellationToken).ConfigureAwait(false);
             return client;
         }
         catch
         {
             tcp.Dispose();
+            peer?.Dispose();
             throw;
         }
     }
@@ -157,6 +169,7 @@ public sealed class OpenRgbClient : IRgbAdapter
     {
         await _stream.DisposeAsync().ConfigureAwait(false);
         _tcp.Dispose();
+        _peer?.Dispose();
         _gate.Dispose();
     }
 }

@@ -278,7 +278,9 @@ public sealed class RgbProtocolTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _openRgb = FakeOpenRgbServer.OwnersPc();
-        _host = await AgentTestHost.StartAsync(openRgbPort: _openRgb.Port);
+        // T2 rewrite: before T2 any server on the port was accepted. Now the fake server must be confirmed as the
+        // agent's own child (case A): the fake TCP table names it, and the host trusts that PID and start time.
+        _host = await FakeOpenRgbOwners.StartTrustedAsync(_openRgb.Port);
     }
 
     public async Task DisposeAsync()
@@ -362,7 +364,7 @@ public sealed class RgbPermissionTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _openRgb = FakeOpenRgbServer.OwnersPc();
-        _host = await AgentTestHost.StartAsync(openRgbPort: _openRgb.Port);
+        _host = await FakeOpenRgbOwners.StartTrustedAsync(_openRgb.Port); // T2: confirmed as case A, see RgbProtocolTests
     }
 
     public async Task DisposeAsync()

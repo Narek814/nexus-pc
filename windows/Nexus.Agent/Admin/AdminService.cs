@@ -56,6 +56,10 @@ internal sealed class AdminService(AgentServices services)
         {
             return Error("OpenRGB не установлен вместе с Nexus PC");
         }
+        if (pause && host.State == "conflict")
+        {
+            return Error("Подсветку перехватила другая программа на ПК. Закройте её и попробуйте снова.");
+        }
         if (pause)
         {
             host.Pause(TimeSpan.FromSeconds(60));
@@ -102,6 +106,7 @@ internal sealed class AdminService(AgentServices services)
         ["addresses"] = new JsonArray([.. Hosting.NetworkAddresses.EligibleLocalAddresses().Select(a => (JsonNode)a.ToString())]),
         ["pairedDevices"] = services.Devices.All.Count,
         ["auditLog"] = services.Audit.FilePath,
+        ["openRgb"] = services.OpenRgb?.State, // read by the tray to show "lighting taken over" (T2)
     });
 
     private JsonObject PairStart(AdminConnectionState state)

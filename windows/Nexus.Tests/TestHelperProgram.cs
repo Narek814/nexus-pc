@@ -22,6 +22,15 @@ public static class TestHelperProgram
         {
             return DllSearchProbe.Run(args[1], args[2], args[3]);
         }
+        // OpenRgbWindowsTests (T2): a loopback server in another process, see TcpOwnerProbe.
+        if (args.Length == 2 && args[0] == "--tcp-listen" && OperatingSystem.IsWindows())
+        {
+            return TcpOwnerProbe.Listen(args[1]);
+        }
+        if (args.Length == 2 && args[0] == "--tcp-accept-dup" && OperatingSystem.IsWindows())
+        {
+            return TcpOwnerProbe.AcceptDuplicated(args[1]);
+        }
         if (args.Length == 3 && args[0] == "--hold-datadir-lock" && OperatingSystem.IsWindows()
             && int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) && seconds is > 0 and <= 300)
         {
