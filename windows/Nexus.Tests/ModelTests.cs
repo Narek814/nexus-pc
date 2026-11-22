@@ -77,7 +77,10 @@ public class NetworkAddressTests
     [InlineData("192.168.0.106", true)]
     [InlineData("10.1.2.3", true)]
     [InlineData("172.19.144.1", true)]
-    [InlineData("100.101.102.103", true)]   // Tailscale
+    [InlineData("100.101.102.103", false)]  // CGNAT/Tailscale: no remote access
+    [InlineData("100.64.0.1", false)]
+    [InlineData("100.127.255.254", false)]
+    [InlineData("::ffff:100.101.102.103", false)]
     [InlineData("::ffff:192.168.0.106", true)]
     [InlineData("::1", true)]
     [InlineData("8.8.8.8", false)]
@@ -85,9 +88,23 @@ public class NetworkAddressTests
     [InlineData("100.128.0.1", false)]
     [InlineData("0.0.0.0", false)]
     [InlineData("2001:db8::1", false)]
-    public void Only_loopback_private_and_tailscale_connections_are_served(string address, bool allowed)
+    public void Only_loopback_and_private_lan_connections_are_served(string address, bool allowed)
     {
         Assert.Equal(allowed, Nexus.Agent.Hosting.NetworkAddresses.IsAllowedLocalAddress(System.Net.IPAddress.Parse(address)));
+    }
+
+    [Theory]
+    [InlineData("192.168.1.20", true)]
+    [InlineData("10.0.0.5", true)]
+    [InlineData("172.16.0.1", true)]
+    [InlineData("172.31.255.254", true)]
+    [InlineData("100.64.0.1", false)]
+    [InlineData("100.101.102.103", false)]
+    [InlineData("127.0.0.1", false)]
+    [InlineData("8.8.8.8", false)]
+    public void Only_private_lan_addresses_are_announced(string address, bool eligible)
+    {
+        Assert.Equal(eligible, Nexus.Agent.Hosting.NetworkAddresses.IsEligible(System.Net.IPAddress.Parse(address)));
     }
 }
 
