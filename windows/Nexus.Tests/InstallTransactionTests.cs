@@ -71,7 +71,7 @@ internal sealed class FakeInstallFs : IInstallFileSystem
         {
             throw new CrashException();
         }
-        return Dirs.ContainsKey(path) || Dirs.Keys.Any(k => k.StartsWith(path + "/", StringComparison.Ordinal));
+        return Dirs.ContainsKey(path) || Dirs.Keys.Any(k => k.StartsWith(path + TestPaths.Sep, StringComparison.Ordinal));
     }
 
     public void MoveDirectory(string from, string to)
@@ -85,7 +85,7 @@ internal sealed class FakeInstallFs : IInstallFileSystem
         {
             throw new IOException($"cannot move {from} to {to}");
         }
-        foreach (var key in Dirs.Keys.Where(k => k == from || k.StartsWith(from + "/", StringComparison.Ordinal)).ToList())
+        foreach (var key in Dirs.Keys.Where(k => k == from || k.StartsWith(from + TestPaths.Sep, StringComparison.Ordinal)).ToList())
         {
             var value = Dirs[key];
             Dirs.Remove(key);
@@ -100,21 +100,21 @@ internal sealed class FakeInstallFs : IInstallFileSystem
         {
             throw new IOException("in use: " + path);
         }
-        foreach (var key in Dirs.Keys.Where(k => k == path || k.StartsWith(path + "/", StringComparison.Ordinal)).ToList())
+        foreach (var key in Dirs.Keys.Where(k => k == path || k.StartsWith(path + TestPaths.Sep, StringComparison.Ordinal)).ToList())
         {
             Dirs.Remove(key);
         }
     }
 
     public IReadOnlyList<string> ListDirectories(string root) =>
-        [.. Dirs.Keys.Where(k => k.StartsWith(root + "/", StringComparison.Ordinal)).Select(k => root + "/" + k[(root.Length + 1)..].Split('/')[0]).Distinct()];
+        [.. Dirs.Keys.Where(k => k.StartsWith(root + TestPaths.Sep, StringComparison.Ordinal)).Select(k => root + TestPaths.Sep + k[(root.Length + 1)..].Split(Path.DirectorySeparatorChar)[0]).Distinct()];
 
     public string? ReadJournal(string path) => Dead ? throw new CrashException() : Journal;
 
     public void WriteJournal(string path, string contents)
     {
         Op();
-        var state = InstallJournal.Parse(contents, Path.GetDirectoryName(path)!)!.State;
+        var state = InstallJournal.Parse(contents, TestPaths.Parent(path)!)!.State;
         if (FailJournal?.Invoke(state) == true)
         {
             throw new IOException("disk full");
@@ -187,7 +187,7 @@ internal sealed class FakeServices : IInstallServices
 
 public sealed class InstallTransactionTests
 {
-    private const string Root = "/pf/NexusPC";
+    private static readonly string Root = TestPaths.Abs("/pf/NexusPC");
     private const string Id = "0123456789abcdef0123456789abcdef";
     private static readonly string Staging = Path.Join(Root, ".staging-" + Id);
     private static readonly string[] Parts = ["Agent", "Tray", "OpenRGB"];
@@ -405,7 +405,7 @@ public sealed class InstallTransactionTests
     public void First_installation_rollback_removes_the_new_files_and_the_registration_only()
     {
         var fs = FirstInstall();
-        fs.Dirs["/pd/NexusPC/config.json"] = "data"; // data lives elsewhere and is never touched
+        fs.Dirs[TestPaths.Abs("/pd/NexusPC/config.json")] = "data"; // data lives elsewhere and is never touched
         var services = new FakeServices();
         services.Health.Enqueue("status does not answer");
         var outcome = Run(fs, services);
@@ -416,7 +416,7 @@ public sealed class InstallTransactionTests
             Assert.Equal("new-" + p, fs.Dirs[Path.Join(Staging, p)]);
         }
         Assert.Equal(["StopAll", "Register", "Start", "Health", "Stop", "Unregister"], services.Calls);
-        Assert.Equal("data", fs.Dirs["/pd/NexusPC/config.json"]);
+        Assert.Equal("data", fs.Dirs[TestPaths.Abs("/pd/NexusPC/config.json")]);
     }
 
     /// <summary>Interrupting a full run (and its Finish) before each single file operation, then running recovery.</summary>
@@ -521,11 +521,12 @@ public sealed class InstallTransactionTests
     [Theory]
     [InlineData("not json")]
     [InlineData("""{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"/elsewhere/.staging-0123456789abcdef0123456789abcdef","firstInstall":false,"state":"replacing","components":[]}""")]
-    [InlineData("""{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"/pf/NexusPC/.staging-0123456789abcdef0123456789abcdef","firstInstall":false,"state":"replacing","components":[{"name":"..","hadOld":true}]}""")]
-    [InlineData("""{"version":1,"id":"../x","staging":"/pf/NexusPC/.staging-../x","firstInstall":false,"state":"replacing","components":[]}""")]
-    [InlineData("""{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"/pf/NexusPC/.staging-0123456789abcdef0123456789abcdef","firstInstall":false,"state":"whatever","components":[]}""")]
-    public void Unreadable_or_foreign_journal_touches_nothing(string journal)
+    [InlineData("""{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"{ROOT}/.staging-0123456789abcdef0123456789abcdef","firstInstall":false,"state":"replacing","components":[{"name":"..","hadOld":true}]}""")]
+    [InlineData("""{"version":1,"id":"../x","staging":"{ROOT}/.staging-../x","firstInstall":false,"state":"replacing","components":[]}""")]
+    [InlineData("""{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"{ROOT}/.staging-0123456789abcdef0123456789abcdef","firstInstall":false,"state":"whatever","components":[]}""")]
+    public void Unreadable_or_foreign_journal_touches_nothing(string template)
     {
+        var journal = InRoot(template);
         var fs = Upgrade();
         typeof(FakeInstallFs).GetProperty(nameof(FakeInstallFs.Journal))!.SetValue(fs, journal);
         var before = new Dictionary<string, string>(fs.Dirs);
@@ -701,11 +702,15 @@ public sealed class InstallTransactionTests
     [Fact]
     public void Journal_without_registration_fields_counts_everything_as_existing()
     {
-        const string old = """{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"/pf/NexusPC/.staging-0123456789abcdef0123456789abcdef","firstInstall":true,"state":"starting","step":"","components":[{"name":"Agent","hadOld":false}]}""";
+        var old = InRoot("""{"version":1,"id":"0123456789abcdef0123456789abcdef","staging":"{ROOT}/.staging-0123456789abcdef0123456789abcdef","firstInstall":true,"state":"starting","step":"","components":[{"name":"Agent","hadOld":false}]}""");
         Assert.Equal(RegistrationSnapshot.AllExisted, InstallJournal.Parse(old, Root)!.Before);
         var withFields = new InstallJournal(Id, Staging, true, InstallJournal.Starting, [new("Agent", false)]) { Before = new(false, true, false) };
         Assert.Equal(new RegistrationSnapshot(false, true, false), InstallJournal.Parse(withFields.Serialize(), Root)!.Before);
     }
+
+    /// <summary>JSON templates name the test root "{ROOT}/.staging-…": filled with the native root and native separator.</summary>
+    private static string InRoot(string template) =>
+        template.Replace("{ROOT}/", System.Text.Json.JsonSerializer.Serialize(Root + TestPaths.Sep)[1..^1], StringComparison.Ordinal);
 
     [Fact]
     public void Journal_round_trips()
