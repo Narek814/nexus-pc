@@ -116,8 +116,30 @@ internal sealed partial class OpenRgbHost : BackgroundService
         {
             StopStale(_executable);
         }
-        var backoff = TimeSpan.FromSeconds(5);
         while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await IterateAsync(_executable, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                // An unexpected failure must not stop the host: journal it and try again at the usual interval.
+                LogLoopFailed(_logger, ex.GetType().Name, ex.Message);
+                await Task.Delay(PortCheckInterval, stoppingToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private TimeSpan _backoff = TimeSpan.FromSeconds(5);
+
+    /// <summary>One round of the host loop: probe the port, then start, keep or leave the bundled server.</summary>
+    private async Task IterateAsync(string executable, CancellationToken stoppingToken)
+    {
         {
             var paused = DateTimeOffset.UtcNow < _pausedUntil;
             var holder = await ProbeAsync(stoppingToken).ConfigureAwait(false);
@@ -126,41 +148,37 @@ internal sealed partial class OpenRgbHost : BackgroundService
                 // Somebody holds the port: never start a second copy. Only case B is "external"; during the pause too.
                 State = holder.Kind == PeerKind.SetupWindow ? "external" : holder.Kind == PeerKind.Bundled ? "running" : "conflict";
                 await Task.Delay(paused ? TimeSpan.FromSeconds(1) : PortCheckInterval, stoppingToken).ConfigureAwait(false);
-                continue;
+                return;
             }
             if (paused)
             {
                 State = "paused";
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
-                continue;
+                return;
             }
 
             // Section 3: check the file and keep it locked against writes and deletion for the life of the child.
-            var executableLock = LockVerifiedExecutable(_executable);
+            var executableLock = LockVerifiedExecutable(executable);
             if (executableLock is null)
             {
                 State = "conflict";
                 await Task.Delay(PortCheckInterval, stoppingToken).ConfigureAwait(false);
-                continue;
+                return;
             }
             int? exitCode;
             var started = DateTimeOffset.UtcNow;
             using (executableLock)
             {
-                exitCode = await RunOnceAsync(_executable, stoppingToken).ConfigureAwait(false);
+                exitCode = await RunOnceAsync(executable, stoppingToken).ConfigureAwait(false);
             }
-            if (stoppingToken.IsCancellationRequested)
+            if (stoppingToken.IsCancellationRequested || exitCode is null)
             {
-                break;
+                return; // stopping, or paused while running
             }
-            if (exitCode is null)
-            {
-                continue; // paused while running
-            }
-            backoff = DateTimeOffset.UtcNow - started > TimeSpan.FromMinutes(1) ? TimeSpan.FromSeconds(5) : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, TimeSpan.FromMinutes(5).Ticks));
+            _backoff = DateTimeOffset.UtcNow - started > TimeSpan.FromMinutes(1) ? TimeSpan.FromSeconds(5) : TimeSpan.FromTicks(Math.Min(_backoff.Ticks * 2, TimeSpan.FromMinutes(5).Ticks));
             State = "restarting";
-            LogExited(_logger, exitCode.Value, backoff.TotalSeconds);
-            await Task.Delay(backoff, stoppingToken).ConfigureAwait(false);
+            LogExited(_logger, exitCode.Value, _backoff.TotalSeconds);
+            await Task.Delay(_backoff, stoppingToken).ConfigureAwait(false);
         }
     }
 
@@ -356,6 +374,9 @@ internal sealed partial class OpenRgbHost : BackgroundService
     [LoggerMessage(Level = LogLevel.Information, Message = "OpenRGB server started (pid {Pid})")]
     private static partial void LogStarted(ILogger logger, int pid);
 
+    [LoggerMessage(Level = LogLevel.Error, Message = "OpenRGB host check failed ({Type}: {Error}); retrying")]
+    private static partial void LogLoopFailed(ILogger logger, string type, string error);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "OpenRGB exited with code {Code}; restarting in {Seconds} s")]
     private static partial void LogExited(ILogger logger, int code, double seconds);
 
@@ -386,29 +407,47 @@ internal sealed class OpenRgbConnectionGuard(IConnectionOwnerSource owners, Open
         lease = null;
         int? pid = null;
         IPeerProcess? process = null;
-        PeerVerdict verdict;
+        var verdict = new PeerVerdict(PeerKind.Conflict, "not checked");
         try
         {
-            if (tcp.Client.LocalEndPoint is IPEndPoint local && tcp.Client.RemoteEndPoint is IPEndPoint remote)
+            try
             {
-                pid = owners.ServerProcessId(local, remote);
+                if (tcp.Client.LocalEndPoint is IPEndPoint local && tcp.Client.RemoteEndPoint is IPEndPoint remote)
+                {
+                    pid = owners.ServerProcessId(local, remote);
+                }
+                process = pid is { } id ? owners.Open(id) : null;
+                verdict = policy.Check(pid, process, child());
             }
-            process = pid is { } id ? owners.Open(id) : null;
-            verdict = policy.Check(pid, process, child());
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or SocketException or ObjectDisposedException)
-        {
-            verdict = new PeerVerdict(PeerKind.Conflict, "connection owner unknown: " + ex.Message);
-        }
-        onVerdict?.Invoke(verdict, pid, process?.ImagePath);
-        if (verdict.Kind == PeerKind.Conflict || process is null)
-        {
-            process?.Dispose();
-            tcp.Dispose(); // closed with nothing sent
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Any failure to identify the peer is a conflict, never a pass.
+                verdict = new PeerVerdict(PeerKind.Conflict, "connection owner unknown: " + ex.Message);
+            }
+            string? image = null;
+            try
+            {
+                image = process?.ImagePath;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                verdict = new PeerVerdict(PeerKind.Conflict, "connection owner unknown: " + ex.Message);
+            }
+            onVerdict?.Invoke(verdict, pid, image);
+            if (verdict.Kind != PeerKind.Conflict && process is not null)
+            {
+                lease = new Lease(tcp, process);
+            }
             return verdict;
         }
-        lease = new Lease(tcp, process);
-        return verdict;
+        finally
+        {
+            if (lease is null)
+            {
+                process?.Dispose();
+                tcp.Dispose(); // closed with nothing sent
+            }
+        }
     }
 
     /// <summary>For <see cref="Nexus.RGB.OpenRgbClient.ConnectAsync(string, int, Func{TcpClient, IDisposable}?, CancellationToken)"/>: throws on conflict.</summary>

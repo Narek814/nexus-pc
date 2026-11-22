@@ -115,7 +115,7 @@
 | `screen.stop` | screen | normal | `{}` |
 | `screen.video` | screen | read | `{ after?: -1.., keyframe?, maxWidth?: 320..1920, bitrateKbps?: 300..20000 }` → `{ width, height, encoder, frames: [{ seq, key, data }] }` (H.264 Annex-B, ждёт до 250 мс) |
 | `input.moveTo` | input | normal | `{ x, y }` — 0..65535 по основному монитору (картинка экрана) |
-| `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
+| `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, state?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
 | `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
 | `rgb.profiles.upsert` | rgb | normal | `{ profile: { id: slug, name, color, brightness, effect } }` (≤ 32 профилей) |
 | `rgb.profiles.delete` | rgb | normal | `{ profileId: slug }` |
@@ -207,6 +207,8 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 ## Подсветка (P10)
 
 Агент управляет подсветкой через **OpenRGB** (отдельная бесплатная программа на ПК) по его SDK-протоколу на `127.0.0.1:6742` — только локально, наружу ничего не открывается. Короткое соединение на каждую команду. Если OpenRGB не запущен или SDK Server выключен: `rgb.status` → `available: false` с `reason`, остальные `rgb.*` → `rgb.unavailable`.
+
+**Только подтверждённый OpenRGB (T2).** Агент подключается только к своей копии OpenRGB (служба запустила её сама после проверки SHA-256 и держит файл заблокированным от записи и удаления) или к окну настройки OpenRGB, открытому администратором. Для каждого соединения, до отправки первого байта, проверяется процесс — владелец серверной стороны этого соединения по таблице TCP (на практике процесс, создавший слушающий сокет; для OpenRGB это тот же процесс, что принимает соединение). Если порт 6742 занят другой программой: `rgb.status` → `available: false`, `state: "conflict"`, `reason: "Подсветка недоступна: её перехватила другая программа на ПК."`; остальные `rgb.*` → `rgb.unavailable` с тем же текстом. Поле `state` присутствует только со значением `"conflict"`; старые клиенты видят текст в `reason`.
 
 `effect`: `"static"` — ровный цвет на всех светодиодах (яркость умножается на цвет), `"off"` — чёрный, иначе — **имя режима устройства** из `modes[]` (без учёта регистра; цвет передаётся режиму, если он принимает цвета). Если у устройства такого режима нет — для него `ok: false` с объяснением, остальные применяются.
 

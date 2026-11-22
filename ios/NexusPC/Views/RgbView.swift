@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import NexusKit
 
 /// Lighting (P10): colour, brightness and effect through OpenRGB on the PC, plus lighting profiles.
 /// A lighting profile with the same id as an app profile switches together with it on the PC.
@@ -8,6 +9,7 @@ struct RgbView: View {
 
     @State private var available = false
     @State private var reason: String?
+    @State private var conflict = false
     @State private var devices: [RgbDeviceInfo] = []
     @State private var profiles: [RgbProfileInfo] = []
     @State private var color = Color(red: 0.6, green: 0.2, blue: 1.0)
@@ -34,6 +36,8 @@ struct RgbView: View {
                         profilesCard
                         SectionTitle("Устройства")
                         devicesCard
+                    } else if conflict {
+                        conflictCard
                     } else {
                         unavailableCard
                     }
@@ -49,6 +53,16 @@ struct RgbView: View {
     }
 
     // MARK: - Cards
+
+    /// Another program on the PC holds the lighting (rgb.status state "conflict"): a clear state, no controls.
+    private var conflictCard: some View {
+        GlassCard {
+            Label("Lighting unavailable: another program on the PC has taken it over", systemImage: "lightbulb.slash")
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Theme.textPrimary)
+        }
+    }
 
     private var unavailableCard: some View {
         GlassCard {
@@ -256,8 +270,10 @@ struct RgbView: View {
     private func load() async {
         do {
             let result = try await controller.fetch("rgb.status")
-            available = result["available"] as? Bool ?? false
-            reason = result["reason"] as? String
+            let rgb = RgbStatus(result: result)
+            conflict = rgb.isConflict
+            available = rgb.available && !rgb.isConflict
+            reason = rgb.reason
             devices = (result["devices"] as? [[String: Any]] ?? []).compactMap(RgbDeviceInfo.init)
             profiles = (result["profiles"] as? [[String: Any]] ?? []).compactMap(RgbProfileInfo.init)
             if !deviceEffects.contains(effect), !["static", "off"].contains(effect) {
@@ -265,6 +281,7 @@ struct RgbView: View {
             }
         } catch {
             available = false
+            conflict = false
             reason = message(error)
         }
     }

@@ -400,6 +400,89 @@ public sealed class OpenRgbIdentityTests : IDisposable
         }
     }
 
+    /// <summary>T2-1: a TCP table or process that throws anything gives conflict; nothing leaks or is sent.</summary>
+    private sealed class ThrowingOwners(FakeOpenRgbOwners inner) : IConnectionOwnerSource
+    {
+        public bool ThrowOnLookup { get; set; }
+        public bool ThrowingProcess { get; set; }
+        public List<ThrowingProcess> Opened { get; } = [];
+
+        public int? ServerProcessId(IPEndPoint clientLocal, IPEndPoint clientRemote) =>
+            ThrowOnLookup ? throw new NotSupportedException("table broken") : inner.ServerProcessId(clientLocal, clientRemote);
+
+        public IPeerProcess? Open(int processId)
+        {
+            if (!ThrowingProcess)
+            {
+                return inner.Open(processId);
+            }
+            var process = new ThrowingProcess(processId);
+            Opened.Add(process);
+            return process;
+        }
+    }
+
+    private sealed class ThrowingProcess(int pid) : IPeerProcess
+    {
+        public int ProcessId => pid;
+        public DateTime StartTimeUtc => DateTime.UtcNow;
+        public string? ImagePath => throw new ArgumentException("path unreadable");
+        public ProcessIntegrity Integrity => throw new System.ComponentModel.Win32Exception(5);
+        public Task Exited => Task.Delay(Timeout.Infinite);
+        public bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
+    }
+
+    [Fact]
+    public async Task Any_exception_from_the_tcp_table_is_a_conflict_with_nothing_sent()
+    {
+        using var server = new RecordingServer();
+        var inner = new FakeOpenRgbOwners();
+        inner.PortOwners[server.Port] = 77;
+        var owners = new ThrowingOwners(inner) { ThrowOnLookup = true };
+        var guard = new OpenRgbConnectionGuard(owners, Policy(), () => null);
+        await Assert.ThrowsAsync<OpenRgbConflictException>(() => OpenRgbClient.ConnectAsync("127.0.0.1", server.Port, guard.Accept, CancellationToken.None));
+        await server.Closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, server.BytesReceived);
+    }
+
+    [Fact]
+    public async Task Any_exception_from_the_process_is_a_conflict_and_the_process_is_released()
+    {
+        using var server = new RecordingServer();
+        var inner = new FakeOpenRgbOwners();
+        inner.PortOwners[server.Port] = 77;
+        var owners = new ThrowingOwners(inner) { ThrowingProcess = true };
+        var guard = new OpenRgbConnectionGuard(owners, Policy(), () => null);
+        using var tcp = new TcpClient(AddressFamily.InterNetwork);
+        await tcp.ConnectAsync(IPAddress.Loopback, server.Port);
+        Assert.Equal(PeerKind.Conflict, guard.Check(tcp, out var lease).Kind);
+        Assert.Null(lease);
+        Assert.True(Assert.Single(owners.Opened).Disposed);
+        await server.Closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, server.BytesReceived);
+    }
+
+    [Fact]
+    public async Task Host_keeps_working_after_the_tcp_table_throws()
+    {
+        using var server = new RecordingServer();
+        var exe = Executable();
+        var inner = new FakeOpenRgbOwners().Process(77, DateTime.UtcNow, exe, ProcessIntegrity.High);
+        inner.PortOwners[server.Port] = 77;
+        var owners = new ThrowingOwners(inner) { ThrowOnLookup = true };
+        var starts = 0;
+        using var host = new OpenRgbHost(exe, _dir, server.Port, NullLogger<OpenRgbHost>.Instance, owners, OpenRgbIdentityPolicy.Sha256OfFile(exe)!, _ => { starts++; return null; }, anyOs: true);
+        await host.StartAsync(CancellationToken.None);
+        await WaitForState(host, "conflict");
+        owners.ThrowOnLookup = false;
+        await WaitForState(host, "external"); // the loop survived and checked again
+        await host.StopAsync(CancellationToken.None);
+        Assert.Equal(0, starts);
+        Assert.Equal(0, server.BytesReceived);
+    }
+
     [Fact]
     public void Pinned_hash_is_the_one_of_openrgb_1_1()
     {

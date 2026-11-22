@@ -55,13 +55,19 @@ public sealed partial class TcpConnectionOwners : IConnectionOwnerSource
     {
         var size = 0u;
         var buffer = IntPtr.Zero;
+        var read = false;
         try
         {
-            for (var attempt = 0; attempt < 8; attempt++)
+            for (var attempt = 0; attempt < 8 && !read; attempt++)
             {
                 var result = GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
                 if (result == 0)
                 {
+                    read = buffer != IntPtr.Zero;
+                    if (!read)
+                    {
+                        throw new InvalidOperationException("GetExtendedTcpTable returned no table");
+                    }
                     break;
                 }
                 if (result != ErrorInsufficientBuffer)
@@ -73,9 +79,10 @@ public sealed partial class TcpConnectionOwners : IConnectionOwnerSource
                 size += 16 * RowSize; // the table may grow between the two calls
                 buffer = Marshal.AllocHGlobal((int)size);
             }
-            if (buffer == IntPtr.Zero)
+            if (!read)
             {
-                return [];
+                // Never parse a buffer the call did not fill: the caller treats this as conflict.
+                throw new InvalidOperationException("GetExtendedTcpTable did not succeed");
             }
             var count = (uint)Marshal.ReadInt32(buffer);
             var rows = new List<(uint, IPEndPoint, IPEndPoint, int)>((int)Math.Min(count, 65536));
@@ -163,7 +170,15 @@ internal sealed partial class WindowsPeerProcess : IPeerProcess
             handle.Dispose();
             return null;
         }
-        return new WindowsPeerProcess(handle, processId, DateTime.FromFileTimeUtc(created), ImageOf(handle), IntegrityOf(handle));
+        try
+        {
+            return new WindowsPeerProcess(handle, processId, DateTime.FromFileTimeUtc(created), ImageOf(handle), IntegrityOf(handle));
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
     }
 
     public void Dispose()

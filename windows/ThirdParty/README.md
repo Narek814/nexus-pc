@@ -17,4 +17,10 @@ installed next to OpenRGB.exe.
 **PawnIO** (https://pawnio.eu, source https://github.com/namazso/PawnIO) is installed by its own installer
 with `-install -silent` if it is not installed yet. It stays installed when Nexus PC is removed.
 
-To update a version: change the URL and SHA-256 here and in ci.yml together.
+**OpenRGB.exe** inside that archive has SHA-256
+`e26ae71162795a8abcfb90c05c1572a00ba06ca63b886aca57392a0138963b1e` (pinned). CI checks it after unpacking
+(ci.yml), and the agent starts only an OpenRGB.exe with this hash (`OpenRgbHost.PinnedSha256`).
+
+To update a version: change the URL and SHA-256 here and in ci.yml together. For OpenRGB also update the
+OpenRGB.exe hash in three places: ci.yml, `OpenRgbHost.PinnedSha256` and the test
+`OpenRgbIdentityTests.Pinned_hash_is_the_one_of_openrgb_1_1`.
