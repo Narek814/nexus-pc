@@ -7,8 +7,11 @@ using Nexus.Core.Storage;
 
 namespace Nexus.Agent;
 
-internal static class Program
+internal static partial class Program
 {
+    /// <summary>LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32 (owner's decision 7, T6).</summary>
+    internal const uint DllSearchDirectories = 0x00000200 | 0x00000800;
+
     private const string Usage = """
         Nexus PC Agent
 
@@ -51,6 +54,16 @@ internal static class Program
 
     public static async Task<int> Main(string[] args)
     {
+        // First, before the host, Kestrel, TLS, sensors or any of our P/Invoke load a library: for the whole
+        // process, a DLL loaded without its own search flags (by name, or the dependencies of a DLL) is looked for
+        // only in the agent's folder and System32, never in the current folder or PATH. It cannot be undone; the
+        // agent does not run without it. Only the .NET runtime itself is loaded before this point.
+        if (OperatingSystem.IsWindows() && !RestrictDllSearch(out var dllSearchError))
+        {
+            await Console.Error.WriteLineAsync($"Cannot limit where Windows loads libraries from (error {dllSearchError}). The agent does not start.").ConfigureAwait(false);
+            return 3;
+        }
+
         if (args.Length == 0)
         {
             var app = AgentHost.Build(args, new AgentHostOptions { DataDirectory = AgentPaths.DefaultDataDirectory() });
@@ -96,6 +109,26 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// SetDefaultDllDirectories(<see cref="DllSearchDirectories"/>) for this process. Internal for the test that runs
+    /// it in a separate child process (the setting stays for the life of the process).
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    internal static bool RestrictDllSearch(out int error)
+    {
+        if (SetDefaultDllDirectories(DllSearchDirectories))
+        {
+            error = 0;
+            return true;
+        }
+        error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
+        return false;
+    }
+
+    [System.Runtime.InteropServices.LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static partial bool SetDefaultDllDirectories(uint directoryFlags);
+
     private static int PrintUsage()
     {
         Console.WriteLine(Usage);
@@ -136,7 +169,7 @@ internal static class Program
         }
         try
         {
-            using var clip = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("clip.exe")
+            using var clip = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "clip.exe"))
             {
                 RedirectStandardInput = true,
                 UseShellExecute = false,

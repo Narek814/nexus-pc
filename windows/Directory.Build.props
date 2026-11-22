@@ -7,5 +7,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- CA5392 (off by default): every DllImport/LibraryImport must say where Windows may look for the DLL.
+         Each of our assemblies with P/Invoke sets [assembly: DefaultDllImportSearchPaths(System32)] (T6). -->
+    <WarningsAsErrors>$(WarningsAsErrors);CA5392</WarningsAsErrors>
   </PropertyGroup>
 </Project>
