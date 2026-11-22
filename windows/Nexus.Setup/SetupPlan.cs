@@ -97,6 +97,46 @@ internal static partial class SetupPlan
     /// <summary>Exit code: another installation, removal or datadir command holds the protected lock, or the lock is unavailable; nothing was changed.</summary>
     public const int ExitLockedByAnotherRun = 7;
 
+    /// <summary>Exit code: the install path (C:\ → Program Files → NexusPC → staging) failed the T5 checks; nothing was changed.</summary>
+    public const int ExitUnsafeInstallPath = 8;
+
+    /// <summary>Exit code: the rollback of a failed update (or of an interrupted earlier run) could not finish; nothing was deleted.</summary>
+    public const int ExitRecoveryIncomplete = 9;
+
+    public static string JournalUnreadableText(string journalPath) =>
+        $"Установка остановлена, ничего не изменено: файл журнала прошлой установки {journalPath} повреждён или не читается. " +
+        "Откройте его в Блокноте от имени администратора и проверьте; если в нём нет ничего важного для вас, удалите этот файл " +
+        "(нужны права администратора) и запустите установщик ещё раз. Сам установщик этот файл не удаляет.";
+
+    public const string RecoveryFailedText =
+        "Не удалось вернуть предыдущую версию Nexus PC: часть файлов занята. Ничего не удалено, ваши данные и сопряжения на месте. " +
+        "Перезагрузите ПК и запустите установщик ещё раз — он сам закончит восстановление.";
+
+    public static string RolledBackText(bool hadOldVersion, string? reason, string? oldHealthProblem) =>
+        (hadOldVersion
+            ? "Обновление не удалось, предыдущая версия Nexus PC восстановлена. Данные и сопряжения сохранены."
+            : "Установка не удалась, установленные файлы убраны. Данные не тронуты.")
+        + (reason is null ? "" : " Причина: " + reason)
+        + (oldHealthProblem is null ? "" : " Внимание: восстановленная версия пока не отвечает — перезагрузите ПК.")
+        + " Подробности — в журнале установки NexusPC-Setup.log.";
+
+    public const string ManifestBrokenText =
+        "Повреждённый установщик: файлы внутри не совпадают с проверочным списком. Ничего не изменено. Скачайте NexusPC-Setup.exe заново со страницы сборки.";
+
+    public static string NotEnoughSpaceText(long required) =>
+        $"Недостаточно места на диске: нужно не меньше {(required / (1024 * 1024)).ToString(CultureInfo.InvariantCulture)} МБ свободного места. Ничего не изменено.";
+
+    public static string UnsafeInstallPathText(string root) =>
+        $"Установка остановлена, ничего не изменено: папка {root} или одна из папок над ней настроена небезопасно " +
+        "(это ссылка на другое место или её могут изменить обычные пользователи). Так бывает, если папку Program Files перенесли " +
+        "на другой диск ссылкой или вручную меняли её разрешения. Верните стандартные настройки папки и запустите установщик ещё раз.";
+
+    public const string PawnIoNotVerifiedText =
+        "не установлен: файл драйвера не прошёл проверку подлинности; температура процессора и подсветка платы будут недоступны — ";
+
+    public const string PawnIoRevocationUnknownText =
+        "подпись проверена, но без интернета не удалось узнать, не отозван ли сертификат издателя — ";
+
     /// <summary>The installer's own words for the two refusals of the shared lock (busy, unavailable).</summary>
     public static string LockRefusalText(string coreText) =>
         string.Equals(coreText, Nexus.Core.Storage.ExclusiveRun.BusyText, StringComparison.Ordinal)
@@ -177,6 +217,10 @@ internal static partial class SetupPlan
     public static Command ScFailure(string system32) =>
         new(Sys(system32, "sc.exe"), ["failure", ServiceName, "reset=", "86400", "actions=", "restart/5000/restart/5000/restart/60000"]);
 
+    /// <summary>Exit 0 when a rule with this name exists, 1 when none matches.</summary>
+    public static Command FirewallShow(string system32) =>
+        new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "show", "rule", $"name={FirewallRuleName}"]);
+
     public static Command FirewallDelete(string system32) =>
         new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "delete", "rule", $"name={FirewallRuleName}"]);
 
@@ -255,7 +299,7 @@ internal static partial class SetupPlan
         {
             return "Повреждённый установщик: нет Nexus.Agent.exe или Nexus.Tray.exe.";
         }
-        if (names.Any(n => !Parts.Any(p => n.StartsWith(p + "/", StringComparison.Ordinal)) && n != "version.txt" && n != PawnIoSetup))
+        if (names.Any(n => !Parts.Any(p => n.StartsWith(p + "/", StringComparison.Ordinal)) && n != "version.txt" && n != PawnIoSetup && n != PayloadManifest.FileName))
         {
             return "Повреждённый установщик: лишние файлы.";
         }

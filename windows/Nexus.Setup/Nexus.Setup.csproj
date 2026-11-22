@@ -11,7 +11,16 @@
     <AssemblyName>NexusPC-Setup</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>0.1.0</Version>
+    <!-- T5 section 6: no DOTNET_STARTUP_HOOKS code runs inside the elevated installer. -->
+    <StartupHookSupport>false</StartupHookSupport>
   </PropertyGroup>
+  <!-- T5 section 4: the one accepted PawnIO_setup.exe, pinned by CI (-p:PawnIoSha256=… -p:PawnIoLeafCertSha256=… -p:PawnIoVersion=…).
+       Empty in a developer build: then PawnIO is not installed (the rest of the installation goes on with a warning). -->
+  <ItemGroup>
+    <AssemblyMetadata Include="PawnIoSha256" Value="$(PawnIoSha256)" />
+    <AssemblyMetadata Include="PawnIoLeafCertSha256" Value="$(PawnIoLeafCertSha256)" />
+    <AssemblyMetadata Include="PawnIoVersion" Value="$(PawnIoVersion)" />
+  </ItemGroup>
   <ItemGroup Condition="Exists('payload.zip')">
     <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" />
   </ItemGroup>
