@@ -1,0 +1,4 @@
+# T6: every DllImport/LibraryImport must restrict where Windows looks for the DLL
+# (also set as WarningsAsErrors in Directory.Build.props).
+[*.cs]
+dotnet_diagnostic.CA5392.severity = error

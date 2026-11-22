@@ -10,12 +10,18 @@ namespace Nexus.Tests;
 ///   dotnet exec Nexus.Tests.dll --hold-datadir-lock &lt;folder&gt; &lt;seconds&gt;
 /// It takes the protected lock, writes "acquired", waits for "release" (or the time limit), releases, writes
 /// "released" and exits. Nothing else is touched.
+/// A second helper mode, --dll-search-probe, is described in DllSearchProbe.
 /// </summary>
 public static class TestHelperProgram
 {
     public static int Main(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
+        // NativeLibraryLoadingTests (T6): the process-wide DLL search order is set only in this child process.
+        if (args.Length == 4 && args[0] == "--dll-search-probe" && OperatingSystem.IsWindows())
+        {
+            return DllSearchProbe.Run(args[1], args[2], args[3]);
+        }
         if (args.Length == 3 && args[0] == "--hold-datadir-lock" && OperatingSystem.IsWindows()
             && int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) && seconds is > 0 and <= 300)
         {
