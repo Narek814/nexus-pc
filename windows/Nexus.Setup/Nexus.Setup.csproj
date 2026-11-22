@@ -11,6 +11,8 @@
     <AssemblyName>NexusPC-Setup</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>0.1.0</Version>
+    <!-- T5 section 6: no DOTNET_STARTUP_HOOKS code runs inside the elevated installer. -->
+    <StartupHookSupport>false</StartupHookSupport>
   </PropertyGroup>
   <ItemGroup Condition="Exists('payload.zip')">
     <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" />
