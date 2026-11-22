@@ -514,10 +514,12 @@ public sealed class OpenRgbWindowsTests(ITestOutputHelper output) : IDisposable
             return;
         }
         using var child = StartHelper("--tcp-listen");
+        await WaitForFile("port"); // the child is up and listening
         using var peer = new TcpConnectionOwners().Open(child.Id);
         Assert.NotNull(peer);
         Assert.Equal(child.Id, peer.ProcessId);
-        Assert.True(OpenRgbIdentityPolicy.SamePath(child.MainModule!.FileName, peer.ImagePath!), peer.ImagePath);
+        Assert.NotNull(peer.ImagePath);
+        Assert.True(OpenRgbIdentityPolicy.SamePath(HelperHost(), peer.ImagePath), $"{peer.ImagePath} != {HelperHost()}");
         Assert.True((peer.StartTimeUtc - child.StartTime.ToUniversalTime()).Duration() < TimeSpan.FromSeconds(1));
         Assert.False(peer.Exited.IsCompleted);
         child.Kill();
@@ -599,7 +601,7 @@ public sealed class OpenRgbWindowsTests(ITestOutputHelper output) : IDisposable
     private Process StartHelper(string mode, string? sub = null)
     {
         var folder = sub is null ? _dir : Directory.CreateDirectory(Path.Combine(_dir, sub)).FullName;
-        var dotnet = Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", "dotnet.exe"));
+        var dotnet = HelperHost();
         Assert.True(File.Exists(dotnet), "dotnet.exe not found at " + dotnet);
         var start = new ProcessStartInfo(dotnet) { UseShellExecute = false, CreateNoWindow = true };
         foreach (var argument in new[] { "exec", typeof(TestHelperProgram).Assembly.Location, mode, folder })
@@ -608,6 +610,10 @@ public sealed class OpenRgbWindowsTests(ITestOutputHelper output) : IDisposable
         }
         return Process.Start(start)!;
     }
+
+    /// <summary>The host executable StartHelper runs the helper with (dotnet.exe of this runtime).</summary>
+    private static string HelperHost() =>
+        Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", "dotnet.exe"));
 
     private async Task<string> WaitForFile(string name, string? sub = null)
     {

@@ -24,7 +24,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Test
-        run: dotnet test windows/Nexus.slnx --configuration Release
+        run: dotnet test windows/Nexus.slnx --configuration Release --logger "console;verbosity=detailed"
 
   schemas:
     name: Schema fixtures
