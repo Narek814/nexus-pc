@@ -89,10 +89,22 @@ public sealed class SetupPlanTests
             SetupPlan.ScQuery(System32), SetupPlan.ScStop(System32), SetupPlan.ScStart(System32), SetupPlan.ScDelete(System32),
             SetupPlan.ScCreate(System32, AgentExe), SetupPlan.ScConfig(System32, AgentExe), SetupPlan.ScFailure(System32),
             SetupPlan.ScDescription(System32), SetupPlan.FirewallAdd(System32, AgentExe), SetupPlan.FirewallDelete(System32),
+            SetupPlan.LegacyFirewallDelete(System32),
             SetupPlan.ListNetworks(System32), SetupPlan.MakePrivate(System32, 9),
         ];
         // A planted sc.exe next to the downloaded installer must never be the one that runs elevated.
         Assert.All(all, c => Assert.StartsWith(System32, c.File, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Legacy_tailscale_rule_is_deleted_by_exact_name_only()
+    {
+        var del = SetupPlan.LegacyFirewallDelete(System32);
+        Assert.Equal(Path.Combine(System32, "netsh.exe"), del.File);
+        Assert.Equal(["advfirewall", "firewall", "delete", "rule", "name=Nexus PC Agent (Tailscale)"], del.Args);
+        Assert.Equal("Nexus PC Agent (Tailscale)", SetupPlan.LegacyTailscaleFirewallRuleName);
+        // No wildcard or extra filters: only that one exact name is matched.
+        Assert.DoesNotContain(del.Args, a => a.Contains('*') || a.StartsWith("program=", StringComparison.Ordinal));
     }
 
     [Fact]

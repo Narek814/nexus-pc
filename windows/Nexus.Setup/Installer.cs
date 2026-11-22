@@ -265,7 +265,11 @@ internal sealed class Installer(SetupOptions options, TextWriter log) : IInstall
             StopBundledOpenRgb();
         });
         Step("Удаляю службу", () => RunQuiet(SetupPlan.ScDelete(_system32)));
-        Step("Удаляю правило брандмауэра", () => RunQuiet(SetupPlan.FirewallDelete(_system32)));
+        Step("Удаляю правило брандмауэра", () =>
+        {
+            RunQuiet(SetupPlan.FirewallDelete(_system32));
+            RemoveLegacyFirewallRule();
+        });
         Step("Отключаю автозапуск", () =>
         {
             using var run = Registry.CurrentUser.OpenSubKey(SetupPlan.RunKey, writable: true);
@@ -733,8 +737,21 @@ internal sealed class Installer(SetupOptions options, TextWriter log) : IInstall
         RunQuiet(SetupPlan.ScDescription(_system32));
         Must(SetupPlan.ScFailure(_system32));
         RunQuiet(SetupPlan.FirewallDelete(_system32)); // also replaces the rule made by hand earlier
+        RemoveLegacyFirewallRule();
         Must(SetupPlan.FirewallAdd(_system32, agentExe));
         CreateStartMenuShortcut();
+    }
+
+    /// <summary>
+    /// Removes the hand-made "Nexus PC Agent (Tailscale)" rule (old remote-access guide), by exact name only. Idempotent;
+    /// a missing rule is fine. Deliberately not in the B-4 snapshot: a rollback never recreates it.
+    /// </summary>
+    internal void RemoveLegacyFirewallRule()
+    {
+        var (exit, _) = RunQuiet(SetupPlan.LegacyFirewallDelete(_system32));
+        log.WriteLine(exit == 0
+            ? $"Removed legacy firewall rule \"{SetupPlan.LegacyTailscaleFirewallRuleName}\""
+            : $"Legacy firewall rule \"{SetupPlan.LegacyTailscaleFirewallRuleName}\" not present (exit {exit})");
     }
 
     /// <summary>

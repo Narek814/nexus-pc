@@ -502,6 +502,59 @@ public sealed class SetupT5WindowsTests(ITestOutputHelper output) : IDisposable
         Assert.True(process.ExitCode == 0, text);
     }
 
+    [Fact]
+    public void Legacy_tailscale_rule_is_removed_and_the_agent_rule_is_kept()
+    {
+        if (!Elevated() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var sys = Environment.SystemDirectory;
+        int Netsh(params string[] args)
+        {
+            var start = new ProcessStartInfo(Path.Combine(sys, "netsh.exe")) { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+            foreach (var a in args)
+            {
+                start.ArgumentList.Add(a);
+            }
+            using var p = Process.Start(start)!;
+            p.StandardOutput.ReadToEnd();
+            p.WaitForExit(60_000);
+            return p.ExitCode;
+        }
+        bool Exists(string name) => Netsh("advfirewall", "firewall", "show", "rule", "name=" + name) == 0;
+        void Add(string name) => Assert.Equal(0, Netsh("advfirewall", "firewall", "add", "rule", "name=" + name, "dir=in", "action=allow",
+            "protocol=TCP", "localport=47800", "remoteip=100.64.0.0/10", "enable=no"));
+
+        var agentRuleAddedHere = !Exists(SetupPlan.FirewallRuleName);
+        if (agentRuleAddedHere)
+        {
+            Add(SetupPlan.FirewallRuleName);
+        }
+        Add(SetupPlan.LegacyTailscaleFirewallRuleName);
+        try
+        {
+            using var log = new StringWriter();
+            var installer = new Installer(new SetupOptions(false, false, true, true, null), log);
+            installer.RemoveLegacyFirewallRule();
+            Assert.False(Exists(SetupPlan.LegacyTailscaleFirewallRuleName), log.ToString());
+            Assert.True(Exists(SetupPlan.FirewallRuleName));
+            Assert.Contains("Removed legacy firewall rule", log.ToString(), StringComparison.Ordinal);
+
+            installer.RemoveLegacyFirewallRule(); // idempotent: a missing rule is not an error
+            Assert.Contains("not present", log.ToString(), StringComparison.Ordinal);
+            Assert.True(Exists(SetupPlan.FirewallRuleName));
+        }
+        finally
+        {
+            Netsh("advfirewall", "firewall", "delete", "rule", "name=" + SetupPlan.LegacyTailscaleFirewallRuleName);
+            if (agentRuleAddedHere)
+            {
+                Netsh("advfirewall", "firewall", "delete", "rule", "name=" + SetupPlan.FirewallRuleName);
+            }
+        }
+    }
+
     public void Dispose()
     {
         foreach (var path in _cleanup.Where(Directory.Exists))

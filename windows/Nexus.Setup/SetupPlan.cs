@@ -52,6 +52,9 @@ internal static partial class SetupPlan
     public const string ServiceName = "NexusPCAgent";
     public const string ServiceDisplayName = "Nexus PC Agent";
     public const string FirewallRuleName = "Nexus PC Agent";
+
+    /// <summary>The rule the old remote-access guide told users to create by hand; removed by install, uninstall and purge.</summary>
+    public const string LegacyTailscaleFirewallRuleName = "Nexus PC Agent (Tailscale)";
     public const int Port = 47800;
     public const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public const string RunValue = "NexusPC.Tray"; // same value the tray's own "Start with Windows" uses
@@ -223,6 +226,10 @@ internal static partial class SetupPlan
 
     public static Command FirewallDelete(string system32) =>
         new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "delete", "rule", $"name={FirewallRuleName}"]);
+
+    /// <summary>Deletes only the rule with exactly the legacy name; exit 1 (no such rule) is not an error.</summary>
+    public static Command LegacyFirewallDelete(string system32) =>
+        new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "delete", "rule", $"name={LegacyTailscaleFirewallRuleName}"]);
 
     /// <summary>Inbound TCP 47800 for the agent program only, private networks only (never Public).</summary>
     public static Command FirewallAdd(string system32, string agentExe) =>
