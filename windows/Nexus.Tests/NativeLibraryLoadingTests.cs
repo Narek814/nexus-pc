@@ -188,6 +188,10 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
     [Fact]
     public void No_assembly_of_ours_imports_nvml_by_name()
     {
+        if (TrayAssembly() is null)
+        {
+            TraySourcesAreChecked();
+        }
         foreach (var path in OurAssemblies())
         {
             var imports = PInvokes(path).Select(p => p.Module).Distinct().ToList();
@@ -200,7 +204,12 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
     public void Our_windows_assemblies_limit_pinvoke_search_to_system32()
     {
         const int system32 = (int)DllImportSearchPath.System32;
-        foreach (var path in new[] { AssemblyPath("Nexus.Agent"), AssemblyPath("Nexus.Windows"), AssemblyPath("Nexus.Monitoring"), AssemblyPath("NexusPC-Setup"), TrayAssembly(), AssemblyPath("Nexus.Tests") })
+        var tray = TrayAssembly();
+        if (tray is null)
+        {
+            TraySourcesAreChecked();
+        }
+        foreach (var path in new[] { AssemblyPath("Nexus.Agent"), AssemblyPath("Nexus.Windows"), AssemblyPath("Nexus.Monitoring"), AssemblyPath("NexusPC-Setup"), tray, AssemblyPath("Nexus.Tests") }.OfType<string>())
         {
             Assert.True(AssemblySearchPaths(path) == system32, Path.GetFileName(path) + " must have [assembly: DefaultDllImportSearchPaths(System32)]");
             foreach (var (method, module, own) in PInvokes(path))
@@ -509,19 +518,59 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
             ? location
             : Path.Combine(AppContext.BaseDirectory, name + ".dll");
 
-    /// <summary>Nexus.Tray (net10.0-windows) is not referenced by the tests: its build output next to ours.</summary>
-    private static string TrayAssembly()
+    private static string WindowsFolder()
+    {
+        var tfmFolder = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        return Path.GetFullPath(Path.Combine(tfmFolder, "..", "..", "..", ".."));
+    }
+
+    /// <summary>
+    /// Nexus.Tray (net10.0-windows) is not referenced by the tests, so "dotnet test" may not build it (CI): its
+    /// build output next to ours if present, else null and <see cref="TraySourcesAreChecked"/> checks its sources.
+    /// </summary>
+    private static string? TrayAssembly()
     {
         var tfmFolder = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
         var configuration = Path.GetFileName(Path.GetDirectoryName(tfmFolder)!);
-        var windows = Path.GetFullPath(Path.Combine(tfmFolder, "..", "..", "..", ".."));
-        var tray = Path.Combine(windows, "Nexus.Tray", "bin", configuration, "net10.0-windows", "Nexus.Tray.dll");
-        Assert.True(File.Exists(tray), "build the solution first (dotnet test Nexus.slnx): " + tray);
-        return tray;
+        var tray = Path.Combine(WindowsFolder(), "Nexus.Tray", "bin", configuration, "net10.0-windows", "Nexus.Tray.dll");
+        return File.Exists(tray) ? tray : null;
+    }
+
+    /// <summary>
+    /// Without Nexus.Tray.dll: its sources (all *.cs outside bin/obj) must set the assembly attribute to System32,
+    /// never set another search path, and never import nvml. No sources either is a failure, not a pass.
+    /// </summary>
+    private void TraySourcesAreChecked()
+    {
+        var folder = Path.Combine(WindowsFolder(), "Nexus.Tray");
+        var sep = Path.DirectorySeparatorChar;
+        var files = Directory.Exists(folder)
+            ? Directory.GetFiles(folder, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !f.Contains($"{sep}bin{sep}", StringComparison.Ordinal) && !f.Contains($"{sep}obj{sep}", StringComparison.Ordinal)).ToList()
+            : [];
+        Assert.True(files.Count > 0, "neither Nexus.Tray.dll nor the Nexus.Tray sources were found under " + folder);
+        output.WriteLine($"Nexus.Tray.dll not built: checking {files.Count} source files");
+        var assemblyAttribute = new System.Text.RegularExpressions.Regex(
+            @"\[\s*assembly\s*:\s*(System\.Runtime\.InteropServices\.)?DefaultDllImportSearchPaths(Attribute)?\s*\(\s*(System\.Runtime\.InteropServices\.)?DllImportSearchPath\.System32\s*\)\s*\]");
+        var anySearchPaths = new System.Text.RegularExpressions.Regex(@"DefaultDllImportSearchPaths(Attribute)?\s*\(([^)]*)\)");
+        var nvmlImport = new System.Text.RegularExpressions.Regex(@"(DllImport|LibraryImport)(Attribute)?\s*\(\s*""[^""]*nvml",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var found = false;
+        foreach (var file in files)
+        {
+            var text = File.ReadAllText(file);
+            found |= assemblyAttribute.IsMatch(text);
+            Assert.False(nvmlImport.IsMatch(text), file + " imports nvml by name");
+            foreach (System.Text.RegularExpressions.Match match in anySearchPaths.Matches(text))
+            {
+                Assert.True(match.Groups[2].Value.Trim().EndsWith("DllImportSearchPath.System32", StringComparison.Ordinal), $"{file}: {match.Value} is not System32 only");
+            }
+        }
+        Assert.True(found, "Nexus.Tray must have [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]");
     }
 
     private static IEnumerable<string> OurAssemblies() =>
-        [.. new[] { "Nexus.Core", "Nexus.Agent", "Nexus.Windows", "Nexus.Monitoring", "Nexus.RGB", "NexusPC-Setup", "Nexus.DevClient", "Nexus.Tests" }.Select(AssemblyPath), TrayAssembly()];
+        [.. new[] { "Nexus.Core", "Nexus.Agent", "Nexus.Windows", "Nexus.Monitoring", "Nexus.RGB", "NexusPC-Setup", "Nexus.DevClient", "Nexus.Tests" }.Select(AssemblyPath), .. TrayAssembly() is { } tray ? [tray] : Array.Empty<string>()];
 
     /// <summary>DllImport and LibraryImport (its generated DllImport) both end up as P/Invoke metadata.</summary>
     private static List<(string Method, string Module, int? Own)> PInvokes(string path)
