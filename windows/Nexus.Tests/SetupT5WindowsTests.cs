@@ -322,6 +322,8 @@ public sealed class SetupT5WindowsTests(ITestOutputHelper output) : IDisposable
         var staging = Path.Join(root, ".staging-" + id);
         Directory.CreateDirectory(Path.Join(root, "Agent"));
         File.WriteAllText(Path.Join(root, "Agent", "v.txt"), "old");
+        // Created like the installer creates it (StagingDirectory): owner Administrators, protected DACL.
+        Assert.Equal(0, DataDirectoryFileSystem.TryCreateProtectedDirectory(staging, withOwner: true));
         Directory.CreateDirectory(Path.Join(staging, "Agent"));
         File.WriteAllText(Path.Join(staging, "Agent", "v.txt"), "new");
         var fs = new WindowsInstallFileSystem();
