@@ -97,6 +97,26 @@ internal static partial class SetupPlan
     /// <summary>Exit code: another installation, removal or datadir command holds the protected lock, or the lock is unavailable; nothing was changed.</summary>
     public const int ExitLockedByAnotherRun = 7;
 
+    /// <summary>Exit code: the install path (C:\ → Program Files → NexusPC → staging) failed the T5 checks; nothing was changed.</summary>
+    public const int ExitUnsafeInstallPath = 8;
+
+    public const string ManifestBrokenText =
+        "Повреждённый установщик: файлы внутри не совпадают с проверочным списком. Ничего не изменено. Скачайте NexusPC-Setup.exe заново со страницы сборки.";
+
+    public static string NotEnoughSpaceText(long required) =>
+        $"Недостаточно места на диске: нужно не меньше {(required / (1024 * 1024)).ToString(CultureInfo.InvariantCulture)} МБ свободного места. Ничего не изменено.";
+
+    public static string UnsafeInstallPathText(string root) =>
+        $"Установка остановлена, ничего не изменено: папка {root} или одна из папок над ней настроена небезопасно " +
+        "(это ссылка на другое место или её могут изменить обычные пользователи). Так бывает, если папку Program Files перенесли " +
+        "на другой диск ссылкой или вручную меняли её разрешения. Верните стандартные настройки папки и запустите установщик ещё раз.";
+
+    public const string PawnIoNotVerifiedText =
+        "не установлен: файл драйвера не прошёл проверку подлинности; температура процессора и подсветка платы будут недоступны — ";
+
+    public const string PawnIoRevocationUnknownText =
+        "подпись проверена, но без интернета не удалось узнать, не отозван ли сертификат издателя — ";
+
     /// <summary>The installer's own words for the two refusals of the shared lock (busy, unavailable).</summary>
     public static string LockRefusalText(string coreText) =>
         string.Equals(coreText, Nexus.Core.Storage.ExclusiveRun.BusyText, StringComparison.Ordinal)
@@ -255,7 +275,7 @@ internal static partial class SetupPlan
         {
             return "Повреждённый установщик: нет Nexus.Agent.exe или Nexus.Tray.exe.";
         }
-        if (names.Any(n => !Parts.Any(p => n.StartsWith(p + "/", StringComparison.Ordinal)) && n != "version.txt" && n != PawnIoSetup))
+        if (names.Any(n => !Parts.Any(p => n.StartsWith(p + "/", StringComparison.Ordinal)) && n != "version.txt" && n != PawnIoSetup && n != PayloadManifest.FileName))
         {
             return "Повреждённый установщик: лишние файлы.";
         }

@@ -19,6 +19,59 @@ internal static class PayloadManifest
     public const string FileName = "manifest.json";
     public const int MaxEntries = 20000;
 
+    public const int MaxManifestBytes = 4 * 1024 * 1024;
+
+    /// <summary>Reads at most <see cref="MaxManifestBytes"/> + 1 bytes; longer, empty or not valid UTF-8 → null.</summary>
+    public static IReadOnlyList<ManifestEntry>? Read(Stream manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while (buffer.Length <= MaxManifestBytes && (read = manifest.Read(chunk, 0, (int)Math.Min(chunk.Length, MaxManifestBytes + 1 - buffer.Length))) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+        }
+        if (buffer.Length is 0 or > MaxManifestBytes)
+        {
+            return null;
+        }
+        try
+        {
+            return Parse(new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true).GetString(buffer.GetBuffer(), 0, (int)buffer.Length));
+        }
+        catch (System.Text.DecoderFallbackException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Archive entry name with "\" turned into "/" (Compress-Archive on Windows may write "\"), done exactly once; every
+    /// path check then runs on this name, so "a\b" and "a/b" are the same entry. manifest.json itself must use "/".
+    /// </summary>
+    public static string ArchiveName(string entryFullName)
+    {
+        ArgumentNullException.ThrowIfNull(entryFullName);
+        return entryFullName.Replace('\\', '/');
+    }
+
+    /// <summary>The archive entry for a manifest path, matched by normalized name; null if absent or ambiguous.</summary>
+    public static ZipArchiveEntry? FindEntry(ZipArchive zip, string manifestPath)
+    {
+        ArgumentNullException.ThrowIfNull(zip);
+        var matches = zip.Entries.Where(e => string.Equals(ArchiveName(e.FullName), manifestPath, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+        return matches.Count == 1 && ArchiveName(matches[0].FullName) == manifestPath ? matches[0] : null;
+    }
+
+    /// <summary>Stage U0: payload size × 2 (staging and the installed copy) plus 64 MB.</summary>
+    public static long RequiredFreeBytes(IReadOnlyList<ManifestEntry> manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        var total = manifest.Aggregate(0L, (sum, e) => checked(sum + e.Size));
+        return checked((total * 2) + (64L * 1024 * 1024));
+    }
+
     /// <summary>Parses manifest.json; null when malformed (unknown version, bad hash, negative size, bad path, duplicates).</summary>
     public static IReadOnlyList<ManifestEntry>? Parse(string json)
     {
@@ -74,12 +127,28 @@ internal static class PayloadManifest
         foreach (var segment in path.Split('/'))
         {
             if (segment.Length == 0 || segment is "." or ".." || segment.EndsWith('.') || segment.EndsWith(' ')
-                || segment.Any(c => char.IsControl(c) || c is '<' or '>' or '"' or '|' or '?' or '*'))
+                || segment.Any(c => char.IsControl(c) || c is '<' or '>' or '"' or '|' or '?' or '*')
+                || IsReservedDeviceName(segment))
             {
                 return false;
             }
         }
         return true;
+    }
+
+    private static readonly HashSet<string> ReservedDeviceNames = new(
+        ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+         "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
+         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³"],
+        StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Windows device names ("NUL", "com1.txt", "Lpt3 .log"), with or without extension, any case.</summary>
+    public static bool IsReservedDeviceName(string segment)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+        var dot = segment.IndexOf('.', StringComparison.Ordinal);
+        var stem = (dot < 0 ? segment : segment[..dot]).TrimEnd(' ');
+        return ReservedDeviceNames.Contains(stem);
     }
 
     private static bool IsSha256Hex(string hash) =>
@@ -97,8 +166,9 @@ internal static class PayloadManifest
         var expected = manifest.ToDictionary(e => e.Path, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var manifestSeen = false;
-        foreach (var (fullName, length) in archive)
+        foreach (var (rawName, length) in archive)
         {
+            var fullName = ArchiveName(rawName);
             var isDirectory = fullName.EndsWith('/');
             var name = isDirectory ? fullName[..^1] : fullName;
             if (!IsSafeRelativePath(name))

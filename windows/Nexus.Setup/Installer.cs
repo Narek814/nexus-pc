@@ -65,6 +65,75 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
             }
         }
 
+        // T5 sections 1 and 2 (stage U1): unpack into a checked, protected staging folder in Program Files (not %TEMP%) and
+        // verify every written file against manifest.json, all before the service is stopped or anything installed is changed.
+        var manifest = ReadManifest(payload);
+        if (manifest is null)
+        {
+            Say(SetupPlan.ManifestBrokenText);
+            return 3;
+        }
+        if (PayloadManifest.CheckArchive(payload, manifest) is { } mismatch)
+        {
+            log.WriteLine("manifest: " + mismatch);
+            Say(SetupPlan.ManifestBrokenText);
+            return 3;
+        }
+        var fs = new DataDirectoryFileSystem();
+        var required = PayloadManifest.RequiredFreeBytes(manifest);
+        if (fs.AvailableBytes(_programFiles) < required)
+        {
+            Say(SetupPlan.NotEnoughSpaceText(required));
+            return 3;
+        }
+        StagingDirectory staging;
+        try
+        {
+            staging = StagingDirectory.Create(Root, log);
+        }
+        catch (StagingRefusedException refused)
+        {
+            log.WriteLine("staging refused: " + refused.Message);
+            Say(SetupPlan.UnsafeInstallPathText(Root));
+            return SetupPlan.ExitUnsafeInstallPath;
+        }
+        using (staging)
+        {
+            FileStream? pawnIoHold;
+            try
+            {
+                Write("  ▸ ", ConsoleColor.Magenta);
+                Console.Write("Распаковываю и проверяю файлы… ");
+                pawnIoHold = staging.Extract(payload, manifest, manifest.Any(e => e.Path == SetupPlan.PawnIoSetup) ? SetupPlan.PawnIoSetup : null);
+                Write("готово", ConsoleColor.Green);
+                Console.WriteLine();
+            }
+            catch (PayloadRejectedException rejected)
+            {
+                Console.WriteLine();
+                log.WriteLine("payload rejected: " + rejected.Message);
+                Say(SetupPlan.ManifestBrokenText);
+                return 3;
+            }
+            using (pawnIoHold)
+            {
+                return InstallStaged(payload, newVersion, staging, pawnIoHold);
+            }
+        }
+    }
+
+    private static IReadOnlyList<ManifestEntry>? ReadManifest(ZipArchive payload)
+    {
+        if (payload.GetEntry(PayloadManifest.FileName) is not { } entry)
+        {
+            return null;
+        }
+        using var stream = entry.Open();
+        return PayloadManifest.Read(stream); // never more than 4 MB + 1 byte, whatever the entry header says
+    }
+
+    private int InstallStaged(ZipArchive payload, string newVersion, StagingDirectory staging, FileStream? pawnIoHold)
+    {
         var agentExe = SetupPlan.AgentExe(Root);
         var oldVersion = File.Exists(agentExe) ? FileVersionInfo.GetVersionInfo(agentExe).ProductVersion?.Split('+')[0] : null;
         Say(oldVersion is null ? $"Устанавливаю версию {newVersion}." : $"Обновляю {oldVersion} → {newVersion}. Сопряжённые устройства, автоматизации и настройки сохраняются.");
@@ -78,34 +147,26 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         });
         WarnAboutStandaloneOpenRgb();
 
+        // Copying from the checked staging folder is still delete-then-copy; atomic replacement with rollback is part B of T5.
         Step("Копирую файлы в " + Root, () =>
         {
-            var staging = Path.Combine(Path.GetTempPath(), "NexusPC-Setup-" + Guid.NewGuid().ToString("N"));
-            payload.ExtractToDirectory(staging);
-            try
+            foreach (var part in SetupPlan.Parts.Where(p => Directory.Exists(Path.Combine(staging.Path, p))))
             {
-                foreach (var part in SetupPlan.Parts.Where(p => Directory.Exists(Path.Combine(staging, p))))
+                var target = Path.Combine(Root, part);
+                Retry(() =>
                 {
-                    var target = Path.Combine(Root, part);
-                    Retry(() =>
+                    if (Directory.Exists(target))
                     {
-                        if (Directory.Exists(target))
-                        {
-                            Directory.Delete(target, recursive: true);
-                        }
-                    });
-                    CopyDirectory(Path.Combine(staging, part), target);
-                }
-            }
-            finally
-            {
-                Directory.Delete(staging, recursive: true);
+                        Directory.Delete(target, recursive: true);
+                    }
+                });
+                CopyDirectory(Path.Combine(staging.Path, part), target);
             }
         });
 
-        if (payload.GetEntry(SetupPlan.PawnIoSetup) is { } pawnIo)
+        if (pawnIoHold is not null)
         {
-            Step("Драйвер PawnIO (температура процессора, подсветка платы и памяти)", () => InstallPawnIo(pawnIo));
+            Step("Драйвер PawnIO (температура процессора, подсветка платы и памяти)", () => InstallPawnIo(pawnIoHold, staging.LocalPath(SetupPlan.PawnIoSetup)));
         }
         if (File.Exists(SetupPlan.OpenRgbExe(Root)))
         {
@@ -276,7 +337,7 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NexusPC");
 
     /// <summary>Silent install of the driver, unless it is already there (its installer refuses a second install).</summary>
-    private void InstallPawnIo(ZipArchiveEntry entry)
+    private void InstallPawnIo(FileStream held, string stagedSetup)
     {
         using (var key = Registry.LocalMachine.OpenSubKey(SetupPlan.PawnIoUninstallKey))
         {
@@ -286,22 +347,30 @@ internal sealed class Installer(SetupOptions options, TextWriter log)
                 return;
             }
         }
-        var folder = Path.Combine(Path.GetTempPath(), "NexusPC-PawnIO-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(folder);
+        // T5 section 4: the file written to staging and held with FileShare.Read since then; checked through that handle.
+        PawnIoRun run;
         try
         {
-            var setup = Path.Combine(folder, "PawnIO_setup.exe");
-            entry.ExtractToFile(setup);
-            var result = RunQuiet(SetupPlan.InstallPawnIo(setup));
-            if (result.Exit != 0)
-            {
-                // Not fatal: everything else works; CPU temperature and some lighting show "unavailable".
-                Write($"не установился (код {result.Exit}); температура процессора и подсветка платы будут недоступны — ", ConsoleColor.Yellow);
-            }
+            run = PawnIoRunner.Run(held, stagedSetup, PawnIoPin.FromAssembly(), SetupPlan.InstallPawnIo(stagedSetup).Args, log, TimeSpan.FromMinutes(10));
         }
-        finally
+        catch (System.ComponentModel.Win32Exception ex)
         {
-            Directory.Delete(folder, recursive: true);
+            log.WriteLine("PawnIO not started: " + ex.Message); // stage U7: not fatal, as before
+            run = new PawnIoRun(false, null, false, ex.Message);
+        }
+        if (!run.Started || run.Exit is null)
+        {
+            // Not fatal (stage U7): everything else works; CPU temperature and some lighting show "unavailable".
+            Write(SetupPlan.PawnIoNotVerifiedText, ConsoleColor.Yellow);
+            return;
+        }
+        if (run.RevocationUnknown)
+        {
+            Write(SetupPlan.PawnIoRevocationUnknownText, ConsoleColor.Yellow);
+        }
+        if (run.Exit != 0)
+        {
+            Write($"не установился (код {run.Exit}); температура процессора и подсветка платы будут недоступны — ", ConsoleColor.Yellow);
         }
     }
 

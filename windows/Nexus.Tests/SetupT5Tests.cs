@@ -54,7 +54,6 @@ public sealed class PayloadManifestTests
     [InlineData("../evil.exe")]
     [InlineData("/Agent/x.exe")]
     [InlineData("C:/x.exe")]
-    [InlineData("Agent\\x.exe")]
     [InlineData("Agent/x.exe:stream")]
     [InlineData("Agent/x.exe.")]
     [InlineData("Agent//x.exe")]
@@ -159,5 +158,278 @@ public sealed class StagingPathPolicyTests
         var path = Standard();
         path[1] = path[1] with { Dacl = [.. path[1].Dacl, new DataAce(Users, false, StagingPathPolicy.Delete, 0), new DataAce(Users, true, StagingPathPolicy.Delete, 0x08)] };
         Assert.Null(StagingPathPolicy.Check(path));
+    }
+}
+
+public sealed class StagingPathShapeTests
+{
+    private const string Staging = @"C:\Program Files\NexusPC\.staging-0123";
+
+    [Fact]
+    public void Components_go_from_the_volume_root_down() =>
+        Assert.Equal([@"C:\", @"C:\Program Files", @"C:\Program Files\NexusPC", Staging], StagingPathPolicy.Components(Staging));
+
+    [Theory]
+    [InlineData(@"\\server\share\NexusPC")]
+    [InlineData(@"\\?\C:\Program Files\NexusPC")]
+    [InlineData(@"Program Files\NexusPC")]
+    [InlineData(@"C:\Program Files\..\Users\NexusPC")]
+    [InlineData(@"C:\Program Files\.\NexusPC")]
+    [InlineData(@"C:\Program Files\\NexusPC")]
+    [InlineData(@"C:\Program Files\NexusPC:ads")]
+    public void Unusual_paths_have_no_components_and_are_refused(string path) => Assert.Empty(StagingPathPolicy.Components(path));
+
+    private static PathComponentState Created(string? owner = DataDirectoryPolicy.Administrators, bool reparse = false, params DataAce[] dacl) =>
+        new(Staging, reparse, owner, dacl.Length > 0 ? dacl
+            : [new(DataDirectoryPolicy.LocalSystem, true, 0x1F01FF, 3), new(DataDirectoryPolicy.Administrators, true, 0x1F01FF, 3)]);
+
+    [Fact]
+    public void Created_staging_must_be_administrators_owned_protected_and_at_the_expected_path()
+    {
+        Assert.Null(StagingPathPolicy.CheckCreatedStaging(Staging, Created(), true, Staging.ToUpperInvariant()));
+        Assert.NotNull(StagingPathPolicy.CheckCreatedStaging(Staging, Created(), false, Staging));
+        Assert.NotNull(StagingPathPolicy.CheckCreatedStaging(Staging, Created(DataDirectoryPolicy.LocalSystem), true, Staging));
+        Assert.NotNull(StagingPathPolicy.CheckCreatedStaging(Staging, Created(reparse: true), true, Staging));
+        Assert.NotNull(StagingPathPolicy.CheckCreatedStaging(Staging, Created(dacl: new DataAce("S-1-5-11", true, 0x1200A9, 0)), true, Staging));
+        Assert.NotNull(StagingPathPolicy.CheckCreatedStaging(Staging, Created(), true, @"D:\elsewhere\.staging-0123"));
+        Assert.NotNull(StagingPathPolicy.CheckCreatedStaging(Staging, Created(), true, null));
+    }
+
+    [Fact]
+    public void Unrecognised_allow_ace_on_the_path_is_refused()
+    {
+        var path = new List<PathComponentState>
+        {
+            new(@"C:\", false, DataDirectoryPolicy.TrustedInstaller, [new(DataDirectoryPolicy.Administrators, true, 0x1F01FF, 0), new("(ACE type 9)", true, 0, 0)]),
+        };
+        Assert.StartsWith("unrecognised", StagingPathPolicy.Check(path));
+    }
+
+    [Fact]
+    public void Free_space_needed_is_twice_the_payload_plus_a_margin() =>
+        Assert.Equal((2L * 300) + (64L * 1024 * 1024), PayloadManifest.RequiredFreeBytes([new("a", 100, new string('0', 64)), new("b", 200, new string('0', 64))]));
+
+    [Fact]
+    public void Payload_with_its_manifest_passes_the_name_check()
+    {
+        using var memory = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var name in new[] { "Agent/Nexus.Agent.exe", "Tray/Nexus.Tray.exe", "manifest.json", "version.txt", SetupPlan.PawnIoSetup })
+            {
+                zip.CreateEntry(name);
+            }
+        }
+        memory.Position = 0;
+        using var read = new System.IO.Compression.ZipArchive(memory);
+        Assert.Null(SetupPlan.CheckPayload(read));
+    }
+}
+
+public sealed class PawnIoPolicyTests
+{
+    private const string FileHash = "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032";
+    private const string Leaf = "8166cb6a0b4d058ecf5e499193e3ee74f1da7b3aaa6fde89ca2111e61f0af792";
+    private static readonly PawnIoPin Pin = new(FileHash, Leaf, "2.2.0");
+
+    private static Func<bool, (int, string?)> Verify(int strict, int relaxed = 0, string? leaf = Leaf, List<bool>? calls = null) => revocation =>
+    {
+        calls?.Add(revocation);
+        var code = revocation ? strict : relaxed;
+        return (code, code == 0 ? leaf : null);
+    };
+
+    [Fact]
+    public void Pinned_file_with_valid_signature_and_exact_leaf_is_allowed()
+    {
+        var verdict = PawnIoPolicy.Check(Pin, FileHash.ToUpperInvariant(), Verify(0));
+        Assert.True(verdict.Allowed);
+        Assert.False(verdict.RevocationUnknown);
+    }
+
+    [Fact]
+    public void Missing_pins_refuse_without_checking()
+    {
+        var calls = new List<bool>();
+        Assert.False(PawnIoPolicy.Check(new PawnIoPin("", "", ""), FileHash, Verify(0, calls: calls)).Allowed);
+        Assert.False(PawnIoPolicy.Check(Pin with { LeafCertSha256 = "abc" }, FileHash, Verify(0, calls: calls)).Allowed);
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void Wrong_file_hash_is_refused_before_the_signature_is_looked_at()
+    {
+        var calls = new List<bool>();
+        Assert.False(PawnIoPolicy.Check(Pin, Leaf, Verify(0, calls: calls)).Allowed);
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void Other_leaf_certificate_is_refused_even_with_a_valid_signature() =>
+        Assert.False(PawnIoPolicy.Check(Pin, FileHash, Verify(0, leaf: FileHash)).Allowed);
+
+    [Fact]
+    public void Revoked_or_invalid_signature_is_refused_and_not_retried()
+    {
+        var calls = new List<bool>();
+        Assert.False(PawnIoPolicy.Check(Pin, FileHash, Verify(PawnIoPolicy.CertERevoked, calls: calls)).Allowed);
+        Assert.False(PawnIoPolicy.Check(Pin, FileHash, Verify(unchecked((int)0x800B0100), calls: calls)).Allowed);
+        Assert.Equal([true, true], calls);
+    }
+
+    [Theory]
+    [InlineData(PawnIoPolicy.CryptERevocationOffline)]
+    [InlineData(PawnIoPolicy.CryptENoRevocationCheck)]
+    [InlineData(PawnIoPolicy.CertERevocationFailure)]
+    public void Unknown_revocation_is_allowed_only_with_valid_signature_and_exact_leaf_and_is_flagged(int offline)
+    {
+        var allowed = PawnIoPolicy.Check(Pin, FileHash, Verify(offline));
+        Assert.True(allowed.Allowed);
+        Assert.True(allowed.RevocationUnknown);
+        Assert.False(PawnIoPolicy.Check(Pin, FileHash, Verify(offline, relaxed: unchecked((int)0x800B0109))).Allowed);
+        Assert.False(PawnIoPolicy.Check(Pin, FileHash, Verify(offline, leaf: FileHash)).Allowed);
+    }
+
+    [Fact]
+    public void Started_image_must_be_the_staged_file()
+    {
+        const string staged = @"C:\Program Files\NexusPC\.staging-1\PawnIO\PawnIO_setup.exe";
+        Assert.True(PawnIoPolicy.SameImage(staged.ToUpperInvariant(), staged));
+        Assert.True(PawnIoPolicy.SameImage(@"\\?\" + staged, staged));
+        Assert.False(PawnIoPolicy.SameImage(@"C:\Users\x\AppData\Local\Temp\PawnIO_setup.exe", staged));
+        Assert.False(PawnIoPolicy.SameImage(null, staged));
+    }
+
+    [Fact]
+    public void Developer_build_has_no_pins() => Assert.False(PawnIoPin.FromAssembly().Complete);
+}
+
+public sealed class PayloadBackslashNameTests
+{
+    private static readonly List<ManifestEntry> Manifest = [new("Agent/Nexus.Agent.exe", 5, new string('a', 64)), new("Tray/Nexus.Tray.exe", 5, new string('b', 64))];
+
+    [Fact]
+    public void Archive_written_with_backslashes_matches_the_manifest() =>
+        Assert.Null(PayloadManifest.CheckArchive([("manifest.json", 9), ("Agent\\", 0), ("Agent\\Nexus.Agent.exe", 5), ("Tray\\Nexus.Tray.exe", 5)], Manifest));
+
+    [Fact]
+    public void Backslash_and_slash_spellings_of_one_name_are_duplicates() =>
+        Assert.StartsWith("duplicate", PayloadManifest.CheckArchive([("manifest.json", 9), ("Agent\\Nexus.Agent.exe", 5), ("Agent/Nexus.Agent.exe", 5), ("Tray/Nexus.Tray.exe", 5)], Manifest));
+
+    [Theory]
+    [InlineData("..\\x.exe")]
+    [InlineData("Agent\\..\\x.exe")]
+    [InlineData("\\Agent\\x.exe")]
+    [InlineData("C:\\x.exe")]
+    [InlineData("Agent\\\\x.exe")]
+    public void Unsafe_backslash_paths_are_refused(string name) =>
+        Assert.StartsWith("unsafe path", PayloadManifest.CheckArchive([("manifest.json", 9), (name, 1), ("Agent/Nexus.Agent.exe", 5), ("Tray/Nexus.Tray.exe", 5)], Manifest));
+
+    [Fact]
+    public void Backslash_in_manifest_json_is_refused()
+    {
+        Assert.False(PayloadManifest.IsSafeRelativePath("Agent\\x.exe"));
+        Assert.Null(PayloadManifest.Parse($$"""{"version":1,"files":[{"path":"Agent\\Nexus.Agent.exe","size":5,"sha256":"{{new string('a', 64)}}"}]}"""));
+    }
+
+    [Fact]
+    public void Extraction_finds_a_backslash_entry_by_its_normalized_name()
+    {
+        using var memory = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            zip.CreateEntry("Agent\\Nexus.Agent.exe");
+        }
+        memory.Position = 0;
+        using var read = new System.IO.Compression.ZipArchive(memory);
+        Assert.NotNull(PayloadManifest.FindEntry(read, "Agent/Nexus.Agent.exe"));
+        Assert.Null(PayloadManifest.FindEntry(read, "agent/nexus.agent.exe"));
+        Assert.Null(PayloadManifest.FindEntry(read, "Tray/Nexus.Tray.exe"));
+    }
+}
+
+public sealed class SecurityRoundTests
+{
+    private static readonly DataAce SystemFull = new(DataDirectoryPolicy.LocalSystem, true, 0x1F01FF, 0);
+    private static readonly DataAce AdminsFull = new(DataDirectoryPolicy.Administrators, true, 0x1F01FF, 0);
+    private const string Users = "S-1-5-32-545";
+    private const int OiCiIo = 0x01 | 0x02 | 0x08;
+
+    private static List<PathComponentState> Path(params DataAce[] onNexusPc) =>
+    [
+        new(@"C:\", false, DataDirectoryPolicy.TrustedInstaller, [SystemFull, AdminsFull, new("S-1-5-11", true, 0x4, 0)], IsVolumeRoot: true),
+        new(@"C:\Program Files", false, DataDirectoryPolicy.TrustedInstaller,
+            [SystemFull, AdminsFull, new(Users, true, 0x1200A9, 0), new(Users, true, 0xA0000000, OiCiIo), new("S-1-3-0", true, 0x10000000, OiCiIo)]),
+        new(@"C:\Program Files\NexusPC", false, DataDirectoryPolicy.Administrators,
+            [SystemFull, AdminsFull, new(Users, true, 0x1200A9, 0x10), new(Users, true, 0xA0000000, OiCiIo | 0x10), new("S-1-3-0", true, 0x10000000, OiCiIo | 0x10), .. onNexusPc]),
+    ];
+
+    [Fact]
+    public void Default_inherited_nexuspc_acl_is_accepted_in_strict_mode() => Assert.Null(StagingPathPolicy.Check(Path(), strictFromLevel: 2));
+
+    [Fact]
+    public void Inherit_only_modify_for_users_on_nexuspc_is_refused()
+    {
+        var path = Path(new DataAce(Users, true, 0x1301BF, OiCiIo));
+        Assert.Contains("may write into", StagingPathPolicy.Check(path, strictFromLevel: 2), StringComparison.Ordinal);
+        Assert.Null(StagingPathPolicy.Check(path)); // the same ACE is not looked at above our own folders
+    }
+
+    [Theory]
+    [InlineData(StagingPathPolicy.FileAddFile)]
+    [InlineData(StagingPathPolicy.FileAddSubdirectory)]
+    [InlineData(StagingPathPolicy.FileWriteEa)]
+    [InlineData(StagingPathPolicy.FileWriteAttributes)]
+    [InlineData(StagingPathPolicy.MaximumAllowed)]
+    [InlineData(StagingPathPolicy.GenericWrite)]
+    public void Any_write_right_for_users_on_nexuspc_is_refused(uint mask) =>
+        Assert.Contains("may write into", StagingPathPolicy.Check(Path(new DataAce(Users, true, mask, 0)), strictFromLevel: 2), StringComparison.Ordinal);
+
+    [Fact]
+    public void Creator_owner_is_exempt_only_when_inherit_only() =>
+        Assert.NotNull(StagingPathPolicy.Check(Path(new DataAce("S-1-3-0", true, 0x2, 0)), strictFromLevel: 2));
+
+    [Theory]
+    [InlineData("CON")]
+    [InlineData("Agent/nul")]
+    [InlineData("Agent/com1.dll")]
+    [InlineData("LPT9.txt.bak")]
+    [InlineData("Agent/Aux /x")]
+    [InlineData("Agent/CONIN$")]
+    [InlineData("Agent/COM\u00B9.txt")]
+    public void Windows_device_names_are_refused(string path) => Assert.False(PayloadManifest.IsSafeRelativePath(path));
+
+    [Theory]
+    [InlineData("Agent/console.dll")]
+    [InlineData("Agent/COM10.dll")]
+    [InlineData("Agent/nullable.json")]
+    [InlineData("LPT.txt")]
+    public void Names_that_only_resemble_devices_are_allowed(string path) => Assert.True(PayloadManifest.IsSafeRelativePath(path));
+
+    private const string Good = """{"version":1,"files":[{"path":"a","size":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}""";
+
+    [Fact]
+    public void Manifest_is_read_up_to_four_megabytes_only()
+    {
+        Assert.NotNull(PayloadManifest.Read(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(Good))));
+        var padded = Good + new string(' ', PayloadManifest.MaxManifestBytes - Good.Length);
+        Assert.NotNull(PayloadManifest.Read(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(padded))));
+        var reader = new CountingStream(System.Text.Encoding.UTF8.GetBytes(padded + " "));
+        Assert.Null(PayloadManifest.Read(reader));
+        Assert.True(reader.Delivered <= PayloadManifest.MaxManifestBytes + 1);
+        Assert.Null(PayloadManifest.Read(new MemoryStream()));
+        Assert.Null(PayloadManifest.Read(new MemoryStream([0x7B, 0xFF, 0x7D])));
+    }
+
+    private sealed class CountingStream(byte[] data) : MemoryStream(data)
+    {
+        public long Delivered { get; private set; }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = base.Read(buffer, offset, count);
+            Delivered += read;
+            return read;
+        }
     }
 }
