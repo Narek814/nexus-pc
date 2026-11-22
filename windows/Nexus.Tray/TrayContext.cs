@@ -19,6 +19,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _stopScreen;
     private string? _screenViewer;
     private readonly System.Windows.Forms.Timer _inputWatch = new() { Interval = 1000 };
+    private readonly System.Windows.Forms.Timer _lightingWatch = new() { Interval = 15000 };
+    private bool _lightingConflictShown;
     private Icon _currentIcon;
     private Form? _openForm;
 
@@ -61,6 +63,9 @@ internal sealed class TrayContext : ApplicationContext
         // A phone that drags and then loses connection must not leave a mouse button held.
         _inputWatch.Tick += (_, _) => handler.ReleaseIdleButtons();
         _inputWatch.Start();
+        // T2: tell the person at the PC once when another program has taken the OpenRGB port.
+        _lightingWatch.Tick += async (_, _) => await CheckLightingAsync();
+        _lightingWatch.Start();
 
         var agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Agent", "Nexus.Agent.exe"));
         _status = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
@@ -211,8 +216,24 @@ internal sealed class TrayContext : ApplicationContext
         _autostart.Checked = IsAutostartEnabled();
     }
 
+    private async Task CheckLightingAsync()
+    {
+        if (!_agent.IsConnected)
+        {
+            return;
+        }
+        var status = await _agent.CallAsync(Nexus.Core.Session.SessionOps.Status).ConfigureAwait(true);
+        var conflict = status.Ok && status.Result?["openRgb"]?.GetValue<string>() == "conflict";
+        if (conflict && !_lightingConflictShown)
+        {
+            Notify("Подсветку перехватила другая программа");
+        }
+        _lightingConflictShown = conflict;
+    }
+
     protected override void ExitThreadCore()
     {
+        _lightingWatch.Dispose();
         _inputWatch.Dispose();
         _icon.Visible = false;
         _icon.Dispose();

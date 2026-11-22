@@ -12,14 +12,20 @@ namespace Nexus.Agent.Server;
 /// Lighting profiles live in rgb.json; a profile with the same id as an app profile (e.g. "gaming")
 /// is applied when that app profile runs.
 /// </summary>
-internal sealed class RgbService(string dataDirectory, int openRgbPort)
+internal sealed class RgbService(string dataDirectory, int openRgbPort, OpenRgbConnectionGuard guard)
 {
     public const int DefaultPort = 6742;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, AllowDuplicateProperties = false };
     private readonly string _path = Path.Combine(dataDirectory, "rgb.json");
     private readonly Lock _lock = new();
 
-    public sealed class RgbUnavailableException(string message) : Exception(message);
+    /// <summary>Shown on the phone when another program holds the OpenRGB port (T2, rgb.status state "conflict").</summary>
+    public const string ConflictMessage = "Подсветка недоступна: её перехватила другая программа на ПК.";
+
+    public class RgbUnavailableException(string message) : Exception(message);
+
+    /// <summary>The process that accepted the connection is not our OpenRGB; nothing was sent to it.</summary>
+    public sealed class RgbConflictException() : RgbUnavailableException(ConflictMessage);
 
     public async Task<JsonObject> StatusAsync(CancellationToken cancellationToken)
     {
@@ -42,6 +48,10 @@ internal sealed class RgbService(string dataDirectory, int openRgbPort)
         {
             result["available"] = false;
             result["reason"] = ex.Message;
+            if (ex is RgbConflictException)
+            {
+                result["state"] = "conflict";
+            }
             result["devices"] = new JsonArray();
         }
         return result;
@@ -150,7 +160,11 @@ internal sealed class RgbService(string dataDirectory, int openRgbPort)
     {
         try
         {
-            return await OpenRgbClient.ConnectAsync("127.0.0.1", openRgbPort, cancellationToken).ConfigureAwait(false);
+            return await OpenRgbClient.ConnectAsync("127.0.0.1", openRgbPort, guard.Accept, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OpenRgbConflictException)
+        {
+            throw new RgbConflictException();
         }
         catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
