@@ -24,6 +24,26 @@ insert into public.subscriptions (user_id, source, status, product, current_peri
   ('00000000-0000-0000-0000-000000000008', 'web',    'active',   'pro_yearly',  now() + interval '300 days', now());
 reset role;
 
+-- u9 active with period ending exactly now() (inserted later, in the checking transaction),
+-- u10 active with NULL period end, u11/u12 refunded + expired with identical
+-- updated_at and created_at: the tie is broken by id desc.
+insert into auth.users (id) values
+  ('00000000-0000-0000-0000-000000000009'), ('00000000-0000-0000-0000-000000000010'),
+  ('00000000-0000-0000-0000-000000000011'), ('00000000-0000-0000-0000-000000000012');
+set role service_role;
+insert into public.my_pcs (pc_id, user_id, display_name, platform) values
+  ('20000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000009', 'PC 9',  'windows'),
+  ('20000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000010', 'PC 10', 'windows'),
+  ('20000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000011', 'PC 11', 'windows'),
+  ('20000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000012', 'PC 12', 'windows');
+insert into public.subscriptions (id, user_id, source, status, product, current_period_end, created_at, updated_at) values
+  ('30000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000010', 'manual', 'active', 'pro_monthly', null, now(), now()),
+  ('3fffffff-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000011', 'web', 'refunded', 'pro_monthly', now() + interval '3 days', '2026-11-01 00:00+00', '2026-11-02 00:00+00'),
+  ('30000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000011', 'web', 'expired',  'pro_monthly', now() - interval '3 days', '2026-11-01 00:00+00', '2026-11-02 00:00+00'),
+  ('30000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000012', 'web', 'refunded', 'pro_monthly', now() + interval '3 days', '2026-11-01 00:00+00', '2026-11-02 00:00+00'),
+  ('3fffffff-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000012', 'web', 'expired',  'pro_monthly', now() - interval '3 days', '2026-11-01 00:00+00', '2026-11-02 00:00+00');
+reset role;
+
 create temp table _results (name text);
 grant insert on _results to authenticated, anon, service_role;
 
@@ -54,6 +74,47 @@ begin
     end if;
     insert into _results values (c.name);
   end loop;
+end $$;
+
+-- Edge cases (QA E3-3). One transaction, so now() at insert equals now() in the function.
+begin;
+insert into public.subscriptions (user_id, source, status, product, current_period_end)
+  values ('00000000-0000-0000-0000-000000000009', 'manual', 'active', 'pro_monthly', now());
+do $$
+declare r record;
+begin
+  select * into r from public.entitlement_for_pc('20000000-0000-0000-0000-000000000009');
+  if r.state is distinct from 'active' or r.plan is distinct from 'free' or r.features <> '{}' then
+    raise exception 'FAIL period_end_equals_now_free (got %, %)', r.state, r.plan;
+  end if;
+  insert into _results values ('period_end_equals_now_free');
+end $$;
+commit;
+
+do $$
+declare r record;
+begin
+  select * into r from public.entitlement_for_pc('20000000-0000-0000-0000-000000000010');
+  if r.state is distinct from 'active' or r.plan is distinct from 'free' or r.features <> '{}' then
+    raise exception 'FAIL period_end_null_active_free (got %, %)', r.state, r.plan;
+  end if;
+  insert into _results values ('period_end_null_active_free');
+end $$;
+
+do $$
+declare r record; i int;
+begin
+  for i in 1..5 loop
+    select * into r from public.entitlement_for_pc('20000000-0000-0000-0000-000000000011');
+    if r.state is distinct from 'revoked' or r.plan is distinct from 'free' then
+      raise exception 'FAIL tie_broken_by_id_refunded (got %, %)', r.state, r.plan;
+    end if;
+    select * into r from public.entitlement_for_pc('20000000-0000-0000-0000-000000000012');
+    if r.state is distinct from 'active' or r.plan is distinct from 'free' then
+      raise exception 'FAIL tie_broken_by_id_expired (got %, %)', r.state, r.plan;
+    end if;
+  end loop;
+  insert into _results values ('tie_broken_by_id_stable');
 end $$;
 reset role;
 
