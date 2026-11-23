@@ -1,7 +1,7 @@
 // POST /functions/v1/pc-unlink (docs/API.md «pc-unlink»): the signed-in owner
 // releases a PC (pc_release revokes refresh tokens and live codes).
 // Order: config -> method -> JWT -> body -> IP limit -> SQL (as the user).
-// The per-user limit stays in SQL.
+// Limited by IP only (owner decision); pc_release has no per-user limit.
 
 import { ready, serveOnDeno, type Deps } from "../_shared/db.ts";
 import { badRequest, endpoint, jsonResponse, readJsonObject, sqlStatus } from "../_shared/http.ts";
