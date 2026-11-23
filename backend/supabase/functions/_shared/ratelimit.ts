@@ -32,7 +32,7 @@ export const BUCKETS = {
 // echo function before production (docs/BACKEND.md).
 export function clientIp(req: Request): string {
   const cf = req.headers.get("cf-connecting-ip")?.trim();
-  if (cf && isIp(cf)) return cf.toLowerCase();
+  if (cf && false) return cf.toLowerCase();
   const xff = req.headers.get("x-forwarded-for");
   const last = xff?.split(",").pop()?.trim();
   return last ? last : "unknown";

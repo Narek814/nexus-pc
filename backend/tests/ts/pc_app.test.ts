@@ -13,6 +13,7 @@ const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMTExIn0.c2lnbmF0dXJl";
 const AUTH = { authorization: "Bearer " + JWT };
 const CODE = "ABCD2345";
 const SERVICE_KEY = "service-role-key-not-a-real-one";
+const ANON_KEY = "anon-key-not-a-real-one";
 
 type H = (d: ReturnType<typeof deps>) => (req: Request) => Promise<Response>;
 const CODE_EPS: [string, H, string][] = [
@@ -181,7 +182,7 @@ test("missing config -> 500 internal before JWT, body and SQL", async () => {
   }
 });
 
-test("PostgrestDb: user JWT goes as Bearer (apikey = service key); rejected JWT -> 401 auth.required", async () => {
+test("PostgrestDb: user JWT goes as Bearer (apikey = anon key); rejected JWT -> 401 auth.required", async () => {
   const seen: { url: string; auth: string | null; apikey: string | null; body: string }[] = [];
   let status = 200;
   const fetchFn = (async (url: string, init: RequestInit) => {
@@ -190,14 +191,16 @@ test("PostgrestDb: user JWT goes as Bearer (apikey = service key); rejected JWT 
     if (url.endsWith("rate_limit_hit")) return new Response("true", { status: 200 });
     return new Response(status === 200 ? '"ok"' : '{"message":"JWT expired"}', { status });
   }) as unknown as typeof fetch;
-  const db = new PostgrestDb("http://pg.test/", SERVICE_KEY, fetchFn);
+  const db = new PostgrestDb("http://pg.test/", SERVICE_KEY, ANON_KEY, fetchFn);
   let res = await approveHandler(deps(db))(post({ userCode: CODE }, AUTH));
   assert.equal(res.status, 200);
-  assert.equal(seen[0].auth, "Bearer " + SERVICE_KEY); // IP limit: service_role
+  assert.equal(seen[0].auth, "Bearer " + SERVICE_KEY); // IP limit: service_role in both
+  assert.equal(seen[0].apikey, SERVICE_KEY);
   assert.equal(seen[1].url, "http://pg.test/rest/v1/rpc/pc_login_approve");
   assert.equal(seen[1].auth, "Bearer " + JWT);
   assert.notEqual(seen[1].auth, "Bearer " + SERVICE_KEY);
-  assert.equal(seen[1].apikey, SERVICE_KEY);
+  assert.equal(seen[1].apikey, ANON_KEY); // E7-5: never service_role next to a user JWT
+  for (const s of seen.slice(1)) assert.ok(!JSON.stringify(s).includes(SERVICE_KEY));
   assert.ok(!seen[1].body.includes(CODE));
   for (const st of [401, 403]) {
     status = st;

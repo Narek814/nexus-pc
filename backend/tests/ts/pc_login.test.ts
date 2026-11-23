@@ -7,7 +7,7 @@ import { createHandler as pollHandler } from "../../supabase/functions/pc-login-
 import { consumeString, sha256hex, startString } from "../../supabase/functions/_shared/pop.ts";
 import { b64uEncode } from "../../supabase/functions/_shared/entitlement.ts";
 import { deps, FakeDb, HASH_ARGS, hex, nonce, NOW, payload, PC, pcKey, post, sign, testEnv, USER_A, USER_B,
-  verifyTokens, captureConsole, assertDefaultLog, type PcKey } from "./_helpers.ts";
+  verifyTokens, captureConsole, assertDefaultLog, randomSecret, secretBytes, type PcKey } from "./_helpers.ts";
 
 const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"];
 
@@ -50,7 +50,7 @@ test("start, first binding: signer = spki, nonce/ts from signed string, only HMA
   assert.equal(out.interval, 5);
   assert.match(out.userCode, /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
   assert.equal(Buffer.from(out.deviceCode, "base64url").length, 32);
-  assert.deepEqual(db.names(), ["rate_limit_hit", "rate_limit_hit", "pc_key_get", "pc_login_start"]);
+  assert.deepEqual(db.names(), ["rate_limit_hit", "pc_key_get", "rate_limit_hit", "pc_login_start"]);
   const a = db.calls[3].args;
   assert.equal(a.p_signer_spki, hex(k.spki));
   assert.equal(a.p_spki, hex(k.spki));
@@ -63,10 +63,34 @@ test("start, first binding: signer = spki, nonce/ts from signed string, only HMA
   assert.equal(a.p_user_code_hash, "\\x" + createHmac("sha256", pep).update(out.userCode).digest("hex"));
   assertHashesOnly(db, [out.deviceCode, out.userCode], d.lines);
   // IP limits: hashed key, buckets and limits as specified.
-  const [ip, glob] = db.calls.map((c) => c.args);
+  const [ip, , glob] = db.calls.map((c) => c.args);
   assert.deepEqual([ip.p_bucket, ip.p_limit, ip.p_window_sec], ["edge_ip_start", 20, 600]);
   assert.equal(ip.p_key, createHmac("sha256", pep).update("nexus-ip-v1|198.51.100.7").digest("base64url"));
   assert.deepEqual([glob.p_bucket, glob.p_limit, glob.p_window_sec], ["edge_start_global", 2000, 600]);
+});
+
+test("start (E7-2): bad or foreign signatures spend the IP bucket but never edge_start_global", async () => {
+  const a = await pcKey(), b = await pcKey(), stored = await pcKey();
+  const good = await startBody(a, a.spkiB64u);
+  const zeroSig = b64uEncode(new Uint8Array(64));
+  const cases: [Uint8Array | null, Record<string, unknown>][] = [
+    [null, { ...good, sig: zeroSig }], // garbage signature
+    [null, await startBody(a, b.spkiB64u)], // signed by another key
+    [stored.spki, good], // rebind not signed by the stored key
+    [null, { ...good, ts: NOW + 1 }], // tampered signed field
+  ];
+  for (const [st, body] of cases) {
+    const db = startDb(st);
+    const res = await startHandler(deps(db))(post(body));
+    assert.deepEqual(await res.json(), { error: "pc.key_required" });
+    const buckets = db.calls.filter((c) => c.name === "rate_limit_hit").map((c) => c.args.p_bucket);
+    assert.deepEqual(buckets, ["edge_ip_start"]);
+  }
+  // Valid signature: the global fuse is spent exactly once, after pc_key_get.
+  const db = startDb(null);
+  assert.equal((await startHandler(deps(db))(post(good))).status, 200);
+  assert.deepEqual(db.calls.filter((c) => c.name === "rate_limit_hit").map((c) => c.args.p_bucket),
+    ["edge_ip_start", "edge_start_global"]);
 });
 
 test("start: signature by key A with spki = B (first binding) -> pc.key_required, no pc_login_start", async () => {
@@ -159,13 +183,13 @@ test("start: IP limit before signature check, with retryAfter; global limit; SQL
   assert.equal(res.headers.get("retry-after"), "600");
   assert.deepEqual(await res.json(), { error: "rate.limited", retryAfter: 600 });
   assert.deepEqual(lim.names(), ["rate_limit_hit"]);
-  const glob = new FakeDb({ rate_limit_hit: (a) => a.p_bucket !== "edge_start_global" });
+  const glob = new FakeDb({ rate_limit_hit: (a) => a.p_bucket !== "edge_start_global", pc_key_get: () => null });
   res = await startHandler(deps(glob))(post(await startBody(k, k.spkiB64u)));
   assert.deepEqual(await res.json(), { error: "rate.limited", retryAfter: 600 });
-  assert.ok(!glob.names().includes("pc_key_get"));
+  assert.ok(!glob.names().includes("pc_login_start"));
   // A different client IP gets a different key.
   const db1 = startDb(null), db2 = startDb(null);
-  await startHandler(deps(db1))(post(await startBody(k, k.spkiB64u), { "x-forwarded-for": "203.0.113.9, 10.0.0.1" }));
+  await startHandler(deps(db1))(post(await startBody(k, k.spkiB64u), { "x-forwarded-for": "203.0.113.9, 10.0.0.1, 192.0.2.44" }));
   await startHandler(deps(db2))(post(await startBody(k, k.spkiB64u)));
   assert.notEqual(db1.calls[0].args.p_key, db2.calls[0].args.p_key);
   for (const [st, code, http, ra] of [["rate.limited", "rate.limited", 429, 600], ["nonce.replay", "nonce.replay", 409, undefined],
@@ -181,6 +205,13 @@ test("start: IP limit before signature check, with retryAfter; global limit; SQL
 test("config: short or missing secret, missing ENT_* or db -> 500 internal, no SQL, no name in body", async () => {
   const k = await pcKey();
   for (const over of [{ CODE_HASH_PEPPER: "x".repeat(31) }, { REFRESH_HASH_PEPPER: undefined }, { REFRESH_DERIVE_KEY: "" },
+    { ENT_SUB_KEY: undefined }, { ENT_SUB_KEY: randomSecret(31) },
+    // E7-4: not strict base64 (b64u alphabet, no padding, whitespace, raw text) -> rejected even if long.
+    { CODE_HASH_PEPPER: Buffer.alloc(33, 0xfb).toString("base64url") },
+    { REFRESH_HASH_PEPPER: randomSecret(32).replace(/=+$/, "") },
+    { REFRESH_DERIVE_KEY: randomSecret(48) + "\n" },
+    { ENT_SUB_KEY: "this-is-a-long-utf8-passphrase-not-base64!!" },
+    { CODE_HASH_PEPPER: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB=" }, // non-canonical padding bits
     { ENT_ISS: undefined }, { ENT_KID: undefined }, { ENT_SIGNING_KEY_PKCS8_B64: "AAAA" }]) {
     const db = startDb(null);
     const res = await startHandler(deps(db, testEnv(over)))(post(await startBody(k, k.spkiB64u)));
@@ -230,7 +261,7 @@ test("poll ok: Pro by user_id from consume, token verifies, no user_id/rebound, 
   assert.equal(p.pcId, PC);
   assert.equal(p.exp as number - (p.iat as number), 86400);
   assert.equal(p.graceUntil as number - (p.exp as number), 604800);
-  const sub = "u_" + Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("nexus-ent-sub-v1|" + USER_A))).toString("base64url");
+  const sub = "u_" + createHmac("sha256", secretBytes(env.ENT_SUB_KEY)).update("nexus-ent-sub-v1|" + USER_A + "|" + PC).digest("base64url");
   assert.equal(p.sub, sub);
   assert.ok(!JSON.stringify(out).includes(USER_A));
   assert.match(verifyTokens([out.entitlement], PC), /^tokens: 1\/1 ok$/m);
