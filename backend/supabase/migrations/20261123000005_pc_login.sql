@@ -13,8 +13,9 @@ create table public.pc_keys (
   created_at timestamptz not null default now()
 );
 
--- Cc and Cf characters (controls, bidi overrides, zero-width, tags) are not
--- allowed in a PC name shown to the user in the approval step (Unicode 15.1).
+-- Cc, Cf, Zl and Zp characters (controls, bidi overrides, zero-width, tags,
+-- U+2028/U+2029) are not allowed in a PC name shown to the user in the
+-- approval step (Unicode 15.1). Same set as my_pcs_display_name_printable.
 create table public.pc_login_codes (
   id bigint generated always as identity primary key,
   pc_id uuid not null,
@@ -24,7 +25,7 @@ create table public.pc_login_codes (
   display_name text not null
     constraint pc_login_codes_display_name_len check (char_length(display_name) between 1 and 64)
     constraint pc_login_codes_display_name_printable check (display_name !~
-      '[\u0001-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]'),
+      '[\u0001-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]'),
   device_code_hash bytea not null unique check (octet_length(device_code_hash) = 32),
   user_code_hash bytea not null unique check (octet_length(user_code_hash) = 32),
   described_by uuid references auth.users (id) on delete cascade,
@@ -44,7 +45,7 @@ create index pc_login_codes_pc_id_idx on public.pc_login_codes (pc_id);
 -- One-time nonces of signed PC requests. start and consume share one space;
 -- the signed string also names the operation.
 create table public.pc_login_nonces (
-  nonce bytea primary key check (octet_length(nonce) between 16 and 64),
+  nonce bytea primary key check (octet_length(nonce) between 16 and 32),
   created_at timestamptz not null default now()
 );
 
@@ -113,7 +114,7 @@ begin
      or p_ts > pg_catalog.now() + interval '300 seconds' then
     return 'request.stale';
   end if;
-  if octet_length(p_nonce) not between 16 and 64 then
+  if octet_length(p_nonce) not between 16 and 32 then
     return 'request.stale';
   end if;
   insert into public.pc_login_nonces (nonce) values (p_nonce)
@@ -183,28 +184,29 @@ begin
 end;
 $$;
 
--- Shared gate of describe/approve: 10 per 10 min per user and 1000 per 10 min
--- globally. Both counters are hit on every call.
+-- Shared gate of describe/approve: 10 per 10 min per user, then 10000 per
+-- 10 min globally (alarm fuse; the main protection is this per-account limit
+-- and the per-IP limit in Edge). The global counter is hit only when the
+-- per-user limit passed, so one account cannot exhaust it for everyone.
 create function public.pc_approve_gate(p_uid uuid)
 returns boolean
 language plpgsql
 security definer
 set search_path = ''
 as $$
-declare
-  u boolean;
-  g boolean;
 begin
-  u := public.rate_limit_hit('pc_login_approve', p_uid::text, 10, 600);
-  g := public.rate_limit_hit('pc_login_approve_global', 'all', 1000, 600);
-  return u and g;
+  if not public.rate_limit_hit('pc_login_approve', p_uid::text, 10, 600) then
+    return false;
+  end if;
+  return public.rate_limit_hit('pc_login_approve_global', 'all', 10000, 600);
 end;
 $$;
 
 -- Step 1 of approval: the user typed the code; show PC name and request time.
 -- No pc_id, no keys. Unknown, expired, consumed and approved codes all give the
 -- same 'code.invalid' through the same single index lookup. Marks the code as
--- described by this user; approve requires that.
+-- described by this user; approve requires that. A code already described by
+-- another user is not taken over: same 'code.invalid', same path and counter.
 create function public.pc_login_describe(p_user_code_hash bytea)
 returns table (status text, display_name text, requested_at timestamptz)
 language plpgsql
@@ -226,6 +228,7 @@ begin
   update public.pc_login_codes l
      set described_by = uid, described_at = pg_catalog.now()
    where l.user_code_hash = p_user_code_hash
+     and (l.described_by is null or l.described_by = uid)
      and l.approved_by is null
      and l.consumed_at is null
      and l.expires_at > pg_catalog.now()
@@ -317,8 +320,9 @@ $$;
 -- signed by the new key of this code (p_signer_spki must equal it).
 -- status: 'ok' | 'pending' | 'slow_down' | 'code.invalid' | 'pcs.limit' |
 -- 'pc.key_required' | 'request.stale' | 'nonce.replay'.
--- One-time: the code row is locked, then pc_id is serialised with pc_lock, so
--- of concurrent consumes of one code, or of two codes of one pc_id, exactly
+-- One-time: pc_id is serialised with pc_lock first, then the code row is
+-- locked (same order as pc_release: pc_lock -> code rows), so of concurrent
+-- consumes of one code, or of two codes of one pc_id, exactly
 -- one gets 'ok'. Polls: not more often than every 5 s ('slow_down'), at most
 -- 150 per code, after that the code is voided ('code.invalid').
 -- The binding seen at start (prev_key_spki) must be unchanged at consume.
@@ -334,11 +338,19 @@ declare
   f text;
   old_user uuid;
   cur_key bytea;
+  lock_pc uuid;
 begin
   f := public.pc_nonce_use(p_nonce, p_ts);
   if f is not null then
     return query select f, null::uuid, null::uuid, false;
     return;
+  end if;
+  -- Lock order: pc_lock, then the code row (as in pc_release and start).
+  -- pc_id of a code never changes, so this unlocked read is safe.
+  select l.pc_id into lock_pc from public.pc_login_codes l
+   where l.device_code_hash = p_device_code_hash;
+  if lock_pc is not null then
+    perform public.pc_lock(lock_pc);
   end if;
   select * into c from public.pc_login_codes l
    where l.device_code_hash = p_device_code_hash
@@ -369,7 +381,6 @@ begin
     return;
   end if;
 
-  perform public.pc_lock(c.pc_id);
   select m.user_id into old_user from public.my_pcs m where m.pc_id = c.pc_id for update;
   select k.public_key_spki into cur_key from public.pc_keys k where k.pc_id = c.pc_id;
   if (old_user is not null and c.prev_key_spki is null)

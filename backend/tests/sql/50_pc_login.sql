@@ -605,7 +605,8 @@ set role service_role;
 do $$ declare bad text; i int := 0; begin
   foreach bad in array array['PC' || chr(7), 'PC' || chr(27) || '[2J', chr(8238) || 'cp.exe',
       'P' || chr(8203) || 'C', chr(65279) || 'PC', 'PC' || chr(917569), 'P' || chr(173) || 'C',
-      'PC' || chr(8294), 'PC' || chr(127), 'PC' || chr(133)] loop
+      'PC' || chr(8294), 'PC' || chr(127), 'PC' || chr(133),
+      'PC' || chr(8232) || 'x', 'PC' || chr(8233) || 'x'] loop
     i := i + 1;
     begin
       perform pg_temp.st(gen_random_uuid(), pg_temp.spki(), bad, 'bad-d' || i, 'bad-u' || i, pg_temp.spki());

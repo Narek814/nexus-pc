@@ -72,6 +72,23 @@ do $$ begin
   insert into _results values ('display_name_length_check');
 end $$;
 
+-- E3-5d N6: Cc/Cf/Zl/Zp are rejected in my_pcs.display_name too.
+do $$ declare bad text; i int := 0; begin
+  foreach bad in array array['PC' || chr(7), chr(8238) || 'cp.exe', 'P' || chr(8203) || 'C',
+      chr(65279) || 'PC', 'PC' || chr(917569), 'PC' || chr(133), 'PC' || chr(8232) || 'x',
+      'PC' || chr(8233) || 'x'] loop
+    i := i + 1;
+    begin
+      update public.my_pcs set display_name = bad where pc_id = '10000000-0000-0000-0000-0000000000a1';
+      raise exception 'FAIL my_pcs_display_name_printable (%)', i;
+    exception when check_violation then null;
+    end;
+  end loop;
+  update public.my_pcs set display_name = 'Мой ПК 🎮 — Dev' where pc_id = '10000000-0000-0000-0000-0000000000a1';
+  update public.my_pcs set display_name = 'Office' where pc_id = '10000000-0000-0000-0000-0000000000a1';
+  insert into _results values ('my_pcs_display_name_printable'), ('my_pcs_display_name_allows_unicode');
+end $$;
+
 do $$ begin
   begin
     update public.my_pcs set user_id = '00000000-0000-0000-0000-0000000000b1' where pc_id = '10000000-0000-0000-0000-0000000000a1';

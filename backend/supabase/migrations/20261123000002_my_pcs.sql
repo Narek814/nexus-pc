@@ -4,7 +4,12 @@
 create table public.my_pcs (
   pc_id uuid primary key,
   user_id uuid not null references auth.users (id) on delete cascade,
-  display_name text not null check (char_length(display_name) between 1 and 64),
+  -- No Cc, Cf, Zl, Zp characters (Unicode 15.1); same set as
+  -- pc_login_codes_display_name_printable.
+  display_name text not null
+    constraint my_pcs_display_name_len check (char_length(display_name) between 1 and 64)
+    constraint my_pcs_display_name_printable check (display_name !~
+      '[\u0001-\u001f\u007f-\u009f­؀-؅؜۝܏࢐-࢑࣢᠎​-‏ -‮⁠-⁤⁦-⁯﻿￹-￻\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]'),
   platform text not null check (platform in ('windows')),
   added_at timestamptz not null default now(),
   last_seen_at timestamptz
