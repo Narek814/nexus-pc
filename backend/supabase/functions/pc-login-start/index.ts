@@ -27,15 +27,16 @@ export function createHandler(deps: Deps): (req: Request) => Promise<Response> {
     const spki = b64uDecodeStrict(spkiB64u);
     if (!spki || !(await importP256Spki(spki)) || !nameOk(name)) throw badRequest();
 
-    // Per-IP limit before any signature work, then the global start fuse.
+    // Per-IP limit before any signature work; the global start fuse only
+    // after a valid signature, so unsigned floods cannot exhaust it (E7-2).
     await hit(db, BUCKETS.ipStart, await ipKey(cfg.codePepper, clientIp(req)));
-    await hit(db, BUCKETS.startGlobal, "all");
 
     const stored = fromBytea(await db.rpc("pc_key_get", { p_pc_id: pcId }));
     const signer = stored ?? spki;
     if (!(await verifyP1363(signer, sig, await startString(pcId, spkiB64u, name, nonceB64u, ts)))) {
       return sqlStatus("pc.key_required", ["pc.key_required"]);
     }
+    await hit(db, BUCKETS.startGlobal, "all");
 
     const deviceCode = newDeviceCode();
     const userCode = newUserCode();

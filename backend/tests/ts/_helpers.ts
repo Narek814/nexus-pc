@@ -16,13 +16,20 @@ export const PC = "86a77e46-afba-4ab0-8f08-68ff922e9cc2";
 export const USER_A = "11111111-1111-4111-8111-111111111111";
 export const USER_B = "22222222-2222-4222-8222-222222222222";
 
-export function randomSecret(): string {
-  return b64uEncode(crypto.getRandomValues(new Uint8Array(48)));
+// Strict standard base64 of 32 random bytes, like `openssl rand -base64 32`.
+export function randomSecret(n = 32): string {
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(n))).toString("base64");
+}
+
+// HMAC key bytes of a base64 secret (what loadConfig imports).
+export function secretBytes(secret: string | undefined): Buffer {
+  return Buffer.from(secret!, "base64");
 }
 
 export function testEnv(over: Record<string, string | undefined> = {}): Record<string, string | undefined> {
   return {
     CODE_HASH_PEPPER: randomSecret(), REFRESH_HASH_PEPPER: randomSecret(), REFRESH_DERIVE_KEY: randomSecret(),
+    ENT_SUB_KEY: randomSecret(),
     ENT_KID: "test-es256-a", ENT_SIGNING_KEY_PKCS8_B64: PKCS8, ENT_ISS: ISS, ...over,
   };
 }

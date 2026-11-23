@@ -6,7 +6,7 @@ import { createHandler } from "../../supabase/functions/pc-token/index.ts";
 import { refreshString } from "../../supabase/functions/_shared/pop.ts";
 import { newRefreshToken } from "../../supabase/functions/_shared/codes.ts";
 import { deps, FakeDb, HASH_ARGS, hex, nonce, NOW, payload, PC, pcKey, post, sign, testEnv, USER_A, USER_B,
-  verifyTokens, captureConsole, assertDefaultLog, type PcKey } from "./_helpers.ts";
+  verifyTokens, captureConsole, assertDefaultLog, secretBytes, type PcKey } from "./_helpers.ts";
 
 const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"];
 
@@ -44,13 +44,13 @@ test("ok: retry with the same old token gives the same new; only HMACs; Pro by r
   }
   assert.equal(outs[0].refreshToken, outs[1].refreshToken);
   assert.notEqual(outs[0].refreshToken, old);
-  const expectNew = createHmac("sha256", env.REFRESH_DERIVE_KEY!).update("nexus-pc-refresh-derive-v1|" + old).digest("base64url");
+  const expectNew = createHmac("sha256", secretBytes(env.REFRESH_DERIVE_KEY)).update("nexus-pc-refresh-derive-v1|" + old).digest("base64url");
   assert.equal(outs[0].refreshToken, expectNew);
   for (const db of allCalls) {
     assert.deepEqual(db.names(), ["rate_limit_hit", "pc_key_get", "pc_rotate_refresh", "entitlement_for_user"]);
     const [ip, , rot, ent] = db.calls.map((c) => c.args);
     assert.deepEqual([ip.p_bucket, ip.p_limit, ip.p_window_sec], ["edge_ip_token", 60, 3600]);
-    const hp = (s: string) => "\\x" + createHmac("sha256", env.REFRESH_HASH_PEPPER!).update(s).digest("hex");
+    const hp = (s: string) => "\\x" + createHmac("sha256", secretBytes(env.REFRESH_HASH_PEPPER)).update(s).digest("hex");
     assert.equal(rot.p_old_hash, hp(old));
     assert.equal(rot.p_new_hash, hp(expectNew));
     assert.equal(rot.p_signer_spki, hex(k.spki));
@@ -175,7 +175,7 @@ test("default secLog on reuse.detected: console.warn has pcId only, no tokens or
   const k = await pcKey();
   const old = newRefreshToken();
   const env = testEnv();
-  const next = createHmac("sha256", env.REFRESH_DERIVE_KEY!).update("nexus-pc-refresh-derive-v1|" + old)
+  const next = createHmac("sha256", secretBytes(env.REFRESH_DERIVE_KEY)).update("nexus-pc-refresh-derive-v1|" + old)
     .digest("base64url");
   const db = tokenDb(k, () => [{ status: "reuse.detected", user_id: USER_A }]);
   const req = post(await body(k, old));

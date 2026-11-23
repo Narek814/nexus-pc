@@ -23,13 +23,33 @@ export const BUCKETS = {
   ipUnlink: { name: "edge_ip_unlink", limit: 30, windowSec: 600 },
 } as const satisfies Record<string, Bucket>;
 
-// Client IP as set by the Supabase Edge platform: first entry of
-// X-Forwarded-For (see docs/BACKEND.md; to be confirmed by security-auditor).
-// Missing header -> one shared bucket "unknown".
+// Single source of the client IP (E7-1). Priority:
+// 1) cf-connecting-ip, if it is a syntactically valid IPv4/IPv6 address;
+// 2) the LAST entry of X-Forwarded-For (appended by the nearest proxy; the
+//    first entries are client-controlled and can be forged);
+// 3) "unknown" (one shared bucket).
+// Per-IP limits are auxiliary; to be confirmed on a Supabase stage with an
+// echo function before production (docs/BACKEND.md).
 export function clientIp(req: Request): string {
+  const cf = req.headers.get("cf-connecting-ip")?.trim();
+  if (cf && isIp(cf)) return cf.toLowerCase();
   const xff = req.headers.get("x-forwarded-for");
-  const first = xff?.split(",")[0]?.trim();
-  return first ? first : "unknown";
+  const last = xff?.split(",").pop()?.trim();
+  return last ? last : "unknown";
+}
+
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+export function isIp(s: string): boolean {
+  if (IPV4_RE.test(s)) return true;
+  if (s.length > 45 || !/^[0-9A-Fa-f:.]+$/.test(s) || !s.includes(":")) return false;
+  try {
+    // The URL parser validates IPv6 literals (incl. "::" and embedded IPv4).
+    new URL(`http://[${s}]/`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function ipKey(pepper: CryptoKey, ip: string): Promise<string> {

@@ -2,7 +2,7 @@
 // (secrets read once) and entitlement issuance by user_id.
 
 import { b64uEncode, signEntitlement } from "./entitlement.ts";
-import { importHmacKey } from "./codes.ts";
+import { hmac, importHmacKey } from "./codes.ts";
 import { HttpError } from "./http.ts";
 
 export interface RpcOptions {
@@ -34,10 +34,14 @@ export function tsArg(ts: number): string {
 export class PostgrestDb implements Db {
   private readonly url: string;
   private readonly serviceKey: string;
+  private readonly anonKey: string;
   private readonly fetchFn: typeof fetch;
-  constructor(url: string, serviceKey: string, fetchFn: typeof fetch = fetch) {
+  // apikey: the public anon key for user calls, service_role only for service
+  // calls (E7-5); auth.uid() comes from the user JWT in Authorization.
+  constructor(url: string, serviceKey: string, anonKey: string, fetchFn: typeof fetch = fetch) {
     this.url = url;
     this.serviceKey = serviceKey;
+    this.anonKey = anonKey;
     this.fetchFn = fetchFn;
   }
 
@@ -49,7 +53,7 @@ export class PostgrestDb implements Db {
       headers: {
         "content-type": "application/json",
         "accept": "application/json",
-        "apikey": this.serviceKey,
+        "apikey": opts.userJwt !== undefined ? this.anonKey : this.serviceKey,
         "authorization": `Bearer ${bearer}`,
       },
       body: JSON.stringify(args),
@@ -87,26 +91,45 @@ export interface Config {
   entKid: string;
   entKeyPkcs8B64: string;
   entIss: string;
+  entSubKey: CryptoKey;
 }
 
 export type EnvGet = (name: string) => string | undefined;
 
-// Secrets are UTF-8 strings of at least 32 bytes. Returns null (caller
-// answers 500 internal without naming the variable) if anything is missing.
+// Strict standard base64 (RFC 4648 sec. 4, "=" padding, no whitespace,
+// canonical trailing bits), as printed by `openssl rand -base64 32`.
+const B64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+export function b64DecodeStrict(v: string): Uint8Array | null {
+  if (v.length === 0 || !B64_RE.test(v)) return null;
+  let raw: string;
+  try {
+    raw = atob(v);
+  } catch {
+    return null;
+  }
+  // Non-zero padding bits -> not canonical -> rejected.
+  return btoa(raw) === v ? Uint8Array.from(raw, (c) => c.charCodeAt(0)) : null;
+}
+
+// HMAC secrets: strict base64, at least 32 bytes after decoding; the HMAC key
+// is the decoded bytes (E7-4). Returns null (caller answers 500 internal
+// without naming the variable) if anything is missing or malformed.
 export async function loadConfig(env: EnvGet): Promise<Config | null> {
   const secret = (n: string): Uint8Array | null => {
     const v = env(n);
     if (typeof v !== "string") return null;
-    const b = new TextEncoder().encode(v);
-    return b.length >= MIN_SECRET_BYTES ? b : null;
+    const b = b64DecodeStrict(v);
+    return b && b.length >= MIN_SECRET_BYTES ? b : null;
   };
   const cp = secret("CODE_HASH_PEPPER");
   const rp = secret("REFRESH_HASH_PEPPER");
   const rd = secret("REFRESH_DERIVE_KEY");
+  const sk = secret("ENT_SUB_KEY");
   const kid = env("ENT_KID");
   const key = env("ENT_SIGNING_KEY_PKCS8_B64");
   const iss = env("ENT_ISS");
-  if (!cp || !rp || !rd || !kid || !KID_RE.test(kid) || !key || !iss || !PRINTABLE_RE.test(iss)) return null;
+  if (!cp || !rp || !rd || !sk || !kid || !KID_RE.test(kid) || !key || !iss || !PRINTABLE_RE.test(iss)) return null;
   try {
     // Checks the signing key once, so no SQL write happens with a broken key.
     const raw = Uint8Array.from(atob(key), (c) => c.charCodeAt(0));
@@ -116,6 +139,7 @@ export async function loadConfig(env: EnvGet): Promise<Config | null> {
       refreshPepper: await importHmacKey(rp),
       refreshDerive: await importHmacKey(rd),
       entKid: kid, entKeyPkcs8B64: key, entIss: iss,
+      entSubKey: await importHmacKey(sk),
     };
   } catch {
     return null;
@@ -134,10 +158,10 @@ export const ENT_TTL_SEC = 86400;
 export const ENT_GRACE_SEC = 604800;
 const PRO_FEATURES = new Set(["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"]);
 
-// Opaque subject: not reversible to the user id or email.
-export async function entitlementSub(userId: string): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("nexus-ent-sub-v1|" + userId));
-  return "u_" + b64uEncode(new Uint8Array(d));
+// Opaque subject, keyed and per PC (E7-3): not reversible to the user id and
+// not linkable between PCs of one user without ENT_SUB_KEY.
+export async function entitlementSub(key: CryptoKey, userId: string, pcId: string): Promise<string> {
+  return "u_" + b64uEncode(await hmac(key, "nexus-ent-sub-v1|" + userId + "|" + pcId));
 }
 
 export type Issued =
@@ -167,7 +191,7 @@ export async function issueEntitlement(db: Db, cfg: Config, userId: string, pcId
   }
   const entitlement = await signEntitlement({
     kid: cfg.entKid, privateKeyPkcs8B64: cfg.entKeyPkcs8B64, iss: cfg.entIss,
-    sub: await entitlementSub(userId), pcId, plan, features, now,
+    sub: await entitlementSub(cfg.entSubKey, userId, pcId), pcId, plan, features, now,
     ttlSec: ENT_TTL_SEC, graceSec: ENT_GRACE_SEC,
   });
   return { ok: true, entitlement, entitlementState: state === "revoked" ? "revoked" : "active" };
@@ -176,7 +200,7 @@ export async function issueEntitlement(db: Db, cfg: Config, userId: string, pcId
 // ---- dependencies of an endpoint ----
 
 export interface Deps {
-  db: Db | null; // null: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing -> 500
+  db: Db | null; // null: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY missing -> 500
   config: () => Promise<Config | null>;
   now?: () => number; // Unix seconds
   log?: (line: string) => void; // one line per request
@@ -193,9 +217,15 @@ export function serveOnDeno(create: (deps: Deps) => (req: Request) => Promise<Re
   const D = (globalThis as { Deno?: DenoLike }).Deno;
   if (!D) return;
   const env = (n: string) => D.env.get(n);
+  D.serve(create({ db: dbFromEnv(env), config: configOnce(env) }));
+}
+
+// PostgREST client from env; null (-> 500 internal) if any value is missing.
+export function dbFromEnv(env: EnvGet, fetchFn: typeof fetch = fetch): PostgrestDb | null {
   const url = env("SUPABASE_URL");
   const key = env("SUPABASE_SERVICE_ROLE_KEY");
-  D.serve(create({ db: url && key ? new PostgrestDb(url, key) : null, config: configOnce(env) }));
+  const anon = env("SUPABASE_ANON_KEY");
+  return url && key && anon ? new PostgrestDb(url, key, anon, fetchFn) : null;
 }
 
 // Resolves db and config or answers 500 internal.

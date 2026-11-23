@@ -7,7 +7,7 @@ import { createHandler as describeHandler } from "../../supabase/functions/pc-lo
 import { createHandler as approveHandler } from "../../supabase/functions/pc-login-approve/index.ts";
 import { createHandler as unlinkHandler } from "../../supabase/functions/pc-unlink/index.ts";
 import { PostgrestDb } from "../../supabase/functions/_shared/db.ts";
-import { assertDefaultLog, captureConsole, deps, FakeDb, PC, post, testEnv, USER_A, USER_B } from "./_helpers.ts";
+import { assertDefaultLog, captureConsole, deps, FakeDb, PC, post, secretBytes, testEnv, USER_A, USER_B } from "./_helpers.ts";
 
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMTExIn0.c2lnbmF0dXJl";
 const AUTH = { authorization: "Bearer " + JWT };
@@ -34,10 +34,10 @@ test("describe ok: {displayName, requestedAt RFC 3339}, user JWT to SQL, only HM
   assert.deepEqual(db.names(), ["rate_limit_hit", "pc_login_describe"]);
   const [ip, call] = db.calls;
   assert.deepEqual([ip.args.p_bucket, ip.args.p_limit, ip.args.p_window_sec], ["edge_ip_approve", 30, 600]);
-  assert.equal(ip.args.p_key, createHmac("sha256", env.CODE_HASH_PEPPER!).update("nexus-ip-v1|198.51.100.7").digest("base64url"));
+  assert.equal(ip.args.p_key, createHmac("sha256", secretBytes(env.CODE_HASH_PEPPER)).update("nexus-ip-v1|198.51.100.7").digest("base64url"));
   assert.equal(ip.opts?.userJwt, undefined); // rate_limit_hit is service_role only
   assert.deepEqual(call.opts, { userJwt: JWT });
-  assert.deepEqual(call.args, { p_user_code_hash: "\\x" + createHmac("sha256", env.CODE_HASH_PEPPER!).update(CODE).digest("hex") });
+  assert.deepEqual(call.args, { p_user_code_hash: "\\x" + createHmac("sha256", secretBytes(env.CODE_HASH_PEPPER)).update(CODE).digest("hex") });
   const all = JSON.stringify(db.calls) + d.lines.join("\n");
   for (const s of [CODE, "abcd", "198.51.100.7"]) assert.ok(!all.includes(s), s);
 });
@@ -75,7 +75,7 @@ test("approve: ok -> {}, code.invalid, rate.limited 600; user JWT; same IP bucke
     assert.equal(db.calls[0].args.p_bucket, "edge_ip_approve");
     assert.deepEqual(db.calls[1].opts, { userJwt: JWT });
     assert.deepEqual(db.calls[1].args,
-      { p_user_code_hash: "\\x" + createHmac("sha256", env.CODE_HASH_PEPPER!).update(CODE).digest("hex") });
+      { p_user_code_hash: "\\x" + createHmac("sha256", secretBytes(env.CODE_HASH_PEPPER)).update(CODE).digest("hex") });
   }
 });
 

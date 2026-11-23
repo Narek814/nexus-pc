@@ -58,7 +58,7 @@ test("start, first binding: signer = spki, nonce/ts from signed string, only HMA
   assert.equal(a.p_name, "Gaming PC");
   assert.equal(a.p_nonce, hex(Buffer.from(body.nonce, "base64url")));
   assert.equal(a.p_ts, new Date(NOW * 1000).toISOString());
-  const pep = env.CODE_HASH_PEPPER!;
+  const pep = secretBytes(env.CODE_HASH_PEPPER);
   assert.equal(a.p_device_code_hash, "\\x" + createHmac("sha256", pep).update(out.deviceCode).digest("hex"));
   assert.equal(a.p_user_code_hash, "\\x" + createHmac("sha256", pep).update(out.userCode).digest("hex"));
   assertHashesOnly(db, [out.deviceCode, out.userCode], d.lines);
@@ -237,13 +237,13 @@ test("poll ok: Pro by user_id from consume, token verifies, no user_id/rebound, 
   assert.deepEqual(db.names(), ["rate_limit_hit", "pc_login_code_key", "pc_login_consume", "entitlement_for_user"]);
   const [ip, look, cons, ent] = db.calls.map((c) => c.args);
   assert.deepEqual([ip.p_bucket, ip.p_limit, ip.p_window_sec], ["edge_ip_poll", 300, 600]);
-  const dch = "\\x" + createHmac("sha256", env.CODE_HASH_PEPPER!).update(DC).digest("hex");
+  const dch = "\\x" + createHmac("sha256", secretBytes(env.CODE_HASH_PEPPER)).update(DC).digest("hex");
   assert.equal(look.p_device_code_hash, dch);
   assert.equal(cons.p_device_code_hash, dch);
   assert.equal(cons.p_signer_spki, hex(k.spki));
   assert.equal(cons.p_nonce, hex(Buffer.from(body.nonce, "base64url")));
   assert.equal(cons.p_ts, new Date(NOW * 1000).toISOString());
-  assert.equal(cons.p_refresh_hash, "\\x" + createHmac("sha256", env.REFRESH_HASH_PEPPER!).update(out.refreshToken).digest("hex"));
+  assert.equal(cons.p_refresh_hash, "\\x" + createHmac("sha256", secretBytes(env.REFRESH_HASH_PEPPER)).update(out.refreshToken).digest("hex"));
   assert.equal(ent.p_user_id, USER_A);
   assertHashesOnly(db, [DC, out.refreshToken, out.entitlement], d.lines);
   assert.ok(d.lines.every((l) => !l.includes(USER_A) && !l.includes(PC)));
