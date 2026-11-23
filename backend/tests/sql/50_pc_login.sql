@@ -185,14 +185,17 @@ do $$ declare r record; begin
   end if;
   insert into _results values ('approve_requires_describe'), ('describe_ok');
 end $$;
--- Describe by another user does not let the first one approve... and vice versa.
+-- Another user can neither take over the describe (E3-5d N5) nor approve a
+-- code described by someone else.
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
-select public.pc_login_describe(pg_temp.h('USER-1')) \g /dev/null
-select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
 do $$ begin
-  if public.pc_login_approve(pg_temp.h('USER-1')) <> 'code.invalid' then
+  if (select status from public.pc_login_describe(pg_temp.h('USER-1'))) <> 'code.invalid'
+     or public.pc_login_approve(pg_temp.h('USER-1')) <> 'code.invalid' then
     raise exception 'FAIL approve_requires_own_describe';
   end if;
+end $$;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
+do $$ begin
   if pg_temp.ok('USER-1') <> 'ok' then raise exception 'FAIL approve_ok'; end if;
   if public.pc_login_approve(pg_temp.h('USER-1')) <> 'code.invalid' then
     raise exception 'FAIL approve_twice_invalid';
@@ -627,6 +630,9 @@ reset role;
 truncate public.rate_limits;
 set role service_role;
 select pg_temp.st('20000000-0000-0000-0000-0000000005d1', pg_temp.spki(), 'Valid', 'rl-dev', 'RL-VALID', pg_temp.spki()) \g /dev/null
+-- RL-VALID is described by B below and cannot be taken over (E3-5d N5), so
+-- user A approves a separate code.
+select pg_temp.st('20000000-0000-0000-0000-0000000005d3', pg_temp.spki(), 'Other', 'rl-dev-a', 'RL-OTHER', pg_temp.spki()) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
@@ -655,7 +661,7 @@ end $$;
 -- Another user is not affected by B's limit.
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
 do $$ begin
-  if pg_temp.ok('RL-VALID') <> 'ok' then raise exception 'FAIL rate_limit_per_user'; end if;
+  if pg_temp.ok('RL-OTHER') <> 'ok' then raise exception 'FAIL rate_limit_per_user'; end if;
   insert into _results values ('rate_limit_per_user');
 end $$;
 reset role;
@@ -771,7 +777,7 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
 do $$ declare a text; b text; c text; d text; begin
   a := public.pc_login_approve(pg_temp.h('never-issued'));
   b := public.pc_login_approve(pg_temp.h('USER-3'));     -- expired
-  c := public.pc_login_approve(pg_temp.h('RL-VALID'));   -- already approved
+  c := public.pc_login_approve(pg_temp.h('RL-OTHER'));   -- already approved
   d := public.pc_login_approve(pg_temp.h('USER-1'));     -- consumed
   if a <> 'code.invalid' or b <> a or c <> a or d <> a then
     raise exception 'FAIL approve_no_existence_oracle (% % % %)', a, b, c, d;
@@ -781,7 +787,7 @@ end $$;
 do $$ declare r text[]; begin
   select array_agg(x::text) into r from (
     select public.pc_login_describe(pg_temp.h(c)) x
-      from unnest(array['never-issued', 'USER-3', 'RL-VALID', 'USER-1']) c) s;
+      from unnest(array['never-issued', 'USER-3', 'RL-OTHER', 'USER-1']) c) s;
   if r <> array_fill('(code.invalid,,)'::text, array[4]) then
     raise exception 'FAIL describe_no_existence_oracle (%)', r;
   end if;
