@@ -202,3 +202,11 @@ export function endpoint(
     return res;
   };
 }
+
+// Maps a status returned by SQL to a response. Statuses outside `allowed`
+// are unexpected: 500 internal.
+export function sqlStatus(status: unknown, allowed: readonly string[],
+  retryAfter: Record<string, number> = {}): Response {
+  if (typeof status !== "string" || !allowed.includes(status)) throw new Error("unexpected status");
+  return errorResponse(status, retryAfter[status]);
+}
