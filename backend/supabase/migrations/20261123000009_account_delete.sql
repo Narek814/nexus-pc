@@ -65,7 +65,7 @@ begin
     raise exception 'invalid refund' using errcode = 'invalid_parameter_value';
   end if;
   update public.rate_limits r
-     set count = pg_catalog.greatest(r.count - 1, 0)
+     set count = greatest(r.count - 1, 0)
    where r.bucket = p_bucket and r.key = p_key
      and r.window_start = pg_catalog.to_timestamp(
        pg_catalog.floor(extract(epoch from pg_catalog.now()) / p_window_sec) * p_window_sec);
