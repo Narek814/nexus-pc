@@ -24,7 +24,7 @@ create table public.pc_login_codes (
   display_name text not null
     constraint pc_login_codes_display_name_len check (char_length(display_name) between 1 and 64)
     constraint pc_login_codes_display_name_printable check (display_name !~
-      '[\u0001-\u001f\u007f-\u009f­؀-؅؜۝܏࢐-࢑࣢᠎​-‏‪-‮⁠-⁤⁦-⁯﻿￹-￻\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]'),
+      '[\u0001-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]'),
   device_code_hash bytea not null unique check (octet_length(device_code_hash) = 32),
   user_code_hash bytea not null unique check (octet_length(user_code_hash) = 32),
   described_by uuid references auth.users (id) on delete cascade,
