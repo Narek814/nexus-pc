@@ -53,7 +53,7 @@ jobs:
       - run: python -I tools/check_qr.py
 
   backend-sql:
-    name: Backend SQL tests
+    name: Backend tests (SQL, entitlement signing)
     # ubuntu-latest (26.04) ships PostgreSQL 18 and has no postgresql-16 package.
     # Pin 24.04, whose archive carries postgresql-16, to match
     # backend/supabase/config.toml (major_version = 16).
@@ -74,6 +74,14 @@ jobs:
           "$PG_BIN/postgres" --version
       - name: Run SQL/RLS tests
         run: bash backend/tests/run_sql_tests.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run entitlement signing tests (Node + Python reference verifier)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/be-venv"
+          "$RUNNER_TEMP/be-venv/bin/pip" install -q "cryptography>=42,<51"
+          PYTHON="$RUNNER_TEMP/be-venv/bin/python" bash backend/tests/run_ts_tests.sh
 
   installer:
     name: Installer (build + install/upgrade/uninstall on Windows)
