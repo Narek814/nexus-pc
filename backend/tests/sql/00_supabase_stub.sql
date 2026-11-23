@@ -24,3 +24,4 @@ grant usage on schema public to anon, authenticated, service_role;
 -- so migrations must revoke explicitly (deny by default is tested, not assumed).
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
