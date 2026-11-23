@@ -54,8 +54,8 @@ jobs:
 
   backend-sql:
     name: Backend SQL tests
-    # ubuntu-latest (24.04) ships PostgreSQL 16 in /usr/lib/postgresql/16/bin,
-    # the same major version as backend/supabase/config.toml (major_version = 16).
+    # The runner image ships a newer PostgreSQL (18); install 16 to match
+    # backend/supabase/config.toml (major_version = 16).
     # The script starts its own throwaway cluster as the runner user: no service, no network.
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -63,6 +63,10 @@ jobs:
       PG_BIN: /usr/lib/postgresql/16/bin
     steps:
       - uses: actions/checkout@v4
+      - name: Install PostgreSQL 16 binaries
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends postgresql-16
       - name: Check PostgreSQL 16 binaries
         run: |
           test -x "$PG_BIN/initdb" || { echo "PostgreSQL 16 not found in $PG_BIN"; ls /usr/lib/postgresql || true; exit 1; }
