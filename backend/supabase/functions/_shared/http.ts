@@ -7,8 +7,14 @@
 export const MAX_BODY_BYTES = 8192;
 
 export class HttpError extends Error {
-  constructor(readonly status: number, readonly code: string, readonly retryAfter?: number) {
+  readonly status: number;
+  readonly code: string;
+  readonly retryAfter?: number;
+  constructor(status: number, code: string, retryAfter?: number) {
     super(code);
+    this.status = status;
+    this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -76,7 +82,8 @@ async function readBody(req: Request): Promise<Uint8Array> {
 
 class Parser {
   i = 0;
-  constructor(readonly s: string) {}
+  readonly s: string;
+  constructor(s: string) { this.s = s; }
   fail(): never { throw badRequest(); }
   ws(): void { while (this.i < this.s.length && " \t\n\r".includes(this.s[this.i])) this.i++; }
   value(depth: number): unknown {

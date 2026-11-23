@@ -31,8 +31,14 @@ export function tsArg(ts: number): string {
 }
 
 export class PostgrestDb implements Db {
-  constructor(private readonly url: string, private readonly serviceKey: string,
-    private readonly fetchFn: typeof fetch = fetch) {}
+  private readonly url: string;
+  private readonly serviceKey: string;
+  private readonly fetchFn: typeof fetch;
+  constructor(url: string, serviceKey: string, fetchFn: typeof fetch = fetch) {
+    this.url = url;
+    this.serviceKey = serviceKey;
+    this.fetchFn = fetchFn;
+  }
 
   async rpc(name: string, args: Record<string, unknown>, opts: RpcOptions = {}): Promise<unknown> {
     if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error("bad rpc name");
