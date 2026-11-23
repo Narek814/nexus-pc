@@ -252,6 +252,10 @@ end $$;
 reset role;
 
 -- Rebind needs the old key: start for a bound pc_id without it -> pc.key_required.
+-- The real revoke hook is saved here and restored from it below (not retyped),
+-- so the test never hides a broken migration body.
+create temp table _hook_orig as
+  select pg_get_functiondef('public.pc_revoke_refresh_tokens(uuid,uuid)'::regprocedure) as def;
 create table public._revoke_log (pc_id uuid, old_user uuid);
 grant insert on public._revoke_log to service_role;
 create or replace function public.pc_revoke_refresh_tokens(p_pc_id uuid, p_old_user uuid)
@@ -384,10 +388,15 @@ do $$ declare r record; begin
 end $$;
 reset role;
 drop table public._revoke_log;
-create or replace function public.pc_revoke_refresh_tokens(p_pc_id uuid, p_old_user uuid)
-returns void language plpgsql security definer set search_path = '' as $$
-begin perform public.pc_revoke_all(p_pc_id); end $$;
+do $$ begin execute (select def from _hook_orig); end $$;
 revoke all on function public.pc_revoke_refresh_tokens(uuid, uuid) from public, anon, authenticated, service_role;
+do $$ begin
+  if pg_get_functiondef('public.pc_revoke_refresh_tokens(uuid,uuid)'::regprocedure)
+     is distinct from (select def from _hook_orig) then
+    raise exception 'FAIL revoke_hook_restored';
+  end if;
+  insert into _results values ('revoke_hook_restored');
+end $$;
 
 -- Binding changed between start and consume: two first-binding codes of one new
 -- pc_id, both approved; the second consume is refused, not a silent takeover.

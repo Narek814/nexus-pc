@@ -36,6 +36,14 @@ for f in "$BACKEND"/supabase/migrations/*.sql; do
   psql_run -f "$f" >/dev/null
 done
 
+# Catalog check of the migrated revoke hook before any test can replace it:
+# its body must be exactly the call to pc_revoke_all (a stub fails the run).
+hook="$(psql_run -c "select regexp_replace(prosrc, '\s+', ' ', 'g') from pg_proc
+  where oid = 'public.pc_revoke_refresh_tokens(uuid,uuid)'::regprocedure")"
+[ "$hook" = " begin perform public.pc_revoke_all(p_pc_id); end; " ] \
+  || { echo "FAIL revoke_hook_body: '$hook'" >&2; exit 1; }
+echo "catalog: revoke_hook_body ok"
+
 total=0
 for f in "$HERE"/sql/[1-9]*.sql; do
   out="$(psql_run -f "$f")"

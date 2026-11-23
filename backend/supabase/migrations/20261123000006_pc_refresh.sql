@@ -15,6 +15,9 @@ create table public.pc_refresh_tokens (
   token_hash bytea not null unique check (octet_length(token_hash) = 32),
   created_at timestamptz not null default now(),
   used_at timestamptz,
+  -- Hash of the token this one was rotated to (set with used_at). Lets a
+  -- retry after a lost response get the same answer (R-1). Hash only.
+  replaced_by_hash bytea check (octet_length(replaced_by_hash) = 32),
   revoked_at timestamptz,
   expires_at timestamptz not null default now() + interval '90 days'
 );
@@ -71,15 +74,23 @@ $$;
 
 -- Signed refresh request of a PC (service_role, Edge Function).
 -- status: 'ok' | 'reuse.detected' | 'revoked' | 'rate.limited' |
--- 'pc.key_required' | 'request.stale' | 'nonce.replay'.
+-- 'request.stale' | 'nonce.replay'.
 -- user_id: owner of the PC on 'ok' (the Edge Function then issues the
 -- entitlement token for this account), otherwise null.
 -- - live and unused old token: marked used, new token in the same family;
--- - already used: the whole family is revoked, 'reuse.detected';
--- - revoked, expired, unknown or of another pc_id: 'revoked' (same answer).
+-- - used token retried within 60 s of its rotation with the same new hash
+--   (the Edge Function derives the new token deterministically from the old
+--   one, see docs/BACKEND.md) while that new token is still live and unused:
+--   'ok' again, nothing changes (a lost response, not a clone);
+-- - any other use of a used token: the whole family is revoked,
+--   'reuse.detected';
+-- - revoked, expired, unknown or of another pc_id, PC not bound, or signer
+--   is not the current key of the PC: 'revoked' (same answer).
 -- Lock order: pc_lock, then my_pcs row, then token rows (as consume/release),
 -- so concurrent rotations of one token give exactly one 'ok'.
--- Limit: 30 accepted rotations per hour per pc_id (counted after the key check).
+-- Limit: 30 attempts per hour per pc_id. Every request that passed the
+-- nonce, ts and key checks counts, whatever its outcome (ok, retry, reuse,
+-- revoked); requests refused before the key check do not count.
 create function public.pc_rotate_refresh(p_old_hash bytea, p_new_hash bytea, p_pc_id uuid,
   p_signer_spki bytea, p_nonce bytea, p_ts timestamptz)
 returns table (status text, user_id uuid)
@@ -104,12 +115,9 @@ begin
   perform public.pc_lock(p_pc_id);
   select m.user_id into owner from public.my_pcs m where m.pc_id = p_pc_id for key share;
   select k.public_key_spki into cur_key from public.pc_keys k where k.pc_id = p_pc_id;
-  if owner is not null and (p_signer_spki is null or cur_key is null or p_signer_spki <> cur_key) then
-    return query select 'pc.key_required'::text, null::uuid;
-    return;
-  end if;
-  if owner is null then
-    -- PC released or deleted: its tokens are gone with my_pcs (cascade).
+  -- Released/deleted PC (tokens gone with my_pcs) and a wrong key look the
+  -- same: no hint whether the pc_id is bound (R-4).
+  if owner is null or p_signer_spki is null or cur_key is null or p_signer_spki <> cur_key then
     return query select 'revoked'::text, null::uuid;
     return;
   end if;
@@ -126,6 +134,17 @@ begin
     return;
   end if;
   if t.used_at is not null then
+    -- Retry after a lost response: same new hash, within 60 s, and the new
+    -- token was neither used nor revoked since.
+    if t.replaced_by_hash = p_new_hash
+       and t.used_at > pg_catalog.now() - interval '60 seconds'
+       and exists (select 1 from public.pc_refresh_tokens n
+                    where n.token_hash = p_new_hash and n.family_id = t.family_id
+                      and n.pc_id = p_pc_id and n.used_at is null and n.revoked_at is null
+                      and n.expires_at > pg_catalog.now()) then
+      return query select 'ok'::text, owner;
+      return;
+    end if;
     -- A used token presented again: a clone exists. Kill the family.
     update public.pc_refresh_tokens r set revoked_at = pg_catalog.now()
      where r.family_id = t.family_id and r.revoked_at is null;
@@ -137,7 +156,8 @@ begin
     return;
   end if;
 
-  update public.pc_refresh_tokens r set used_at = pg_catalog.now() where r.id = t.id;
+  update public.pc_refresh_tokens r set used_at = pg_catalog.now(), replaced_by_hash = p_new_hash
+   where r.id = t.id;
   insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
   values (p_pc_id, t.family_id, p_new_hash);
   update public.my_pcs m set last_seen_at = pg_catalog.now() where m.pc_id = p_pc_id;

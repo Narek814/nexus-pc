@@ -150,6 +150,7 @@ SQL
 # advisory lock 4242, held exclusively by a controller session. The controller
 # releases it only when the expected number of sessions (application_name
 # race_w) is waiting on a lock, so the interleaving is forced every run.
+pc_lock_orig="$(psql_run -c "select pg_get_functiondef('public.pc_lock(uuid)'::regprocedure)")"
 psql_run >/dev/null <<'SQL'
 create or replace function public.pc_lock(p_pc_id uuid)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -305,15 +306,66 @@ live="$(psql_run -c "select count(*) from public.pc_refresh_tokens where pc_id =
   || { echo "FAIL race_rotate_once first=$first ok=$ok reuse=$reuse revoked=$rev errors=$err live=$live barrier_fails=$fails" >&2; cat "$race_dir"/ro? >&2; exit 1; }
 race_passed=$((race_passed + 1))
 
-# Restore the real pc_lock.
+# 7. Retry of an old token after a lost response (R-1) races the rotation of
+#    its new token. Two forced orders (two PCs): the one at the barrier goes
+#    first. Retry first: retry 'ok', then rotation 'ok'. Rotation first:
+#    rotation 'ok', then the retry is 'reuse.detected' and the family dies.
+psql_run >/dev/null <<SQL
+insert into auth.users values ('00000000-0000-0000-0000-00000000ace9', 'race9@example.test');
+insert into public.my_pcs (pc_id, user_id, display_name, platform) values
+  ('30000000-0000-0000-0000-0000000ace91', '00000000-0000-0000-0000-00000000ace9', 'Rt1', 'windows'),
+  ('30000000-0000-0000-0000-0000000ace92', '00000000-0000-0000-0000-00000000ace9', 'Rt2', 'windows');
+insert into public.pc_keys values
+  ('30000000-0000-0000-0000-0000000ace91', decode(repeat('39',91),'hex')),
+  ('30000000-0000-0000-0000-0000000ace92', decode(repeat('39',91),'hex'));
+insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
+  values ('30000000-0000-0000-0000-0000000ace91', gen_random_uuid(), $(h rr1-0)),
+         ('30000000-0000-0000-0000-0000000ace92', gen_random_uuid(), $(h rr2-0));
+set role service_role;
+select status from public.pc_rotate_refresh($(h rr1-0), $(h rr1-1), '30000000-0000-0000-0000-0000000ace91',
+  decode(repeat('39',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_rotate_refresh($(h rr2-0), $(h rr2-1), '30000000-0000-0000-0000-0000000ace92',
+  decode(repeat('39',91),'hex'), uuid_send(gen_random_uuid()), now());
+SQL
+rr() {  # $1 = out name, $2 = pc n, $3 = old, $4 = new, $5 = barrier on/off
+  psql_run >"$race_dir/$1" 2>&1 <<SQL &
+set application_name = 'race_w';
+begin;
+set local nexus.barrier = '$5';
+set local role service_role;
+select status from public.pc_rotate_refresh($(h "$3"), $(h "$4"), '30000000-0000-0000-0000-0000000ace9$2',
+  decode(repeat('39',91),'hex'), uuid_send(gen_random_uuid()), now());
+commit;
+SQL
+}
+fails=0
+barrier_up
+rr rt1 1 rr1-0 rr1-1 on
+wait_waiters 1 || fails=$((fails + 1))
+rr rn1 1 rr1-1 rr1-2 off
+barrier_down 2 || fails=$((fails + 1))
+wait
+barrier_up
+rr rn2 2 rr2-1 rr2-2 on
+wait_waiters 1 || fails=$((fails + 1))
+rr rt2 2 rr2-0 rr2-1 off
+barrier_down 2 || fails=$((fails + 1))
+wait
+o="$(cat "$race_dir/rt1") $(cat "$race_dir/rn1") $(cat "$race_dir/rn2") $(cat "$race_dir/rt2")"
+live1="$(psql_run -c "select count(*) from public.pc_refresh_tokens where pc_id = '30000000-0000-0000-0000-0000000ace91' and revoked_at is null and used_at is null")"
+live2="$(psql_run -c "select count(*) from public.pc_refresh_tokens where pc_id = '30000000-0000-0000-0000-0000000ace92' and revoked_at is null")"
+[ "$o" = "ok ok ok reuse.detected" ] && [ "$live1" = 1 ] && [ "$live2" = 0 ] && [ "$fails" = 0 ] \
+  || { echo "FAIL race_retry_vs_rotate got='$o' live1=$live1 live2=$live2 barrier_fails=$fails" >&2; exit 1; }
+race_passed=$((race_passed + 1))
+
+# Restore the real pc_lock from its saved definition and check it.
+printf '%s;\n' "$pc_lock_orig" | psql_run >/dev/null
 psql_run >/dev/null <<'SQL'
-create or replace function public.pc_lock(p_pc_id uuid)
-returns void language sql security definer set search_path = '' as $$
-  select pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended(p_pc_id::text, 20261124));
-$$;
 revoke all on function public.pc_lock(uuid) from public, anon, authenticated, service_role;
 SQL
+[ "$(psql_run -c "select pg_get_functiondef('public.pc_lock(uuid)'::regprocedure)")" = "$pc_lock_orig" ] \
+  || { echo "FAIL race_pc_lock_restored" >&2; exit 1; }
+race_passed=$((race_passed + 1))
 
 echo "race_tests: $race_passed checks passed"
 total=$((total + race_passed))
