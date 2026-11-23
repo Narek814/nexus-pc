@@ -265,4 +265,81 @@ do $$ declare s text; begin
   insert into _results values ('purge_unknown_user');
 end $$;
 
+-- S-2: rate_limit_refund gives back one hit of edge_user_delete only,
+-- never below 0, service_role only.
+do $$ declare ok boolean; begin
+  if has_function_privilege('anon', 'public.rate_limit_refund(text,text,int)', 'execute')
+     or has_function_privilege('authenticated', 'public.rate_limit_refund(text,text,int)', 'execute')
+     or not has_function_privilege('service_role', 'public.rate_limit_refund(text,text,int)', 'execute') then
+    raise exception 'FAIL refund_service_only';
+  end if;
+  set local role service_role;
+  perform public.rate_limit_hit('edge_user_delete', 'kR', 3, 3600);
+  perform public.rate_limit_hit('edge_user_delete', 'kR', 3, 3600);
+  perform public.rate_limit_hit('edge_user_delete', 'kR', 3, 3600);
+  perform public.rate_limit_refund('edge_user_delete', 'kR', 3600);
+  ok := public.rate_limit_hit('edge_user_delete', 'kR', 3, 3600);
+  if not ok then raise exception 'FAIL refund_gives_back'; end if;
+  ok := public.rate_limit_hit('edge_user_delete', 'kR', 3, 3600);
+  if ok then raise exception 'FAIL refund_only_one'; end if;
+  perform public.rate_limit_refund('edge_user_delete', 'none', 3600); -- no row: no-op
+  perform public.rate_limit_hit('edge_user_delete', 'k0', 3, 3600);
+  perform public.rate_limit_refund('edge_user_delete', 'k0', 3600);
+  perform public.rate_limit_refund('edge_user_delete', 'k0', 3600);
+  if (select count from public.rate_limits where bucket = 'edge_user_delete' and key = 'k0') <> 0 then
+    raise exception 'FAIL refund_floor_zero';
+  end if;
+  begin
+    perform public.rate_limit_refund('edge_ip_delete', 'kR', 3600);
+    raise exception 'FAIL refund_other_bucket';
+  exception when invalid_parameter_value then null;
+  end;
+  reset role;
+  insert into _results values ('refund_user_delete_only');
+end $$;
+
+-- S-3: auth.users delete by cascade only (no purge). The former PC keeps its
+-- refresh in hand: rotation -> 'revoked'; a code approved by the deleted user
+-- and not yet consumed -> 'code.invalid'.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000009c1', 'dc@example.test');
+do $$ declare s text; begin
+  s := pg_temp.bind('00000000-0000-4000-8000-0000000009c1', pg_temp.k(6),
+    '00000000-0000-0000-0000-0000000009c1', 'c1', 'rc1');
+  if s <> 'ok' then raise exception 'FAIL setup c1 %', s; end if;
+  set local role service_role;
+  s := public.pc_login_start('00000000-0000-4000-8000-0000000009c2', pg_temp.k(7), 'PC c2',
+    pg_temp.h('d-c2'), pg_temp.h('U-c2'), pg_temp.k(7), pg_temp.nn(), now());
+  if s <> 'ok' then raise exception 'FAIL setup c2 start %', s; end if;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '00000000-0000-0000-0000-0000000009c1', 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  perform public.pc_login_describe(pg_temp.h('U-c2'));
+  s := public.pc_login_approve(pg_temp.h('U-c2'));
+  if s <> 'ok' then raise exception 'FAIL setup c2 approve %', s; end if;
+  reset role;
+  perform set_config('request.jwt.claims', '', false);
+end $$;
+
+do $$ declare s text; begin
+  delete from auth.users where id = '00000000-0000-0000-0000-0000000009c1';
+  if exists (select 1 from public.my_pcs where pc_id = '00000000-0000-4000-8000-0000000009c1') then
+    raise exception 'FAIL cascade_my_pcs';
+  end if;
+  set local role service_role;
+  select status into s from public.pc_rotate_refresh(pg_temp.h('rc1'), pg_temp.h('rc1-n'),
+    '00000000-0000-4000-8000-0000000009c1', pg_temp.k(6), pg_temp.nn(), now());
+  reset role;
+  if s is distinct from 'revoked' then raise exception 'FAIL cascade_rotate_revoked %', s; end if;
+  insert into _results values ('cascade_rotate_revoked');
+  set local role service_role;
+  select c.status into s from public.pc_login_consume(pg_temp.h('d-c2'), pg_temp.h('rc2'), pg_temp.k(7),
+    pg_temp.nn(), now()) c;
+  reset role;
+  if s is distinct from 'code.invalid' then raise exception 'FAIL cascade_consume_invalid %', s; end if;
+  if exists (select 1 from public.my_pcs where pc_id = '00000000-0000-4000-8000-0000000009c2') then
+    raise exception 'FAIL cascade_consume_no_bind';
+  end if;
+  insert into _results values ('cascade_consume_invalid');
+end $$;
+
 select 'PASSED ' || count(*) from _results;

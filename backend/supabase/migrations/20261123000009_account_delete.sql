@@ -49,5 +49,30 @@ begin
 end;
 $$;
 
+-- Gives back one hit of the delete-account user limit in the current window
+-- (E3-8b, S-2): used only when purge succeeded but the GoTrue admin delete
+-- failed, so a GoTrue outage does not lock the user out for an hour. Only the
+-- edge_user_delete bucket; the count never goes below 0; no row -> no-op.
+create function public.rate_limit_refund(p_bucket text, p_key text, p_window_sec int)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if p_bucket is distinct from 'edge_user_delete' or p_key is null or p_window_sec is null
+     or p_window_sec < 1 then
+    raise exception 'invalid refund' using errcode = 'invalid_parameter_value';
+  end if;
+  update public.rate_limits r
+     set count = pg_catalog.greatest(r.count - 1, 0)
+   where r.bucket = p_bucket and r.key = p_key
+     and r.window_start = pg_catalog.to_timestamp(
+       pg_catalog.floor(extract(epoch from pg_catalog.now()) / p_window_sec) * p_window_sec);
+end;
+$$;
+
 revoke all on function public.account_purge(uuid) from public, anon, authenticated;
 grant execute on function public.account_purge(uuid) to service_role;
+revoke all on function public.rate_limit_refund(text, text, int) from public, anon, authenticated;
+grant execute on function public.rate_limit_refund(text, text, int) to service_role;
