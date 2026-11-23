@@ -51,7 +51,7 @@
 | Тип | Агенты | Права |
 |-----|--------|-------|
 | **Агенты анализа** | `code-architect`, `security-auditor`, `qa-engineer` | Файлы проекта не меняют. Можно: чтение, `git status/log/diff/show/blame`, сборка и тесты (вывод в `bin/`, `obj/`, `TestResults/`), временные файлы в `/tmp` и scratchpad. |
-| **Агенты с правом записи** | `ios-developer`, `windows-developer`, `android-developer`, `ui-ux-designer`, `release-manager` | Меняют только файлы своей зоны (раздел 5). |
+| **Агенты с правом записи** | `ios-developer`, `windows-developer`, `android-developer`, `backend-developer`, `web-developer`, `ui-ux-designer`, `release-manager` | Меняют только файлы своей зоны (раздел 5). |
 
 Для всех субагентов:
 - **Git только для чтения.** Коммиты, ветки, push, stash, checkout и прочие изменения git делает только главная сессия.
@@ -77,6 +77,8 @@
 | `ios-developer` | `ios/**` (кроме Bundle ID, подписи и номеров версий в `project.yml`), `docs/IOS.md` | всё остальное |
 | `windows-developer` | `windows/**`; `shared/**` — только по одобренному плану изменения протокола; `docs/SETUP.md` | `ios/**`, workflow |
 | `android-developer` | `docs/ANDROID_ROADMAP.md`; `android/**` — только когда папку создала главная сессия после одобрения владельца | всё остальное |
+| `backend-developer` | `backend/**`, `docs/BACKEND.md` | клиенты (`ios/**`, `windows/**`, `site/**`), `shared/**`, workflow |
+| `web-developer` | `site/**`, `docs/SITE.md` | `backend/**`, клиенты, `shared/**`, workflow |
 | `ui-ux-designer` | `docs/design/**` | любой код, `.xcstrings`, `.resx` |
 | `release-manager` | `.github/workflows/**`, `tools/**`, `CHANGELOG.md`, `README.md`, `docs/SUMMARY.md`, `docs/USER_GUIDE.md`, `docs/APP_STORE_READINESS.md`, `docs/PRIVACY_POLICY_DRAFT.md`, `docs/APP_REVIEW_NOTES.md`, `docs/RELEASE_*.md`, `docs/releases/**`; в `ios/project.yml` — только `MARKETING_VERSION` и `CURRENT_PROJECT_VERSION` | код продукта |
 | только главная сессия | `.claude/**`, `CLAUDE.md`, `FEATURES.md` (статус ✅ — только по подтверждению владельца), `ARCHITECTURE.md`, `SECURITY.md`, `ROADMAP.md`, `docs/API.md`, `docs/TESTING.md`, `docs/COMMERCIAL_PLAN.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/REMOTE.md` | — |

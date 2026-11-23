@@ -14,6 +14,8 @@
 | `ios-developer` | запись: `ios/**` | код Swift/SwiftUI, локализация iOS |
 | `windows-developer` | запись: `windows/**`, `shared/**` по плану | C#: Agent, Tray, Setup, тесты, локализация Windows |
 | `android-developer` | запись: `docs/ANDROID_ROADMAP.md` | совместимость с будущим Android; `android/**` — после одобрения владельца |
+| `backend-developer` | запись: `backend/**`, `docs/BACKEND.md` | сервер аккаунтов и прав: схема БД, RLS, серверные функции, выдача токена прав, webhooks оплаты, тесты |
+| `web-developer` | запись: `site/**`, `docs/SITE.md` | сайт EN/RU: лендинг, тарифы, вход и управление аккаунтом, оплата, юридические страницы |
 | `ui-ux-designer` | запись: `docs/design/**` | экраны, навигация, дизайн-система, тексты EN/RU, доступность |
 | `release-manager` | запись: workflow, `tools/`, документы релиза, версии | проверка готовности и подготовка релизов, без публикации |
 

@@ -37,6 +37,8 @@ ZONES: dict[str, list[str]] = {
     "windows-developer": ["windows/", "shared/", "docs/SETUP.md"],
     "android-developer": ["docs/ANDROID_ROADMAP.md", "android/"],
     "ui-ux-designer": ["docs/design/"],
+    "backend-developer": ["backend/", "docs/BACKEND.md"],
+    "web-developer": ["site/", "docs/SITE.md"],
     "release-manager": [
         ".github/workflows/", "tools/", "CHANGELOG.md", "README.md",
         "docs/SUMMARY.md", "docs/USER_GUIDE.md", "docs/APP_STORE_READINESS.md",
