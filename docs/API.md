@@ -252,7 +252,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 ### Служба ПК
 
 **`pc-login-start`** — запросить код входа. Тело `{pcId, spki, name, nonce, ts, sig}`; `name` — 1..64 символа без Cc/Cf/Zl/Zp. Ключ подписи: если ПК уже привязан — старый ключ ПК, при первой привязке — `spki`.
-Ответ `{deviceCode, userCode, expiresIn: 300, interval: 5}`: `userCode` — 8 символов из алфавита в 32 символа (точный алфавит — `docs/BACKEND.md`), показывается пользователю; `deviceCode` — секрет ПК, b64u, ≥ 128 бит.
+Ответ `{deviceCode, userCode, expiresIn: 300, interval: 5}`: `userCode` — 8 символов из алфавита в 31 символ `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (без 0, O, 1, I, L), показывается пользователю; `deviceCode` — секрет ПК, b64u, ≥ 128 бит.
 Ошибки: `bad.request`, `pc.key_required`, `request.stale`, `nonce.replay`, `rate.limited`.
 
 **`pc-login-poll`** — опрос после показа кода. Тело `{pcId, deviceCode, nonce, ts, sig}`, подпись новым ключом из start.
