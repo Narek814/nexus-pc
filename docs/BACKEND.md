@@ -254,13 +254,16 @@ HTTP-статусы (вторичны, клиент смотрит на `error`)
 
 **Выпуск токена прав** (`issueEntitlement`): `entitlement_for_user(user_id)` — по `user_id`, который вернул consume или rotate, а не по текущему `my_pcs`; `signEntitlement` с `kid = ENT_KID`, ключом `ENT_SIGNING_KEY_PKCS8_B64`, `iss = ENT_ISS`, `sub = "u_" + b64u(HMAC-SHA-256(ENT_SUB_KEY, "nexus-ent-sub-v1|" + user_id + "|" + pcId))` (E3-7c, E7-3: непрозрачен, без ключа не обратим и не связывает разные ПК одного пользователя; стабилен для пары пользователь–ПК; смена `ENT_SUB_KEY` меняет `sub` во всех новых токенах), `pcId`, `plan`/`features`, `ttlSec = 86400`, `graceSec = 604800`. `state = revoked` → токен `plan: "free"`, `features: []` и `entitlementState: "revoked"`; `unlinked` → `revoked` без токена. Если после `ok` в SQL выпуск всё же падает (сбой БД), ответ `500`, выданный refresh теряется — ПК входит заново (для pc-token повтор в течение 60 с вернёт тот же `new`).
 
+- **pc-token** (E7-6): повтор с тем же старым токеном после `500` из-за сбоя выпуска в окне 60 с идемпотентен — тот же `new` и новый токен прав (тест `audit_e3_7c.test.ts` с подставной БД: первый выпуск падает, второй нет; SQL-окно проверяет `60_pc_refresh.sql`).
+- **pc-login-poll**: сбой выпуска после `ok` в `pc_login_consume` (код уже использован, refresh сохранён) ведёт к `500`; ПК начинает **вход заново**. Принято: редкий случай, вход повторяется пользователем.
+
 Тесты (`run_ts_tests.sh`, подставная БД): `http.test.ts`, `pop.test.ts`, `codes.test.ts`, `pc_login.test.ts`, `pc_token.test.ts` и прежний `entitlement.test.ts` — всего **47** тестов `node --test` (E3-7a; с E3-7b — 59); выданные токены (Pro, Free, revoked) проходят `verify_tokens.py` с `iss = nexus-test-issuer`. Вспомогательный модуль — `tests/ts/_helpers.ts` (секреты случайные на каждый прогон).
 
 ### Эндпоинты приложения (E3-7b: `pc-login-describe`, `pc-login-approve`, `pc-unlink`)
 
 Порядок: конфигурация → метод → JWT → тело → лимит IP → SQL от имени пользователя → ответ.
 
-- **JWT.** Нужен заголовок `Authorization: Bearer <JWT>`; Edge проверяет только форму (три части b64u, до 4096 символов) и передаёт JWT в PostgREST как есть (`rpc(..., {userJwt})`): `Authorization` — JWT пользователя, `apikey` — ключ проекта. Так `auth.uid()` работает в SQL. Edge JWT не декодирует. Нет заголовка или форма неверна → `401 auth.required`, SQL не вызывается. PostgREST отверг JWT (401/403: истёк, чужая подпись, роль `anon`) → `401 auth.required` (`_shared/auth.ts`, `_shared/db.ts`). `rate_limit_hit` по-прежнему вызывается с `service_role`.
+- **JWT.** Нужен заголовок `Authorization: Bearer <JWT>`; Edge проверяет только форму (три части b64u, до 4096 символов) и передаёт JWT в PostgREST как есть (`rpc(..., {userJwt})`): `Authorization` — JWT пользователя, `apikey` — **публичный `SUPABASE_ANON_KEY`** (E3-7c, E7-5; `service_role` рядом с JWT пользователя не передаётся, он только для служебных вызовов, где стоит в обоих заголовках). Так `auth.uid()` работает в SQL. **Для стенда:** проверить, что `auth.uid()` в `pc_login_approve`/`pc_release` берётся из JWT пользователя, а запрос с anon-ключом без JWT получает отказ. Edge JWT не декодирует. Нет заголовка или форма неверна → `401 auth.required`, SQL не вызывается. PostgREST отверг JWT (401/403: истёк, чужая подпись, роль `anon`) → `401 auth.required` (`_shared/auth.ts`, `_shared/db.ts`). `rate_limit_hit` по-прежнему вызывается с `service_role`.
 - **Лимит IP** (до SQL): `edge_ip_approve` — 30 за 600 с на IP, общий для describe и approve; `edge_ip_unlink` — 30 за 600 с. Лимит аккаунта (10 за 10 мин, `pc_approve_gate`) — в SQL; `rate.limited` из SQL — `retryAfter` 600.
 - **`pc-login-describe`** `{userCode}`: нормализация (верхний регистр, без пробелов и дефисов). Не 8 символов алфавита → `code.invalid` (не `bad.request`), запрос уже учтён в лимите IP, SQL не вызывается. Иначе `pc_login_describe(HMAC(CODE_HASH_PEPPER, код))` → `{displayName, requestedAt}` (`requestedAt` — RFC 3339 UTC без долей секунды, `2026-11-23T10:00:00Z`). Неизвестный, чужой, просроченный, одобренный код — побайтно одинаковый `400 {"error":"code.invalid"}`.
 - **`pc-login-approve`** `{userCode}`: то же, `pc_login_approve` → `{}` / `code.invalid` / `rate.limited`.
@@ -295,11 +298,11 @@ bash backend/tests/run_sql_tests.sh
 bash backend/tests/run_ts_tests.sh
 ```
 
-Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (59 тестов): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
+Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (67 тестов, из них 7 в `audit_e3_7c.test.ts`): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
 
 ## Переменные окружения
 
-Имена (значения — только вне репозитория): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ENT_SIGNING_KEY_PKCS8_B64`, `ENT_KID`, `ENT_ISS`.
+Имена (значения — только вне репозитория): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` (публичный, для вызовов с JWT пользователя), `ENT_SIGNING_KEY_PKCS8_B64`, `ENT_KID`, `ENT_ISS`, `ENT_SUB_KEY` (HMAC для `sub` токена прав; строгий base64, ≥ 32 байт, `openssl rand -base64 32`).
 Для входа ПК (E3-7) нужны ещё секреты Edge (в `.env.example` их добавляет главная сессия):
 - `CODE_HASH_PEPPER` — HMAC для хэшей кодов входа;
 - `REFRESH_HASH_PEPPER` — HMAC для хэшей refresh-токенов ПК (смена отзывает все refresh, все ПК входят заново);
