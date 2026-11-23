@@ -54,10 +54,11 @@ jobs:
 
   backend-sql:
     name: Backend SQL tests
-    # The runner image ships a newer PostgreSQL (18); install 16 to match
+    # ubuntu-latest (26.04) ships PostgreSQL 18 and has no postgresql-16 package.
+    # Pin 24.04, whose archive carries postgresql-16, to match
     # backend/supabase/config.toml (major_version = 16).
     # The script starts its own throwaway cluster as the runner user: no service, no network.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       PG_BIN: /usr/lib/postgresql/16/bin
