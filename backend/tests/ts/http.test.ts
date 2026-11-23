@@ -69,7 +69,7 @@ test("strict JSON: duplicates, extra/missing fields, types, non-object", async (
     assert.deepEqual(body, { error: "bad.request" });
   }
   assert.throws(() => parseStrictJson('{"k":{"x":1,"x":2}}'));
-  assert.deepEqual(parseStrictJson(' {"k":[1,true,null,"\\u00e9"]} '), { k: [1, true, null, "é"] });
+  assert.equal(JSON.stringify(parseStrictJson(' {"k":[1,true,null,"\\u00e9"]} ')), '{"k":[1,true,null,"é"]}');
 });
 
 test("invalid UTF-8 -> 400", async () => {

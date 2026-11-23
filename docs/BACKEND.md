@@ -25,6 +25,9 @@
 | `tests/ts/entitlement.test.ts` | Тесты подписи (`node --test`) |
 | `tests/py/verify_tokens.py` | Эталонная Python-проверка токенов и сверка с фикстурами |
 | `tests/run_ts_tests.sh` | Запуск TS-тестов и Python-сверки |
+| `supabase/functions/_shared/{http,pop,codes,db,ratelimit}.ts` | Общие модули Edge (E3-7a, раздел «Edge Functions») |
+| `supabase/functions/{pc-login-start,pc-login-poll,pc-token}/index.ts` | Эндпоинты службы ПК |
+| `tests/ts/*.test.ts`, `tests/ts/_helpers.ts` | Тесты Edge с подставной БД |
 | `.gitignore` | Исключает локальный `.env` и служебные каталоги CLI |
 
 Таблицы:
@@ -182,6 +185,71 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 
 Тесты: `tests/sql/60_pc_refresh.sql` (57 проверок: в том числе повтор в окне → тот же `ok` без изменений, повтор с другим `new_hash`, после использования нового, через 61 с → `reuse.detected`, граница 59 с; неверный ключ → `revoked` и лимит не растёт) и `tests/race_tests.sh`, проверка 6: четыре сеанса ротируют один токен → ровно один `ok`, один `reuse.detected`, два `revoked`, семья отозвана; проверка 7: повтор старого токена параллельно с ротацией нового, оба порядка принудительно — «повтор первым» → `ok`, `ok`; «ротация первой» → `ok`, `reuse.detected`, семья отозвана. Проверки 5–7 **детерминированы**: на время теста `pc_lock` подменяется тестовой версией, которая после настоящей блокировки ждёт разделяемую advisory-блокировку 4242 (`nexus.barrier = on`); сеанс-контроллер держит её, пока нужное число сеансов не встанет в ожидание блокировки (`pg_stat_activity`), затем отпускает; в конце `pc_lock` восстанавливается из определения, сохранённого `pg_get_functiondef` до подмены, и сверяется с ним (`race_pc_lock_restored`). Хук отзыва `pc_revoke_refresh_tokens` проверяется по каталогу сразу после миграций, до тестов (`run_sql_tests.sh`, тело — ровно вызов `pc_revoke_all`): заглушка роняет прогон; `50_pc_login.sql` подменяет хук на время теста и возвращает оригинал из `pg_get_functiondef` с проверкой (`revoke_hook_restored`). В проверке 5 оба порядка (consume первым и release первым) задаются принудительно в каждом прогоне.
 
+## Права по пользователю и функции чтения для Edge (миграция `20261123000007_entitlement_for_user.sql`, E3-7a)
+
+| Функция | Кто вызывает | Результат |
+|---------|--------------|-----------|
+| `entitlement_for_user(user_id) → (state, plan, features[])` | `service_role` (Edge, по `user_id` из `pc_login_consume` / `pc_rotate_refresh`) | та же таблица истинности, что у `entitlement_for_pc` для владельца; `user_id = null` → `unlinked` |
+| `entitlement_for_pc(pc_id)` | `service_role` | сигнатура и поведение прежние; теперь ищет владельца и вызывает `entitlement_for_user` |
+| `pc_key_get(pc_id) → bytea` | `service_role` (Edge) | текущий ключ ПК из `pc_keys` или null; им Edge проверяет подпись refresh и start перепривязки |
+| `pc_login_code_key(device_code_hash) → (pc_id, public_key_spki)` | `service_role` (Edge) | живой код (не использован, не истёк): `pc_id` и новый ключ кода для проверки подписи consume; иначе пусто |
+
+Все SECURITY DEFINER, `search_path = ''`, только чтение; EXECUTE отозван у `public`, `anon`, `authenticated`.
+
+Тесты: `tests/sql/70_entitlement_for_user.sql` — 20 проверок (Pro/Free/revoked/истёкший срок/неизвестный пользователь/null; `entitlement_for_pc` совпадает с `entitlement_for_user` владельца для всех ПК всех тестов и прежний `unlinked`; SECURITY DEFINER и `search_path`; EXECUTE только у `service_role` по каталогу и отказ при вызове `anon`/`authenticated`; функции чтения: ключ есть/нет, живой код, использованный/истёкший/неизвестный — пусто). Всего `run_sql_tests.sh`: **248** проверок (228 прежних + 20).
+
+## Edge Functions (E3-7a: `pc-login-start`, `pc-login-poll`, `pc-token`)
+
+Контракт — `docs/API.md`, «Сервер прав (HTTPS, служба ПК и приложение)». Код — `supabase/functions/<имя>/index.ts`, общие модули — `supabase/functions/_shared/`. Только WebCrypto и `fetch`, без пакетов; код запускается в Deno (Supabase Edge) и в Node 22 (тесты). `index.ts` экспортирует `createHandler(deps)`; `Deno.serve` вызывается только в Deno (`serveOnDeno`), тесты подставляют поддельную БД.
+
+### Общие модули
+
+| Модуль | Что делает |
+|--------|-----------|
+| `http.ts` | только `POST` (иначе `405 bad.request`) и `Content-Type: application/json` (параметры вроде `charset` допускаются); тело читается потоком и обрывается после 8192 байт (`413 bad.request`), `Content-Length` больше 8192 — отказ сразу; строгий UTF-8 и собственный строгий разбор JSON (дубликат ключа на любом уровне, не-объект, лишнее/отсутствующее поле, неверный тип, нецелое число — `400 bad.request`); ответы `{...}` или `{"error":c[,"retryAfter":n]}` с `Retry-After`; любое исключение — `500 {"error":"internal"}` без текста; одна строка журнала на запрос: `{"fn","status","ms"}` |
+| `pop.ts` | строгий b64u (алфавит base64url, без `=`, длина ≠ 1 mod 4, каноничность — повторное кодирование совпадает); SPKI — ровно 91 байт, побайтно равный префикс DER `id-ecPublicKey` + `prime256v1` + BIT STRING из 66 байт, затем `0x04‖X‖Y`, точка проверяется `importKey` (не на кривой — отказ); подпись — ровно 64 байта P1363, `crypto.subtle.verify` ECDSA P-256/SHA-256; строки подписи собирает сервер (раздел «Подписи запросов ПК»); `nonce` 16..32 байт, `pcId` — UUID в нижнем регистре, `ts` — целое 1..4102444800, `sha256hex` — нижний hex SHA-256 от UTF-8 строки |
+| `codes.ts` | HMAC-SHA-256, коды, refresh (ниже) |
+| `db.ts` | интерфейс `Db.rpc(name, args, {userJwt?})`; реализация — `fetch` к `SUPABASE_URL/rest/v1/rpc/<name>` с `service_role` (или JWT пользователя для E3-7b); `bytea` передаётся как `\x` + нижний hex; ошибка HTTP — исключение без тела и аргументов (→ 500); чтение конфигурации; выпуск токена прав |
+| `ratelimit.ts` | лимиты по IP через `rate_limit_hit` |
+
+### Коды и refresh в Edge
+
+- Секреты `CODE_HASH_PEPPER`, `REFRESH_HASH_PEPPER`, `REFRESH_DERIVE_KEY` — строки, ключ HMAC — их байты UTF-8, **не меньше 32 байт** (например, `openssl rand -base64 48`). Читаются один раз на процесс (`configOnce`) вместе с `ENT_KID`, `ENT_SIGNING_KEY_PKCS8_B64` (ключ проверяется импортом), `ENT_ISS`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Чего-то нет или секрет короче — **любой** запрос получает `500 internal` до разбора тела и до SQL, имя переменной в ответ и журнал не попадает. Ключ подписи и `iss` проверяются заранее, чтобы `ok` в SQL (код использован, refresh сохранён) не закончился ошибкой подписи токена.
+- **Алфавит `userCode` — 31 символ:** `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (цифры 2–9 и латиница без `I`, `L`, `O`; без `0`, `1`). Из 36 символов `[0-9A-Z]` без пяти похожих остаётся ровно 31, поэтому 32 символа без смешения невозможны. Длина 8 символов (≈ 39,6 бита). Генерация — `crypto.getRandomValues`, отбраковка: байты ≥ 248 (= 8·31) отбрасываются, символ = байт mod 31 — смещения нет. Ввод нормализуется: верхний регистр, удаляются пробелы и дефисы, затем ровно 8 символов алфавита.
+- `deviceCode` — 32 байта CSPRNG в b64u (256 бит).
+- Хэши кодов: `HMAC-SHA-256(CODE_HASH_PEPPER, UTF-8 строки кода)` — для `deviceCode` это его b64u-строка, для `userCode` — нормализованные 8 символов. В подписанной строке consume — `sha256hex` той же b64u-строки `deviceCode`.
+- Refresh: первый — 32 байта CSPRNG в b64u; новый — `b64u(HMAC-SHA-256(REFRESH_DERIVE_KEY, "nexus-pc-refresh-derive-v1|" ‖ old))`, где `old` — b64u-строка (ASCII) старого токена; хэш — `HMAC-SHA-256(REFRESH_HASH_PEPPER, b64u-строка токена)`. Побайтно совпадает со схемой «Повтор после потерянного ответа» (тест сверяет с `node:crypto`).
+- В БД уходят только 32-байтные HMAC; открытые коды, refresh, токены прав, IP и `user_id` в журнал не пишутся (тесты перехватывают `console.*` и аргументы `rpc`).
+
+### Лимиты по IP
+
+Ключ — `b64u(HMAC-SHA-256(CODE_HASH_PEPPER, "nexus-ip-v1|" + ip))`; сам IP не хранится, не логируется и не передаётся в SQL. Проверяются после разбора тела и **до** проверки подписи и обращений к ключам.
+
+| Бакет | Лимит | Эндпоинт |
+|-------|-------|----------|
+| `edge_ip_start` | 20 за 600 с на IP | `pc-login-start` |
+| `edge_start_global` | 2000 за 600 с на всех (ключ `all`; только если лимит IP пройден) | `pc-login-start` |
+| `edge_ip_poll` | 300 за 600 с на IP | `pc-login-poll` |
+| `edge_ip_token` | 60 за 3600 с на IP | `pc-token` |
+
+Превышение — `429 {"error":"rate.limited","retryAfter":<длина окна>}`. `rate.limited` из SQL: start — `retryAfter` 600, pc-token — 3600.
+
+**IP клиента** берётся из первого элемента заголовка `X-Forwarded-For`, который выставляет платформа Supabase Edge; нет заголовка — общий бакет `unknown`. **Для security-auditor:** подтвердить, что платформа перезаписывает или дописывает этот заголовок так, что первый элемент нельзя подделать клиенту (иначе брать последний добавленный прокси элемент).
+
+### Эндпоинты
+
+Порядок во всех трёх: конфигурация → метод → тело → формат полей → лимит IP → выбор ключа и проверка подписи → SQL → ответ.
+
+- **`pc-login-start`** `{pcId, spki, name, nonce, ts, sig}`. `name` — 1..64 символа, без непарных суррогатов и Cc/Cf/Zl/Zp (иначе `bad.request`, SQL-ограничение остаётся второй линией). Ключ подписи: `pc_key_get(pcId)`, если есть, иначе `spki`. Подпись неверна → `pc.key_required` **без** `pc_login_start`. Затем `deviceCode`, `userCode`, их HMAC и `pc_login_start(..., p_signer_spki = ключ проверки, p_nonce/p_ts — из подписанной строки)`. `ok` → `{deviceCode, userCode, expiresIn: 300, interval: 5}`; `pc.key_required`, `request.stale`, `nonce.replay`, `rate.limited` — как есть; любой другой ответ SQL — `500 internal`.
+- **`pc-login-poll`** `{pcId, deviceCode, nonce, ts, sig}`. `deviceCode` — ровно 32 байта b64u. `pc_login_code_key(HMAC(deviceCode))`: нет живого кода или его `pc_id` ≠ `pcId` → `code.invalid`; подпись consume не ключом кода → `pc.key_required`; в обоих случаях `pc_login_consume` не вызывается. На каждый опрос — новый refresh из CSPRNG, в SQL — его HMAC. `ok` → токен прав по `user_id` из consume, ответ `{refreshToken, entitlement, entitlementState}` (без `user_id`, `rebound`); `pending` → `202 {"error":"pending"}`; `slow_down` → `retryAfter` 5; остальные статусы consume — как есть.
+- **`pc-token`** `{pcId, refreshToken, nonce, ts, sig}`. `refreshToken` — ровно 32 байта b64u. Ключ — только `pc_key_get(pcId)`; нет ключа или подпись неверна → `revoked` без `pc_rotate_refresh`. `new = derive(old)`, `pc_rotate_refresh(HMAC(old), HMAC(new), pcId, ключ, nonce, ts)`. `ok` → токен прав по `user_id` из rotate и `{refreshToken: new, ...}`; повтор тем же старым токеном даёт тот же `new`. `revoked`, `reuse.detected`, `rate.limited`, `request.stale`, `nonce.replay` — как есть; на `reuse.detected` — строка журнала безопасности `{"security":"pc.refresh_reuse","pcId":...}` (`console.warn`, без токенов и `user_id`).
+
+HTTP-статусы (вторичны, клиент смотрит на `error`): 200 — успех; 202 — `pending`; 400 — `bad.request`, `request.stale`, `code.invalid`; 401 — `revoked`, `reuse.detected`, `auth.required`; 403 — `pc.key_required`; 404 — `pc.not_found`; 405/413 — `bad.request`; 409 — `nonce.replay`, `pcs.limit`; 429 — `rate.limited`, `slow_down`; 500 — `internal`.
+
+**Выпуск токена прав** (`issueEntitlement`): `entitlement_for_user(user_id)` — по `user_id`, который вернул consume или rotate, а не по текущему `my_pcs`; `signEntitlement` с `kid = ENT_KID`, ключом `ENT_SIGNING_KEY_PKCS8_B64`, `iss = ENT_ISS`, `sub = "u_" + b64u(SHA-256("nexus-ent-sub-v1|" + user_id))` (непрозрачен, к email не обратим), `pcId`, `plan`/`features`, `ttlSec = 86400`, `graceSec = 604800`. `state = revoked` → токен `plan: "free"`, `features: []` и `entitlementState: "revoked"`; `unlinked` → `revoked` без токена. Если после `ok` в SQL выпуск всё же падает (сбой БД), ответ `500`, выданный refresh теряется — ПК входит заново (для pc-token повтор в течение 60 с вернёт тот же `new`).
+
+Тесты (`run_ts_tests.sh`, подставная БД): `http.test.ts`, `pop.test.ts`, `codes.test.ts`, `pc_login.test.ts`, `pc_token.test.ts` и прежний `entitlement.test.ts` — всего **44** теста `node --test`; выданные токены (Pro, Free, revoked) проходят `verify_tokens.py` с `iss = nexus-test-issuer`. Вспомогательный модуль — `tests/ts/_helpers.ts` (секреты случайные на каждый прогон).
+
 ## Токен прав (`supabase/functions/_shared/entitlement.ts`)
 
 `signEntitlement({kid, privateKeyPkcs8B64, iss, sub, pcId, plan, features, now, ttlSec, graceSec})` → `kid "." b64u(payload) "." b64u(sig)` по `docs/API.md` («Токен прав»). Только WebCrypto (`crypto.subtle`), без пакетов; работает в Deno и Node 22. Payload — ровно 12 полей схемы, `iat = now`, `exp = iat + ttlSec`, `graceUntil = exp + graceSec`, `jti = crypto.randomUUID()`. Подпись ES256 (P1363, 64 байта) над ASCII `kid "." payload_b64`. Исключение при `ttlSec` вне 1..86400, `graceSec` вне 0..604800, `kid` не `[A-Za-z0-9_-]{1,64}`, полях не по схеме, токене длиннее 4096 символов; текст исключения ключ не содержит. Free тоже получает токен (`plan: "free"`, `features: []`). Рабочий `iss` задаётся после выбора домена; в тестах — `nexus-test-issuer`.
@@ -204,7 +272,7 @@ bash backend/tests/run_sql_tests.sh
 bash backend/tests/run_ts_tests.sh
 ```
 
-Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку.
+Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (44 теста): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
 
 ## Переменные окружения
 

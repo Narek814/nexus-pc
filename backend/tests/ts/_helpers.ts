@@ -31,7 +31,8 @@ export interface Call { name: string; args: Record<string, unknown>; opts?: RpcO
 
 export class FakeDb implements Db {
   calls: Call[] = [];
-  constructor(public handlers: Record<string, (args: Record<string, unknown>) => unknown> = {}) {}
+  handlers: Record<string, (args: Record<string, unknown>) => unknown>;
+  constructor(handlers: Record<string, (args: Record<string, unknown>) => unknown> = {}) { this.handlers = handlers; }
   async rpc(name: string, args: Record<string, unknown>, opts?: RpcOptions): Promise<unknown> {
     this.calls.push({ name, args, opts });
     if (name === "rate_limit_hit" && !this.handlers[name]) return true;
