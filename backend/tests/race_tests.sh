@@ -121,7 +121,7 @@ err="$(cat "$race_dir"/n? | grep -c 'ERROR' || true)"
 race_passed=$((race_passed + 1))
 
 # 5. pc_release by the owner in parallel with consume of an approved rebind
-#    code of the same PC (8 PCs at once). Same lock order in both (pc_lock,
+#    code of the same PC (16 PCs at once). Same lock order in both (pc_lock,
 #    then code rows): no deadlock / ERROR; per PC exactly one of
 #    {consume ok, release ok} wins and the final state matches the winner.
 psql_run >/dev/null <<SQL
@@ -129,18 +129,18 @@ insert into auth.users values ('00000000-0000-0000-0000-00000000ace6', 'race6@ex
   ('00000000-0000-0000-0000-00000000ace7', 'race7@example.test');
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
   select ('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid,
-         '00000000-0000-0000-0000-00000000ace6', 'Rel' || g, 'windows' from generate_series(1,8) g;
+         '00000000-0000-0000-0000-00000000ace6', 'Rel' || g, 'windows' from generate_series(1,16) g;
 insert into public.pc_keys (pc_id, public_key_spki)
   select ('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid, decode(repeat('36',91),'hex')
-    from generate_series(1,8) g;
+    from generate_series(1,16) g;
 select public.pc_login_start(('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid,
   decode(repeat('37',91),'hex'), 'Rel' || g, sha256(convert_to('rel-d' || g,'UTF8')),
   sha256(convert_to('REL-U' || g,'UTF8')), decode(repeat('36',91),'hex'), uuid_send(gen_random_uuid()), now())
-  from generate_series(1,8) g;
+  from generate_series(1,16) g;
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace7', approved_at = now()
  where pc_id::text like '30000000-0000-0000-0000-0000000d%';
 SQL
-for g in $(seq 1 8); do
+for g in $(seq 1 16); do
   pc="30000000-0000-0000-0000-0000000d$(printf '%04d' "$g")"
   psql_run >"$race_dir/rc$g" 2>&1 <<SQL &
 begin;
@@ -163,7 +163,7 @@ done
 wait
 err="$(cat "$race_dir"/rc* "$race_dir"/rr* | grep -c 'ERROR' || true)"
 bad=0
-for g in $(seq 1 8); do
+for g in $(seq 1 16); do
   pc="30000000-0000-0000-0000-0000000d$(printf '%04d' "$g")"
   c="$(cat "$race_dir/rc$g")"; r="$(cat "$race_dir/rr$g")"
   owner="$(psql_run -c "select coalesce((select user_id::text from public.my_pcs where pc_id = '$pc'), 'none')")"
