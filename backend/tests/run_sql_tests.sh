@@ -22,7 +22,7 @@ trap cleanup EXIT
 
 PORT="$(python3 -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
 
-"${RUN[@]}" "$PG_BIN/initdb" -D "$TMP/data" -U postgres -A trust --no-sync >/dev/null
+"${RUN[@]}" "$PG_BIN/initdb" -D "$TMP/data" -U postgres -A trust -E UTF8 --locale=C --no-sync >/dev/null
 "${RUN[@]}" "$PG_BIN/pg_ctl" -D "$TMP/data" -l "$TMP/log" -w \
   -o "-k $TMP -p $PORT -c listen_addresses=''" start >/dev/null
 
