@@ -42,11 +42,13 @@ do $$ declare n int; begin
   insert into _results values ('update_other_pc_zero_rows');
 end $$;
 
-do $$ declare n int; begin
-  delete from public.my_pcs where pc_id = '10000000-0000-0000-0000-0000000000b1';
-  get diagnostics n = row_count;
-  if n <> 0 then raise exception 'FAIL delete_other_pc_zero_rows'; end if;
-  insert into _results values ('delete_other_pc_zero_rows');
+do $$ begin
+  begin
+    delete from public.my_pcs where pc_id = '10000000-0000-0000-0000-0000000000b1';
+    raise exception 'FAIL delete_other_pc_denied';
+  exception when insufficient_privilege then null;
+  end;
+  insert into _results values ('delete_other_pc_denied');
 end $$;
 
 do $$ declare n int; begin
@@ -94,16 +96,21 @@ do $$ begin
   insert into _results values ('insert_denied');
 end $$;
 
--- As B: own delete works.
+-- As B: own delete is denied too (a PC is removed only via pc_release).
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated"}', false) \g /dev/null
-do $$ declare n int; begin
+do $$ begin
   if (select display_name from public.my_pcs where pc_id = '10000000-0000-0000-0000-0000000000b1') <> 'B desktop' then
     raise exception 'FAIL other_pc_unchanged';
   end if;
-  delete from public.my_pcs where pc_id = '10000000-0000-0000-0000-0000000000b2';
-  get diagnostics n = row_count;
-  if n <> 1 then raise exception 'FAIL delete_own_pc'; end if;
-  insert into _results values ('delete_own_pc');
+  begin
+    delete from public.my_pcs where pc_id = '10000000-0000-0000-0000-0000000000b2';
+    raise exception 'FAIL delete_own_pc_denied';
+  exception when insufficient_privilege then null;
+  end;
+  if not exists (select 1 from public.my_pcs where pc_id = '10000000-0000-0000-0000-0000000000b2') then
+    raise exception 'FAIL delete_own_pc_denied (row gone)';
+  end if;
+  insert into _results values ('delete_own_pc_denied');
 end $$;
 
 -- As anon (claims of B still set; must not help).
@@ -214,14 +221,14 @@ do $$ begin
 end $$;
 
 do $$ begin
-  if (select count(*) from pg_policies where schemaname = 'public' and tablename = 'my_pcs') <> 3
+  if (select count(*) from pg_policies where schemaname = 'public' and tablename = 'my_pcs') <> 2
      or not exists (select 1 from pg_policies where tablename = 'my_pcs' and policyname = 'my_pcs_select_own'
          and cmd = 'SELECT' and qual = '(user_id = auth.uid())' and roles = '{authenticated}')
      or not exists (select 1 from pg_policies where tablename = 'my_pcs' and policyname = 'my_pcs_update_own'
          and cmd = 'UPDATE' and qual = '(user_id = auth.uid())' and with_check = '(user_id = auth.uid())'
          and roles = '{authenticated}')
-     or not exists (select 1 from pg_policies where tablename = 'my_pcs' and policyname = 'my_pcs_delete_own'
-         and cmd = 'DELETE' and qual = '(user_id = auth.uid())' and roles = '{authenticated}') then
+     or exists (select 1 from pg_policies where tablename = 'my_pcs' and cmd in ('DELETE', 'ALL')
+         and roles && '{authenticated,public}') then
     raise exception 'FAIL policy_definitions';
   end if;
   insert into _results values ('policy_definitions');
@@ -245,7 +252,7 @@ end $$;
 
 do $$ begin
   if has_table_privilege('anon', 'public.my_pcs', 'select,insert,update,delete,truncate,references,trigger')
-     or has_table_privilege('authenticated', 'public.my_pcs', 'insert,truncate,references,trigger')
+     or has_table_privilege('authenticated', 'public.my_pcs', 'insert,delete,truncate,references,trigger')
      or has_table_privilege('authenticated', 'public.my_pcs', 'update')
      or has_any_column_privilege('anon', 'public.my_pcs', 'select,insert,update,references')
      or has_column_privilege('authenticated', 'public.my_pcs', 'user_id', 'update')

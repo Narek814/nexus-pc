@@ -26,8 +26,12 @@ SQL
 done
 wait
 ok="$(cat "$race_dir"/c? | grep -c '^ok$' || true)"
-inv="$(cat "$race_dir"/c? | grep -c '^code.invalid$' || true)"
-[ "$ok" = 1 ] && [ "$inv" = 3 ] || { echo "FAIL race_double_consume ok=$ok invalid=$inv" >&2; exit 1; }
+# Losers may legitimately get 'code.invalid', 'slow_down' (same code polled
+# again within 5 s) or 'pending'; anything else (incl. ERROR) is a failure.
+rej="$(cat "$race_dir"/c? | grep -cE '^(code\.invalid|slow_down|pending)$' || true)"
+other="$(cat "$race_dir"/c? | grep -vcE '^(ok|code\.invalid|slow_down|pending)$' || true)"
+[ "$ok" = 1 ] && [ "$rej" = 3 ] && [ "$other" = 0 ] \
+  || { echo "FAIL race_double_consume ok=$ok rejected=$rej other=$other" >&2; cat "$race_dir"/c? >&2; exit 1; }
 race_passed=$((race_passed + 1))
 
 # 2. 25 concurrent consumes for one fresh account: exactly 20 PCs bound.
@@ -86,11 +90,13 @@ SQL
 done
 wait
 ok="$(cat "$race_dir"/t* | grep -c '^ok$' || true)"
-inv="$(cat "$race_dir"/t* | grep -c '^code.invalid$' || true)"
+# Two consumes share each code, so 'slow_down' is a legitimate loser answer.
+rej="$(cat "$race_dir"/t* | grep -cE '^(code\.invalid|slow_down|pending)$' || true)"
+other="$(cat "$race_dir"/t* | grep -vcE '^(ok|code\.invalid|slow_down|pending)$' || true)"
 err="$(cat "$race_dir"/t* | grep -c 'ERROR' || true)"
 rows="$(psql_run -c "select count(*) from public.my_pcs where pc_id = '30000000-0000-0000-0000-00000000ace3'")"
-[ "$ok" = 1 ] && [ "$inv" = 3 ] && [ "$err" = 0 ] && [ "$rows" = 1 ] \
-  || { echo "FAIL race_two_codes_one_pc ok=$ok invalid=$inv errors=$err rows=$rows" >&2; cat "$race_dir"/t* >&2; exit 1; }
+[ "$ok" = 1 ] && [ "$rej" = 3 ] && [ "$other" = 0 ] && [ "$err" = 0 ] && [ "$rows" = 1 ] \
+  || { echo "FAIL race_two_codes_one_pc ok=$ok rejected=$rej other=$other errors=$err rows=$rows" >&2; cat "$race_dir"/t* >&2; exit 1; }
 race_passed=$((race_passed + 1))
 
 # 4. One nonce used by 4 parallel starts: exactly one 'ok', no exception.

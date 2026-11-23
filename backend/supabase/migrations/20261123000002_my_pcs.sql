@@ -17,7 +17,9 @@ alter table public.my_pcs force row level security;
 
 -- Deny by default. Rows are created only server-side at PC sign-in (E3-5).
 revoke all on table public.my_pcs from public, anon, authenticated;
-grant select, update (display_name), delete on table public.my_pcs to authenticated;
+-- No DELETE for clients: a PC is removed only via pc_release, which also
+-- revokes refresh tokens and voids live sign-in codes (E3-5c).
+grant select, update (display_name) on table public.my_pcs to authenticated;
 grant select, insert, update, delete on table public.my_pcs to service_role;
 
 create policy my_pcs_select_own on public.my_pcs
@@ -28,10 +30,6 @@ create policy my_pcs_update_own on public.my_pcs
   for update to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
-
-create policy my_pcs_delete_own on public.my_pcs
-  for delete to authenticated
-  using (user_id = auth.uid());
 
 -- At most 20 PCs per user. Serialised per user with an advisory lock so that
 -- concurrent inserts cannot exceed the limit.
