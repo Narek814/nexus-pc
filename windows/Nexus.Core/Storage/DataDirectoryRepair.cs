@@ -1264,7 +1264,7 @@ public sealed class DataDirectoryRepair(IDataFileSystem fs, IRepairConsole conso
             }
             obj.SetSecurity(step.Action == RepairStep.ProtectRoot
                 ? new DataSecurity.ProtectedRoot()
-                : new DataSecurity.InheritedFromRoot(step.Kind == DataObjectKind.Directory));
+                : DataDirectoryPolicy.RepairSecurityFor(step.Path, step.Kind));
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

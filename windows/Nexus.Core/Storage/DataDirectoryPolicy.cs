@@ -130,6 +130,21 @@ public static class DataDirectoryPolicy
 
     public static bool IsPluginsDirectory(string relativePath) => string.Equals(relativePath, PluginsPath, PathComparison);
 
+    /// <summary>The entitlement file (top level of the data folder); the same name as Nexus.Agent's EntitlementFileStore.</summary>
+    public const string EntitlementFileName = "entitlement.json";
+
+    public static bool IsEntitlementFile(string relativePath, DataObjectKind kind) =>
+        kind == DataObjectKind.File && string.Equals(relativePath, EntitlementFileName, PathComparison);
+
+    /// <summary>Access repair puts on one object: the root protected, entitlement.json SYSTEM only, everything else inherited.</summary>
+    public static DataSecurity RepairSecurityFor(string relativePath, DataObjectKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(relativePath);
+        return relativePath.Length == 0 ? new DataSecurity.ProtectedRoot()
+            : IsEntitlementFile(relativePath, kind) ? new DataSecurity.SystemOnlyFile()
+            : new DataSecurity.InheritedFromRoot(kind == DataObjectKind.Directory);
+    }
+
     public static string ExpectedFinalPath(string rootFinalPath, string relativePath) =>
         relativePath.Length == 0 ? rootFinalPath : Path.Join(rootFinalPath, relativePath);
 
@@ -399,6 +414,12 @@ public abstract record DataSecurity
 
     /// <summary>Owner, group and DACL exactly as saved before the repair (restore-acl).</summary>
     public sealed record Original(string Sddl) : DataSecurity;
+
+    /// <summary>
+    /// entitlement.json: owner Administrators, protected DACL with SYSTEM only (what EntitlementFileStore creates and
+    /// EntitlementFilePolicy accepts). The root's SYSTEM+Administrators entries would make the agent discard the file.
+    /// </summary>
+    public sealed record SystemOnlyFile : DataSecurity;
 }
 
 /// <summary>How the access read back after restore-acl compares with the saved one.</summary>

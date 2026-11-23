@@ -119,6 +119,37 @@ public class EntitlementVerifierTests
         Assert.False(PinnedEntitlementKeys.Trust.IsConfigured);
     }
 
+    [Fact]
+    public void Plan_checks_are_on_only_with_a_usable_es256_p256_key_and_a_real_issuer()
+    {
+        using var p256 = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var p384 = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        var good = new EntitlementKey("k1", EntitlementAlgorithm.Es256, p256.ExportSubjectPublicKeyInfo());
+        const string issuer = "nexus-test-issuer";
+
+        Assert.True(new EntitlementTrust([good], [], issuer).IsConfigured);
+        using (var doc = Fixture())
+        {
+            Assert.True(TestTrust(doc).IsConfigured);
+        }
+        Assert.False(new EntitlementTrust([], [], issuer).IsConfigured);
+        Assert.False(new EntitlementTrust([good], [], PinnedEntitlementKeys.Issuer).IsConfigured); // placeholder issuer
+        Assert.False(new EntitlementTrust([good], ["k1"], issuer).IsConfigured); // only key revoked
+        Assert.False(new EntitlementTrust([good with { Algorithm = EntitlementAlgorithm.Unsupported }], [], issuer).IsConfigured);
+        Assert.False(new EntitlementTrust([good with { SubjectPublicKeyInfo = null }], [], issuer).IsConfigured);
+        Assert.False(new EntitlementTrust([good with { SubjectPublicKeyInfo = [1, 2, 3] }], [], issuer).IsConfigured);
+        Assert.False(new EntitlementTrust([good with { SubjectPublicKeyInfo = p384.ExportSubjectPublicKeyInfo() }], [], issuer).IsConfigured);
+        // One usable key among unusable ones is enough.
+        Assert.True(new EntitlementTrust([good with { Kid = "old" }, good with { Kid = "bad", SubjectPublicKeyInfo = null }, good with { Kid = "k2" }], ["old"], issuer).IsConfigured);
+    }
+
+    [Fact]
+    public void Release_build_does_not_enforce_plans()
+    {
+        Assert.False(PinnedEntitlementKeys.Trust.IsConfigured);
+        Assert.False(new EntitlementTracker(new EntitlementVerifier(PinnedEntitlementKeys.Trust), Guid.NewGuid(), new MemoryEntitlementStore(), new FakeEntitlementClock(1_800_000_000)).Enforced);
+    }
+
     [Theory]
     [InlineData("profiles.run", null, PlanPolicy.Profiles)]
     [InlineData("rgb.apply", null, PlanPolicy.RgbSync)]

@@ -15,7 +15,7 @@ namespace Nexus.Agent.Storage;
 /// </summary>
 internal sealed class EntitlementFileStore(string dataDirectory) : IEntitlementStore
 {
-    public const string FileName = "entitlement.json";
+    public const string FileName = DataDirectoryPolicy.EntitlementFileName;
     private const int MaxBytes = 16 * 1024;
 
     private static readonly JsonSerializerOptions Json = new()

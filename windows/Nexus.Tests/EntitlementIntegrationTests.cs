@@ -101,6 +101,30 @@ public sealed class EntitlementIntegrationTests : IAsyncLifetime
         Assert.Equal(PlanPolicy.Automations, automations.MissingPlanFeature(rule));    }
 
     [Fact]
+    public async Task Manual_run_needs_the_plan_features_of_its_actions_but_upsert_still_saves()
+    {
+        var (client, deviceId, key) = await _host.PairedClientAsync();
+        await using var _ = client;
+        using var __ = key;
+        _host.Services.Devices.SetPermissions(deviceId, Nexus.Core.Security.Permissions.DefaultAfterPairing | Nexus.Core.Security.Permission.Automation);
+        Assert.True(_host.Services.Entitlements.Accept(EntitlementVerifierTests.Sign(_doc, EntitlementVerifierTests.Payload(
+            _host.PcId, _clock.Wall, _clock.Wall + 3600, _clock.Wall + 3600, features: "\"automations\""))).Ok);
+
+        var upsert = new JsonObject
+        {
+            ["automation"] = JsonNode.Parse("""{"id":"play","name":"Play","trigger":{"type":"time","time":"20:00"},"actions":[{"type":"profile","profileId":"gaming"}]}"""),
+        };
+        var saved = await client.RequestAsync("automations.upsert", upsert);
+        Assert.True(saved.IsOk(), saved.ToJsonString()); // saved; no warning field exists in the protocol (ENT-2b)
+        Assert.Null(saved["payload"]!["warning"]);
+
+        var refused = await client.RequestAsync("automations.run", new JsonObject { ["automationId"] = "play" });
+        Assert.Equal(ErrorCodes.PlanRequired, refused.ErrorCode());
+        Assert.Equal(PlanPolicy.Profiles, refused["error"]!["details"]!["feature"]!.GetValue<string>());
+        Assert.Equal("active", refused["error"]!["details"]!["state"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Device_without_permission_gets_permission_denied_not_plan_required()
     {
         var (client, _, key) = await _host.PairedClientAsync();

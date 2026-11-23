@@ -34,10 +34,32 @@ public sealed class EntitlementTrust
     public string Issuer { get; }
 
     /// <summary>
-    /// True when at least one key is pinned. With an empty table no token can be accepted, so the agent keeps
-    /// today's behaviour (no plan checks) instead of turning every Pro feature off; see the ENT-2 report.
+    /// True only when a token can actually be accepted: at least one ES256 key with a P-256 public key whose kid is
+    /// not revoked, and a real issuer (not the <see cref="PinnedEntitlementKeys.Issuer"/> placeholder). Otherwise the
+    /// agent keeps today's behaviour (no plan checks) instead of turning every Pro feature off; see the ENT-2 report.
     /// </summary>
-    public bool IsConfigured => Keys.Count > 0;
+    public bool IsConfigured =>
+        !string.Equals(Issuer, PinnedEntitlementKeys.Issuer, StringComparison.Ordinal)
+        && Keys.Values.Any(k => k.Algorithm == EntitlementAlgorithm.Es256 && !RevokedKids.Contains(k.Kid) && IsP256(k.SubjectPublicKeyInfo));
+
+    private static bool IsP256(byte[]? spki)
+    {
+        if (spki is null || spki.Length == 0)
+        {
+            return false;
+        }
+        try
+        {
+            using var key = System.Security.Cryptography.ECDsa.Create();
+            key.ImportSubjectPublicKeyInfo(spki, out var read);
+            return read == spki.Length && key.KeySize == 256
+                && key.ExportParameters(false).Curve.Oid.Value == "1.2.840.10045.3.1.7";
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return false;
+        }
+    }
 }
 
 /// <summary>

@@ -471,7 +471,7 @@ internal sealed class CommandDispatcher(AgentServices services)
     /// Owner-only (SEC-5): every command acts only on the caller's own rules. Another device's rule, or an
     /// ownerless one, is answered exactly like a missing one, before any other check, so nothing about it leaks.
     /// </summary>
-    private static HandlerResult Automations(Guid id, ValidatedCommand command, ConnectionSession session, AutomationService automations)
+    private HandlerResult Automations(Guid id, ValidatedCommand command, ConnectionSession session, AutomationService automations)
     {
         var client = session.CurrentClient();
         switch (command.Payload)
@@ -504,6 +504,12 @@ internal sealed class CommandDispatcher(AgentServices services)
                 if ((client.Permissions & needed) != needed)
                 {
                     return MissingPermissions(id, needed, client.Permissions);
+                }
+                // ENT-2b: profile/rgb actions need their own plan features, as when a trigger starts the rule.
+                if (automations.MissingPlanFeature(found) is { } feature)
+                {
+                    return Fail(id, ErrorCodes.PlanRequired, "This feature needs Nexus PC Pro.",
+                        new JsonObject { ["feature"] = feature, ["state"] = services.Entitlements.Current.WireState });
                 }
                 if (Nexus.Core.Automation.AutomationRules.NeedsConfirmation(found) && !command.Envelope.Confirmed)
                 {

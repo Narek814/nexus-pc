@@ -258,6 +258,11 @@ internal sealed class FakeDataFileSystem : IDataFileSystem
                     node.Protected = false;
                     node.Aces = [.. TrustedAces().Select(a => a with { Flags = 0x10 })];
                     break;
+                case DataSecurity.SystemOnlyFile:
+                    node.Owner = DataDirectoryPolicy.Administrators;
+                    node.Protected = true;
+                    node.Aces = [new(DataDirectoryPolicy.LocalSystem, true, DataDirectoryPolicy.FullControl, 0)];
+                    break;
                 case DataSecurity.Original original when original.Sddl.StartsWith("O:", StringComparison.Ordinal):
                     node.RawSddl = original.Sddl; // a real SDDL text given by a test: kept as is
                     break;
@@ -513,6 +518,42 @@ public sealed class DataDirectoryRepairTests
         Assert.Contains(scan.Violations, v => v.RelativePath == "audit.log" && v.Kind == DataViolationKind.UntrustedOwner);
         Assert.Contains(scan.Violations, v => v.Kind == DataViolationKind.Plugins);
         Assert.Equal(_fs.Nodes.Keys.Count(k => k.StartsWith(Root, StringComparison.Ordinal)), scan.Plan.Count);
+    }
+
+    [Fact]
+    public void Repair_gives_entitlement_json_system_only_and_a_second_check_finds_nothing()
+    {
+        _fs.AddFile(Root + Sep + DataDirectoryPolicy.EntitlementFileName, "{}",
+            aces: [.. FakeDataFileSystem.TrustedAces(), new DataAce(FakeDataFileSystem.Users, true, 0x1F01FF, 0x10)]);
+        Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole(DataDirectoryRepair.ConfirmationWord)).Repair(Root, []));
+
+        var node = _fs.Nodes[Root + Sep + DataDirectoryPolicy.EntitlementFileName];
+        Assert.True(node.Protected);
+        var ace = Assert.Single(node.Aces);
+        Assert.Equal(DataDirectoryPolicy.LocalSystem, ace.Sid);
+        Assert.True(Nexus.Core.Entitlements.EntitlementFilePolicy.IsTrusted(node.Owner, true, node.Protected, node.Aces,
+            new HashSet<string> { DataDirectoryPolicy.LocalSystem }, DataDirectoryPolicy.TrustedSids));
+        // Other files keep the root's inherited entries.
+        Assert.Equal(2, _fs.Nodes[Root + Sep + "config.json"].Aces.Count);
+
+        // SYSTEM only is not a violation: check passes and nothing is rewritten.
+        var after = DataDirectoryScanner.Scan(_fs, Root, DataDirectoryPolicy.TrustedSids);
+        Assert.True(after.Trusted, string.Join("\n", after.Violations));
+        var changes = _fs.SecurityChanges;
+        Assert.Equal(DataDirectoryRepair.ExitOk, Repair(new ScriptedConsole()).Check(Root));
+        Assert.Equal(changes, _fs.SecurityChanges);
+    }
+
+    [Theory]
+    [InlineData("", DataObjectKind.Directory, typeof(DataSecurity.ProtectedRoot))]
+    [InlineData("entitlement.json", DataObjectKind.File, typeof(DataSecurity.SystemOnlyFile))]
+    [InlineData("ENTITLEMENT.JSON", DataObjectKind.File, typeof(DataSecurity.SystemOnlyFile))]
+    [InlineData("entitlement.json", DataObjectKind.Directory, typeof(DataSecurity.InheritedFromRoot))]
+    [InlineData("OpenRGB/entitlement.json", DataObjectKind.File, typeof(DataSecurity.InheritedFromRoot))]
+    [InlineData("config.json", DataObjectKind.File, typeof(DataSecurity.InheritedFromRoot))]
+    public void Repair_security_depends_on_the_object(string path, DataObjectKind kind, Type expected)
+    {
+        Assert.IsType(expected, DataDirectoryPolicy.RepairSecurityFor(path.Replace('/', Path.DirectorySeparatorChar), kind));
     }
 
     [Fact]

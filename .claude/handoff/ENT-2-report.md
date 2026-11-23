@@ -97,3 +97,17 @@
   - в CI `windows-latest`: `EntitlementIntegrationTests.State_survives_a_restart_and_the_file_is_private` и `Untrusted_state_file_is_deleted_and_counts_as_no_token` (ACL), что общая проверка папки данных не блокирует старт, CA1416.
 - **На что смотреть:** порядок «разрешение → план»; поля плана только после входа; при пустой таблице ключей поведение не изменилось (`AgentIntegrationTests.Account_refresh_needs_login_is_not_advertised_and_is_not_implemented_yet`); E6 запускать в конфигурации Release.
 - **Известные ограничения:** F1 только в C#-тесте, не в shared; лимит файлов не задан; решения по пунктам 1–6 выше ждут владельца.
+
+## ENT-2b: исправления по аудиту безопасности
+
+1. automations.run проверяет план через AutomationService.MissingPlanFeature (automations, profiles, rgb.sync) → plan.required {feature, state}; только при Enforced. upsert сохраняет правило. НУЖНО РЕШЕНИЕ: поля-предупреждения в ответе automations.upsert в протоколе нет, не добавлено.
+2. DataDirectoryPolicy.RepairSecurityFor: entitlement.json → DataSecurity.SystemOnlyFile (владелец Administrators, защищённый DACL только SYSTEM). Повторная проверка нарушений не находит. Имя файла — одна константа.
+3. EntitlementTrust.IsConfigured: true только при issuer ≠ "nexus-issuer-unset" и хотя бы одном неотозванном ES256 ключе с корректным SPKI P-256. В Release — false.
+
+Изменены: CommandDispatcher.cs, EntitlementFileStore.cs, EntitlementTrust.cs, DataDirectoryPolicy.cs, DataDirectoryRepair.cs, Nexus.Windows/DataDirectoryFileSystem.cs, тесты DataDirectoryTests, DataDirectoryWindowsTests, EntitlementIntegrationTests, EntitlementVerifierTests.
+Результаты (Linux): build -warnaserror 0/0; тесты 1112/1112; check_fixtures 128/25/53.
+
+### ПЕРЕДАЧА В QA (ENT-2b)
+- Сборка -warnaserror; dotnet test -c Release (1112/1112); python3 -I tools/check_fixtures.py.
+- Только Windows CI: DataDirectoryWindowsTests.Repair_leaves_entitlement_json_with_a_protected_system_only_dacl_and_the_folder_trusted; полный сценарий repair → агент не удаляет файл.
+- Смотреть: порядок в automations.run (владелец → разрешения → план → подтверждение); при Enforced == false поведение прежнее; restore-acl возвращает исходный DACL entitlement.json.
