@@ -37,18 +37,24 @@ begin
   return s;
 end $$;
 -- Rows of a user across every table that can hold user data.
+-- PC ids ever bound by a user in this test (rows of those PCs are the user's).
+create function pg_temp.pcs(u uuid) returns uuid[] language sql immutable as $$
+  select case when u = '00000000-0000-0000-0000-0000000009a1'
+    then array['00000000-0000-4000-8000-0000000009a1', '00000000-0000-4000-8000-0000000009a2']::uuid[]
+    else array['00000000-0000-4000-8000-0000000009b1']::uuid[] end
+$$;
 create function pg_temp.user_rows(u uuid) returns bigint language sql stable as $$
   select (select count(*) from public.profiles where id = u)
        + (select count(*) from public.subscriptions where user_id = u)
        + (select count(*) from public.my_pcs where user_id = u)
        + (select count(*) from public.pc_keys k join public.my_pcs m using (pc_id) where m.user_id = u)
        + (select count(*) from public.pc_refresh_tokens t
-           where t.pc_id in ('00000000-0000-4000-8000-0000000009a1', '00000000-0000-4000-8000-0000000009a2'))
+           where t.pc_id = any(pg_temp.pcs(u)))
        + (select count(*) from public.pc_keys
-           where pc_id in ('00000000-0000-4000-8000-0000000009a1', '00000000-0000-4000-8000-0000000009a2'))
+           where pc_id = any(pg_temp.pcs(u)))
        + (select count(*) from public.pc_login_codes
            where described_by = u or approved_by = u
-              or pc_id in ('00000000-0000-4000-8000-0000000009a1', '00000000-0000-4000-8000-0000000009a2'))
+              or pc_id = any(pg_temp.pcs(u)))
        + (select count(*) from public.rate_limits where key = u::text)
 $$;
 -- Fingerprint of everything that belongs to user B.
