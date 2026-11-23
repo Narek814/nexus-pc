@@ -30,7 +30,6 @@ export function createHandler(deps: Deps): (req: Request) => Promise<Response> {
     // Per-IP limit before any signature work; the global start fuse only
     // after a valid signature, so unsigned floods cannot exhaust it (E7-2).
     await hit(db, BUCKETS.ipStart, await ipKey(cfg.codePepper, clientIp(req)));
-    await hit(db, BUCKETS.startGlobal, "all");
 
     const stored = fromBytea(await db.rpc("pc_key_get", { p_pc_id: pcId }));
     const signer = stored ?? spki;
