@@ -91,4 +91,52 @@ do $$ begin
   insert into _results values ('cascade_delete');
 end $$;
 
+-- Catalog checks for properties behaviour tests above cannot observe.
+-- Locale check (behavioural), as user A.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated"}', false) \g /dev/null
+do $$ begin
+  begin
+    update public.profiles set locale = 'de' where id = '00000000-0000-0000-0000-00000000000a';
+    raise exception 'FAIL locale_check';
+  exception when check_violation then null;
+  end;
+  insert into _results values ('locale_check');
+end $$;
+reset role;
+select set_config('request.jwt.claims', '', false) \g /dev/null
+
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='profiles'
+      and policyname='profiles_update_own' and cmd='UPDATE'
+      and qual = '(id = auth.uid())' and with_check = '(id = auth.uid())'
+      and roles = '{authenticated}') then
+    raise exception 'FAIL update_policy_definition';
+  end if;
+  insert into _results values ('update_policy_definition');
+end $$;
+
+do $$ begin
+  if not (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.profiles'::regclass) then
+    raise exception 'FAIL rls_enabled_and_forced';
+  end if;
+  insert into _results values ('rls_enabled_and_forced');
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_proc where oid = 'public.handle_new_user()'::regprocedure
+      and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception 'FAIL trigger_fn_definer_empty_search_path';
+  end if;
+  insert into _results values ('trigger_fn_definer_empty_search_path');
+end $$;
+
+do $$ begin
+  if has_table_privilege('anon', 'public.profiles', 'select,insert,update,delete')
+     or has_table_privilege('authenticated', 'public.profiles', 'insert,delete') then
+    raise exception 'FAIL no_extra_grants';
+  end if;
+  insert into _results values ('no_extra_grants');
+end $$;
+
 select 'PASSED ' || count(*) from _results;
