@@ -270,7 +270,6 @@ end $$;
 do $$ declare ok boolean; begin
   if has_function_privilege('anon', 'public.rate_limit_refund(text,text,int)', 'execute')
      or has_function_privilege('authenticated', 'public.rate_limit_refund(text,text,int)', 'execute')
-     or has_function_privilege('authenticated', 'public.rate_limit_refund(text,text,int)', 'execute')
      or not has_function_privilege('service_role', 'public.rate_limit_refund(text,text,int)', 'execute') then
     raise exception 'FAIL refund_service_only';
   end if;
