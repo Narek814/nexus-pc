@@ -660,11 +660,11 @@ do $$ begin
 end $$;
 reset role;
 
--- Global describe/approve limit: 1000 per 10 minutes across all users.
+-- Global describe/approve limit: 10000 per 10 minutes across all users.
 truncate public.rate_limits;
 insert into public.rate_limits
   select 'pc_login_approve_global', 'all',
-         to_timestamp(floor(extract(epoch from now()) / 600) * 600 + d), 1000
+         to_timestamp(floor(extract(epoch from now()) / 600) * 600 + d), 10000
     from (values (0), (600)) v(d);
 set role service_role;
 select pg_temp.st('20000000-0000-0000-0000-0000000005d2', pg_temp.spki(), 'G', 'gl-dev', 'GL-U', pg_temp.spki()) \g /dev/null
@@ -685,6 +685,83 @@ do $$ begin
   end if;
   insert into _results values ('global_limit_no_effect');
 end $$;
+
+-- E3-5d N1: a user over the own limit does not hit the global counter.
+-- 9999 global hits so far; B burns 10 own + 1000 more calls; A still approves.
+truncate public.rate_limits;
+insert into public.rate_limits
+  select 'pc_login_approve_global', 'all',
+         to_timestamp(floor(extract(epoch from now()) / 600) * 600 + d), 9989
+    from (values (0), (600)) v(d);
+set role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
+do $$ declare i int; begin
+  for i in 1..1010 loop
+    perform public.pc_login_approve(pg_temp.h('flood-' || i));
+  end loop;
+  if public.pc_login_approve(pg_temp.h('flood-x')) <> 'rate.limited' then
+    raise exception 'FAIL flood_user_limited';
+  end if;
+end $$;
+reset role;
+do $$ begin
+  if (select max(count) from public.rate_limits where bucket = 'pc_login_approve_global') <> 9999 then
+    raise exception 'FAIL global_not_hit_over_user_limit (%)',
+      (select max(count) from public.rate_limits where bucket = 'pc_login_approve_global');
+  end if;
+  insert into _results values ('global_not_hit_over_user_limit');
+end $$;
+set role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
+do $$ begin
+  if (select status from public.pc_login_describe(pg_temp.h('GL-U'))) <> 'ok' then
+    raise exception 'FAIL other_user_approves_after_flood';
+  end if;
+  insert into _results values ('other_user_approves_after_flood');
+end $$;
+reset role;
+
+-- E3-5d N5: describe by another user does not take over described_by.
+truncate public.rate_limits;
+set role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
+do $$ declare r text; begin
+  select x::text into r from public.pc_login_describe(pg_temp.h('GL-U')) x;
+  if r <> '(code.invalid,,)' then raise exception 'FAIL describe_no_takeover (%)', r; end if;
+  if public.pc_login_approve(pg_temp.h('GL-U')) <> 'code.invalid' then
+    raise exception 'FAIL approve_after_foreign_describe';
+  end if;
+end $$;
+reset role;
+do $$ begin
+  if (select described_by from public.pc_login_codes where user_code_hash = pg_temp.h('GL-U'))
+       <> '00000000-0000-0000-0000-0000000005a1'
+     or (select sum(count) from public.rate_limits where bucket = 'pc_login_approve') <> 2 then
+    raise exception 'FAIL describe_no_takeover_state';
+  end if;
+  insert into _results values ('describe_no_takeover'), ('approve_after_foreign_describe');
+end $$;
+-- The first describer can still describe again and approve.
+set role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
+do $$ begin
+  if pg_temp.ok('GL-U') <> 'ok' then raise exception 'FAIL first_describer_approves'; end if;
+  insert into _results values ('first_describer_approves');
+end $$;
+reset role;
+
+-- E3-5d: nonce longer than 32 bytes is refused (Edge limit mirrored in SQL).
+set role service_role;
+do $$ begin
+  if public.pc_login_start(gen_random_uuid(), pg_temp.spki(), 'N', pg_temp.h('n33-d'), pg_temp.h('N33-U'),
+       pg_temp.spki(), decode(repeat('ab', 33), 'hex'), now()) <> 'request.stale'
+     or public.pc_login_start(gen_random_uuid(), pg_temp.spki(), 'N', pg_temp.h('n32-d'), pg_temp.h('N32-U'),
+       pg_temp.spki(), decode(repeat('ab', 32), 'hex'), now()) <> 'ok' then
+    raise exception 'FAIL nonce_max_32_bytes';
+  end if;
+  insert into _results values ('nonce_max_32_bytes');
+end $$;
+reset role;
 
 -- Existence not revealed: unknown / expired / approved / consumed codes give
 -- identical results and identical side effects (one counter hit each).
