@@ -52,6 +52,24 @@ jobs:
       - run: pip install "zxing-cpp>=2.2,<3" "pillow>=10"
       - run: python -I tools/check_qr.py
 
+  backend-sql:
+    name: Backend SQL tests
+    # ubuntu-latest (24.04) ships PostgreSQL 16 in /usr/lib/postgresql/16/bin,
+    # the same major version as backend/supabase/config.toml (major_version = 16).
+    # The script starts its own throwaway cluster as the runner user: no service, no network.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PG_BIN: /usr/lib/postgresql/16/bin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PostgreSQL 16 binaries
+        run: |
+          test -x "$PG_BIN/initdb" || { echo "PostgreSQL 16 not found in $PG_BIN"; ls /usr/lib/postgresql || true; exit 1; }
+          "$PG_BIN/postgres" --version
+      - name: Run SQL/RLS tests
+        run: bash backend/tests/run_sql_tests.sh
+
   installer:
     name: Installer (build + install/upgrade/uninstall on Windows)
     runs-on: windows-latest
