@@ -17,14 +17,25 @@
 |------|---------|
 | `supabase/config.toml` | Минимальный конфиг Supabase CLI (`project_id = "nexus-pc-local"`), без ключей |
 | `supabase/migrations/*.sql` | Миграции схемы, применяются по порядку имён |
-| `tests/sql/00_supabase_stub.sql` | Заглушка окружения Supabase только для тестов: роли `anon`, `authenticated`, `service_role`, схема `auth`, `auth.users`, `auth.uid()` |
-| `tests/sql/1*.sql` | Тесты RLS; при неудаче — `RAISE EXCEPTION 'FAIL <имя проверки>'`, в конце строка `PASSED <n>` |
+| `tests/sql/00_supabase_stub.sql` | Заглушка окружения Supabase только для тестов: роли `anon`, `authenticated`, `service_role`, схема `auth`, `auth.users`, `auth.uid()`, default privileges как в Supabase (новые объекты `public` выдаются `anon`/`authenticated`/`service_role`, поэтому миграции обязаны делать `revoke`) |
+| `tests/sql/[1-9]*.sql` | Тесты RLS (`10_profiles_rls.sql`, `20_my_pcs_rls.sql`); при неудаче — `RAISE EXCEPTION 'FAIL <имя проверки>'`, в конце строка `PASSED <n>` |
 | `tests/run_sql_tests.sh` | Запуск тестов на временном кластере PostgreSQL |
 | `.gitignore` | Исключает локальный `.env` и служебные каталоги CLI |
 
 Таблицы:
 
 - `public.profiles` (`id` → `auth.users`, каскадное удаление; `created_at`; `locale` ∈ {`en`,`ru`}). Строка создаётся только триггером `on_auth_user_created` (SECURITY DEFINER, `search_path = ''`). Пользователь видит и меняет (только `locale`) свой профиль; вставка и удаление клиентом запрещены.
+- `public.my_pcs` — «визитка» ПК в аккаунте:
+  - `pc_id` (uuid, PK) — идентификатор ПК, как `pcId` в токене прав;
+  - `user_id` (uuid, не null) → `auth.users`, каскадное удаление; владелец ПК;
+  - `display_name` (text, 1..64 символа) — имя ПК для показа;
+  - `platform` (text) ∈ {`windows`};
+  - `added_at` (timestamptz, по умолчанию `now()`) — когда ПК привязан;
+  - `last_seen_at` (timestamptz, может быть null) — последний вход ПК.
+
+  **Запрещено хранить** в этой и любой другой таблице сетевые и аппаратные данные ПК: IP-адреса, MAC, имена хостов в сети, отпечатки оборудования и сертификатов, ключи и токены сопряжения. Тест `exact_columns_no_network_data` сверяет точный список колонок через `information_schema`; новая колонка — только через решение владельца.
+
+  Права: `authenticated` видит, переименовывает (только `display_name`) и удаляет только свои ПК (политики `my_pcs_select_own`, `my_pcs_update_own`, `my_pcs_delete_own`); вставка клиентом запрещена — запись создаёт сервер при входе ПК (E3-5, `service_role`). У `anon` прав нет. Лимит — не больше 20 ПК на пользователя: триггер `my_pcs_limit` (BEFORE INSERT / UPDATE OF `user_id`, функция `my_pcs_enforce_limit`, SECURITY DEFINER, `search_path = ''`, advisory-блокировка по пользователю против гонок) действует для всех ролей, включая `service_role` и владельца таблицы.
 
 ## Как запустить тесты
 
