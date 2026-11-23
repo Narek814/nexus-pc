@@ -6,7 +6,7 @@ import { createHandler } from "../../supabase/functions/pc-token/index.ts";
 import { refreshString } from "../../supabase/functions/_shared/pop.ts";
 import { newRefreshToken } from "../../supabase/functions/_shared/codes.ts";
 import { deps, FakeDb, HASH_ARGS, hex, nonce, NOW, payload, PC, pcKey, post, sign, testEnv, USER_A, USER_B,
-  verifyTokens, type PcKey } from "./_helpers.ts";
+  verifyTokens, captureConsole, assertDefaultLog, type PcKey } from "./_helpers.ts";
 
 const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"];
 
@@ -157,4 +157,34 @@ test("rpc failure -> 500 internal without details", async () => {
   assert.equal(res.status, 500);
   assert.equal(await res.text(), '{"error":"internal"}');
   assert.ok(d.lines.every((l) => !l.includes("xyz")));
+});
+
+test("default logger: console.* gets only fn/status/ms (ok path)", async () => {
+  const k = await pcKey();
+  const old = newRefreshToken();
+  const db = tokenDb(k, () => [{ status: "ok", user_id: USER_A }]);
+  const req = post(await body(k, old));
+  const { result: res, out } = await captureConsole(() =>
+    createHandler(deps(db, testEnv(), { log: undefined, secLog: undefined }))(req));
+  assert.equal(res.status, 200);
+  const o = await res.json();
+  assertDefaultLog(out, "pc-token", 200, [old, o.refreshToken, o.entitlement, USER_A, PC]);
+});
+
+test("default secLog on reuse.detected: console.warn has pcId only, no tokens or user_id", async () => {
+  const k = await pcKey();
+  const old = newRefreshToken();
+  const env = testEnv();
+  const next = createHmac("sha256", env.REFRESH_DERIVE_KEY!).update("nexus-pc-refresh-derive-v1|" + old)
+    .digest("base64url");
+  const db = tokenDb(k, () => [{ status: "reuse.detected", user_id: USER_A }]);
+  const req = post(await body(k, old));
+  const { result: res, out } = await captureConsole(() =>
+    createHandler(deps(db, env, { log: undefined, secLog: undefined }))(req));
+  assert.equal(res.status, 401);
+  const warns = out.filter((x) => x.method === "warn");
+  assert.equal(warns.length, 1);
+  assert.deepEqual(JSON.parse(warns[0].line), { security: "pc.refresh_reuse", pcId: PC });
+  assertDefaultLog(out.filter((x) => x.method !== "warn"), "pc-token", 401, [old, next, USER_A, PC]);
+  for (const x of out) for (const s of [old, next, USER_A, "198.51.100.7"]) assert.ok(!x.line.includes(s));
 });

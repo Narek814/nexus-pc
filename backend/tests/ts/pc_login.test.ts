@@ -7,7 +7,7 @@ import { createHandler as pollHandler } from "../../supabase/functions/pc-login-
 import { consumeString, sha256hex, startString } from "../../supabase/functions/_shared/pop.ts";
 import { b64uEncode } from "../../supabase/functions/_shared/entitlement.ts";
 import { deps, FakeDb, HASH_ARGS, hex, nonce, NOW, payload, PC, pcKey, post, sign, testEnv, USER_A, USER_B,
-  verifyTokens, type PcKey } from "./_helpers.ts";
+  verifyTokens, captureConsole, assertDefaultLog, type PcKey } from "./_helpers.ts";
 
 const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"];
 
@@ -328,4 +328,15 @@ test("default logger: console.* gets only fn/status/ms", async () => {
 
 test("sha256hex(deviceCode) in the signed string is checked against the sent deviceCode", async () => {
   assert.equal((await consumeString(PC, DC, "N", 1)).split("|")[3], await sha256hex(DC));
+});
+
+test("default logger (pc-login-start): console.* gets only fn/status/ms", async () => {
+  const k = await pcKey();
+  const db = startDb(null);
+  const req = post(await startBody(k, k.spkiB64u));
+  const { result: res, out } = await captureConsole(() =>
+    startHandler(deps(db, testEnv(), { log: undefined, secLog: undefined }))(req));
+  assert.equal(res.status, 200);
+  const o = await res.json();
+  assertDefaultLog(out, "pc-login-start", 200, [o.deviceCode, o.userCode, k.spkiB64u, PC, USER_A]);
 });

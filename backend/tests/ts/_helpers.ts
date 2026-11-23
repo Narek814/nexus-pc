@@ -90,3 +90,29 @@ export function payload(token: string): Record<string, unknown> {
 
 // Every bytea argument that is a hash must be exactly 32 bytes.
 export const HASH_ARGS = ["p_device_code_hash", "p_user_code_hash", "p_refresh_hash", "p_old_hash", "p_new_hash"];
+
+// Captures console.log/warn/error/info/debug while `fn` runs (default loggers).
+export const CONSOLE_METHODS = ["log", "warn", "error", "info", "debug"] as const;
+export async function captureConsole<T>(fn: () => Promise<T>):
+  Promise<{ result: T; out: { method: string; line: string }[] }> {
+  const out: { method: string; line: string }[] = [];
+  const c = console as unknown as Record<string, (...a: unknown[]) => void>;
+  const saved = CONSOLE_METHODS.map((m) => c[m]);
+  for (const m of CONSOLE_METHODS) c[m] = (...a: unknown[]) => { out.push({ method: m, line: a.map(String).join(" ") }); };
+  try {
+    return { result: await fn(), out };
+  } finally {
+    CONSOLE_METHODS.forEach((m, i) => { c[m] = saved[i]; });
+  }
+}
+
+// One console.log line with exactly {fn, ms, status}; none of `secrets` anywhere.
+export function assertDefaultLog(out: { method: string; line: string }[], fn: string, status: number,
+  secrets: string[]): void {
+  if (out.length !== 1 || out[0].method !== "log") throw new Error("expected one console.log line: " + JSON.stringify(out));
+  const o = JSON.parse(out[0].line);
+  if (Object.keys(o).sort().join(",") !== "fn,ms,status" || o.fn !== fn || o.status !== status) {
+    throw new Error("bad log line: " + out[0].line);
+  }
+  for (const s of [...secrets, "198.51.100.7"]) if (out[0].line.includes(s)) throw new Error("secret in log");
+}
