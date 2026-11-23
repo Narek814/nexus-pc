@@ -37,7 +37,7 @@ for f in "$BACKEND"/supabase/migrations/*.sql; do
 done
 
 total=0
-for f in "$HERE"/sql/1*.sql; do
+for f in "$HERE"/sql/[1-9]*.sql; do
   out="$(psql_run -f "$f")"
   n="$(printf '%s\n' "$out" | sed -n 's/^PASSED \([0-9]*\)$/\1/p' | tail -n1)"
   [ -n "$n" ] || { echo "no PASSED line in $(basename "$f")" >&2; exit 1; }
