@@ -18,6 +18,9 @@ export const BUCKETS = {
   startGlobal: { name: "edge_start_global", limit: 2000, windowSec: 600 },
   ipPoll: { name: "edge_ip_poll", limit: 300, windowSec: 600 },
   ipToken: { name: "edge_ip_token", limit: 60, windowSec: 3600 },
+  // Shared by pc-login-describe and pc-login-approve (E3-7b).
+  ipApprove: { name: "edge_ip_approve", limit: 30, windowSec: 600 },
+  ipUnlink: { name: "edge_ip_unlink", limit: 30, windowSec: 600 },
 } as const satisfies Record<string, Bucket>;
 
 // Client IP as set by the Supabase Edge platform: first entry of

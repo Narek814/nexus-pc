@@ -196,7 +196,7 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 
 Все SECURITY DEFINER, `search_path = ''`, только чтение; EXECUTE отозван у `public`, `anon`, `authenticated`.
 
-Тесты: `tests/sql/70_entitlement_for_user.sql` — 20 проверок (Pro/Free/revoked/истёкший срок/неизвестный пользователь/null; `entitlement_for_pc` совпадает с `entitlement_for_user` владельца для всех ПК всех тестов и прежний `unlinked`; SECURITY DEFINER и `search_path`; EXECUTE только у `service_role` по каталогу и отказ при вызове `anon`/`authenticated`; функции чтения: ключ есть/нет, живой код, использованный/истёкший/неизвестный — пусто). Всего `run_sql_tests.sh`: **248** проверок (228 прежних + 20).
+Тесты: `tests/sql/70_entitlement_for_user.sql` — 20 проверок (Pro/Free/revoked/истёкший срок/неизвестный пользователь/null; `entitlement_for_pc` совпадает с `entitlement_for_user` владельца для всех ПК всех тестов и прежний `unlinked`; SECURITY DEFINER и `search_path`; EXECUTE только у `service_role` по каталогу и отказ при вызове `anon`/`authenticated`; функции чтения: ключ есть/нет, живой код, использованный/истёкший/неизвестный — пусто). Всего `run_sql_tests.sh`: **248** проверок (228 прежних + 20; с E3-7b — 250).
 
 ## Edge Functions (E3-7a: `pc-login-start`, `pc-login-poll`, `pc-token`)
 
@@ -231,6 +231,8 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 | `edge_start_global` | 2000 за 600 с на всех (ключ `all`; только если лимит IP пройден) | `pc-login-start` |
 | `edge_ip_poll` | 300 за 600 с на IP | `pc-login-poll` |
 | `edge_ip_token` | 60 за 3600 с на IP | `pc-token` |
+| `edge_ip_approve` | 30 за 600 с на IP (общий) | `pc-login-describe`, `pc-login-approve` |
+| `edge_ip_unlink` | 30 за 600 с на IP | `pc-unlink` |
 
 Превышение — `429 {"error":"rate.limited","retryAfter":<длина окна>}`. `rate.limited` из SQL: start — `retryAfter` 600, pc-token — 3600.
 
@@ -248,7 +250,24 @@ HTTP-статусы (вторичны, клиент смотрит на `error`)
 
 **Выпуск токена прав** (`issueEntitlement`): `entitlement_for_user(user_id)` — по `user_id`, который вернул consume или rotate, а не по текущему `my_pcs`; `signEntitlement` с `kid = ENT_KID`, ключом `ENT_SIGNING_KEY_PKCS8_B64`, `iss = ENT_ISS`, `sub = "u_" + b64u(SHA-256("nexus-ent-sub-v1|" + user_id))` (непрозрачен, к email не обратим), `pcId`, `plan`/`features`, `ttlSec = 86400`, `graceSec = 604800`. `state = revoked` → токен `plan: "free"`, `features: []` и `entitlementState: "revoked"`; `unlinked` → `revoked` без токена. Если после `ok` в SQL выпуск всё же падает (сбой БД), ответ `500`, выданный refresh теряется — ПК входит заново (для pc-token повтор в течение 60 с вернёт тот же `new`).
 
-Тесты (`run_ts_tests.sh`, подставная БД): `http.test.ts`, `pop.test.ts`, `codes.test.ts`, `pc_login.test.ts`, `pc_token.test.ts` и прежний `entitlement.test.ts` — всего **44** теста `node --test`; выданные токены (Pro, Free, revoked) проходят `verify_tokens.py` с `iss = nexus-test-issuer`. Вспомогательный модуль — `tests/ts/_helpers.ts` (секреты случайные на каждый прогон).
+Тесты (`run_ts_tests.sh`, подставная БД): `http.test.ts`, `pop.test.ts`, `codes.test.ts`, `pc_login.test.ts`, `pc_token.test.ts` и прежний `entitlement.test.ts` — всего **47** тестов `node --test` (E3-7a; с E3-7b — 59); выданные токены (Pro, Free, revoked) проходят `verify_tokens.py` с `iss = nexus-test-issuer`. Вспомогательный модуль — `tests/ts/_helpers.ts` (секреты случайные на каждый прогон).
+
+### Эндпоинты приложения (E3-7b: `pc-login-describe`, `pc-login-approve`, `pc-unlink`)
+
+Порядок: конфигурация → метод → JWT → тело → лимит IP → SQL от имени пользователя → ответ.
+
+- **JWT.** Нужен заголовок `Authorization: Bearer <JWT>`; Edge проверяет только форму (три части b64u, до 4096 символов) и передаёт JWT в PostgREST как есть (`rpc(..., {userJwt})`): `Authorization` — JWT пользователя, `apikey` — ключ проекта. Так `auth.uid()` работает в SQL. Edge JWT не декодирует. Нет заголовка или форма неверна → `401 auth.required`, SQL не вызывается. PostgREST отверг JWT (401/403: истёк, чужая подпись, роль `anon`) → `401 auth.required` (`_shared/auth.ts`, `_shared/db.ts`). `rate_limit_hit` по-прежнему вызывается с `service_role`.
+- **Лимит IP** (до SQL): `edge_ip_approve` — 30 за 600 с на IP, общий для describe и approve; `edge_ip_unlink` — 30 за 600 с. Лимит аккаунта (10 за 10 мин, `pc_approve_gate`) — в SQL; `rate.limited` из SQL — `retryAfter` 600.
+- **`pc-login-describe`** `{userCode}`: нормализация (верхний регистр, без пробелов и дефисов). Не 8 символов алфавита → `code.invalid` (не `bad.request`), запрос уже учтён в лимите IP, SQL не вызывается. Иначе `pc_login_describe(HMAC(CODE_HASH_PEPPER, код))` → `{displayName, requestedAt}` (`requestedAt` — RFC 3339 UTC без долей секунды, `2026-11-23T10:00:00Z`). Неизвестный, чужой, просроченный, одобренный код — побайтно одинаковый `400 {"error":"code.invalid"}`.
+- **`pc-login-approve`** `{userCode}`: то же, `pc_login_approve` → `{}` / `code.invalid` / `rate.limited`.
+- **`pc-unlink`** `{pcId}` (UUID в нижнем регистре, иначе `bad.request`): `pc_release(pcId)` → `{}` / `404 pc.not_found` (и для чужого ПК).
+- В ответах нет `pcId`, ключей и `user_id`; открытый `userCode`, JWT и IP не попадают в журнал и аргументы `rpc` (в SQL — только HMAC). Любой другой статус SQL — `500 internal`.
+
+### Расписание cleanup (миграция `20261123000008_cleanup_schedule.sql`)
+
+`public.cleanup()` запускается pg_cron каждые 10 минут (задание `nexus-cleanup`, `*/10 * * * *`; при повторном применении задание заменяется). Если расширения `pg_cron` нет (локальный PostgreSQL в тестах), миграция ничего не делает и пишет `NOTICE`. В облаке Supabase pg_cron включается этой же миграцией (`create extension ... with schema pg_catalog`); проверить при первом развёртывании. Тест — `tests/sql/80_cleanup_schedule.sql` (2 проверки: без pg_cron — пустая операция, либо задание есть ровно одно; `cleanup()` — только `service_role`).
+
+Тесты E3-7b — `tests/ts/pc_app.test.ts` (12 тестов): JWT (нет/неверная форма → без SQL), JWT пользователя в `rpc` (и в `PostgrestDb` через подставной `fetch`), отказ PostgREST → `auth.required`, бакеты IP, побайтное совпадение `code.invalid`, требования `http.ts`, перехват `console.*`. Всего `run_ts_tests.sh`: **59** тестов; `run_sql_tests.sh`: **250** проверок.
 
 ## Токен прав (`supabase/functions/_shared/entitlement.ts`)
 
@@ -272,7 +291,7 @@ bash backend/tests/run_sql_tests.sh
 bash backend/tests/run_ts_tests.sh
 ```
 
-Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (44 теста): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
+Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (59 тестов): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
 
 ## Переменные окружения
 

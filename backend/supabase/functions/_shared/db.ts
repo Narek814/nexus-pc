@@ -3,6 +3,7 @@
 
 import { b64uEncode, signEntitlement } from "./entitlement.ts";
 import { importHmacKey } from "./codes.ts";
+import { HttpError } from "./http.ts";
 
 export interface RpcOptions {
   userJwt?: string; // call as the signed-in user instead of service_role
@@ -55,6 +56,11 @@ export class PostgrestDb implements Db {
     });
     if (!res.ok) {
       await res.body?.cancel();
+      // A user JWT rejected by PostgREST (expired, bad signature, anon role
+      // without EXECUTE) is the client's problem: 401 auth.required, not 500.
+      if (opts.userJwt !== undefined && (res.status === 401 || res.status === 403)) {
+        throw new HttpError(401, "auth.required");
+      }
       throw new Error(`rpc ${name} failed: ${res.status}`); // no body, no args
     }
     return await res.json();
