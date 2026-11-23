@@ -44,4 +44,6 @@ for f in "$HERE"/sql/[1-9]*.sql; do
   echo "$(basename "$f"): $n checks passed"
   total=$((total + n))
 done
+# Concurrency checks with parallel psql sessions.
+. "$HERE/race_tests.sh"
 echo "TOTAL: $total checks passed"

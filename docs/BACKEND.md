@@ -20,6 +20,7 @@
 | `tests/sql/00_supabase_stub.sql` | Заглушка окружения Supabase только для тестов: роли `anon`, `authenticated`, `service_role`, схема `auth`, `auth.users`, `auth.uid()`, default privileges как в Supabase (новые таблицы, функции и последовательности `public` выдаются `anon`/`authenticated`/`service_role`, поэтому миграции обязаны делать `revoke`) |
 | `tests/sql/[1-9]*.sql` | Тесты RLS (`10_profiles_rls.sql`, `20_my_pcs_rls.sql`, `30_entitlements.sql`); при неудаче — `RAISE EXCEPTION 'FAIL <имя проверки>'`, в конце строка `PASSED <n>` |
 | `tests/run_sql_tests.sh` | Запуск тестов на временном кластере PostgreSQL |
+| `tests/race_tests.sh` | Тесты гонок параллельными `psql`; подключается из `run_sql_tests.sh` |
 | `supabase/functions/_shared/entitlement.ts` | Подпись токена прав ES256 (WebCrypto) |
 | `tests/ts/entitlement.test.ts` | Тесты подписи (`node --test`) |
 | `tests/py/verify_tokens.py` | Эталонная Python-проверка токенов и сверка с фикстурами |
@@ -56,6 +57,35 @@
 - `current_period_end = now()` — срок уже не действует (сравнение строгое `>`): `active`/`free`.
 - `active` с `current_period_end = NULL` — Pro **не** даётся (`NULL > now()` ложно): `active`/`free`. Подписка без даты окончания считается неоплаченной; сервер оплаты обязан всегда ставить дату.
 - Несколько подписок с одинаковыми `updated_at` и `created_at` — «последняя» определяется по `id desc`; результат стабилен между вызовами.
+
+## Вход ПК и лимиты частоты (миграция `20261123000005_pc_login.sql`)
+
+Схема device-code: ПК показывает короткий код, пользователь вводит его в приложении, ПК опрашивает сервер. Коды генерирует Edge Function; в базу попадают **только SHA-256 хэши** (32 байта, `check`), открытые коды не хранятся.
+
+Таблицы (RLS включена и принудительна, политик нет, доступ только у `service_role`; `anon` и `authenticated` прав не имеют):
+
+- `public.pc_keys` (`pc_id` PK → `my_pcs` с каскадным удалением, `public_key_spki` bytea, `created_at`) — публичный ключ ПК для подписи запросов (E3-6). Это ключ входа в аккаунт, а не ключ сопряжения: доступа к ПК он не даёт.
+- `public.pc_login_codes` (`id`, `pc_id`, `public_key_spki`, `display_name`, `device_code_hash` unique, `user_code_hash` unique, `approved_by`, `approved_at`, `consumed_at`, `created_at`, `expires_at = now() + 10 мин`, `attempts` — число опросов в состоянии `pending`).
+- `public.rate_limits` (`bucket`, `key`, `window_start`, `count`; PK из трёх первых) — счётчики фиксированного окна.
+
+Функции (все SECURITY DEFINER, `search_path = ''`). Ошибки предметной области возвращаются **значением**, а не исключением: иначе откат транзакции стёр бы увеличение счётчика попыток.
+
+| Функция | Кто вызывает | Результат |
+|---------|--------------|-----------|
+| `rate_limit_hit(bucket, key, limit, window_sec) → boolean` | `service_role` (Edge: вход, коды, refresh) | `true`, если попытка в пределах лимита; счётчик растёт при каждом вызове |
+| `pc_login_start(pc_id, spki, name, device_code_hash, user_code_hash) → text` | `service_role` | `ok` / `rate.limited` (больше 5 стартов за 10 мин на `pc_id`) |
+| `pc_login_approve(user_code_hash) → text` | `authenticated`, `approved_by = auth.uid()` | `ok` / `code.invalid` / `rate.limited` (больше 10 попыток за 10 мин на пользователя, неудачные тоже считаются) |
+| `pc_login_consume(device_code_hash) → (status, pc_id, user_id, rebound)` | `service_role` | `ok` / `pending` / `code.invalid` / `pcs.limit` |
+| `cleanup()` | `service_role`; расписание pg_cron — в облаке, позже | удаляет просроченные и использованные коды и окна `rate_limits` старше суток |
+| `pc_revoke_refresh_tokens(pc_id, old_user)` | только изнутри `pc_login_consume` | заглушка; тело — в E3-6 |
+
+Правила:
+- `pc_login_approve`: неизвестный, просроченный, уже одобренный и использованный код дают одинаковый `code.invalid` одним и тем же путём (одна проба уникального индекса, один шаг счётчика) — существование кода не раскрывается ни ответом, ни побочным эффектом.
+- `pc_login_consume` одноразовый: строка кода блокируется `FOR UPDATE`, из параллельных вызовов `ok` получает ровно один. Без одобрения — `pending`; использованный, просроченный, неизвестный — `code.invalid`.
+- После одобрения создаётся или обновляется `my_pcs` (имя из кода, `platform = windows`) и `pc_keys`. Если ПК был привязан к другому аккаунту — **перепривязка к одобрившему** (решение владельца), `rebound = true` и вызов `pc_revoke_refresh_tokens` для старой привязки.
+- Лимит 20 ПК соблюдается и при consume: при переполнении — `pcs.limit`, код не тратится и годен до истечения срока.
+
+Тесты: `tests/sql/50_pc_login.sql` (44 проверки) и `tests/race_tests.sh` (вызывается из `run_sql_tests.sh`; параллельные сессии `psql`: 4 одновременных consume одного кода → ровно один `ok`; 25 одновременных consume для одного аккаунта → ровно 20 ПК).
 
 ## Токен прав (`supabase/functions/_shared/entitlement.ts`)
 
