@@ -19,7 +19,7 @@ for i in 1 2 3 4; do
   psql_run >"$race_dir/c$i" <<SQL &
 begin;
 set local role service_role;
-select status from public.pc_login_consume($(h race-dev), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_login_consume($(h race-dev), sha256(uuid_send(gen_random_uuid())), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
 select pg_sleep(0.5) \g /dev/null
 commit;
 SQL
@@ -49,7 +49,7 @@ for g in $(seq 1 25); do
 begin;
 set local role service_role;
 select pg_sleep(0.2) \g /dev/null
-select status from public.pc_login_consume($(h "lim-d$g"), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_login_consume($(h "lim-d$g"), sha256(uuid_send(gen_random_uuid())), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
 select pg_sleep(0.3) \g /dev/null
 commit;
 SQL
@@ -83,7 +83,7 @@ for s in a1:twin-a:34 a2:twin-a:34 b1:twin-b:35 b2:twin-b:35; do
 begin;
 set local role service_role;
 select pg_sleep(0.2) \g /dev/null
-select status from public.pc_login_consume($(h "$dev"), decode(repeat('$key',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_login_consume($(h "$dev"), sha256(uuid_send(gen_random_uuid())), decode(repeat('$key',91),'hex'), uuid_send(gen_random_uuid()), now());
 select pg_sleep(0.3) \g /dev/null
 commit;
 SQL
@@ -121,7 +121,7 @@ err="$(cat "$race_dir"/n? | grep -c 'ERROR' || true)"
 race_passed=$((race_passed + 1))
 
 # 5. pc_release by the owner in parallel with consume of an approved rebind
-#    code of the same PC (16 PCs at once). Same lock order in both (pc_lock,
+#    code of the same PC (16 PCs, two forced orders, see barrier below). Same lock order in both (pc_lock,
 #    then code rows): no deadlock / ERROR; per PC exactly one of
 #    {consume ok, release ok} wins and the final state matches the winner.
 psql_run >/dev/null <<SQL
@@ -139,27 +139,112 @@ select public.pc_login_start(('30000000-0000-0000-0000-0000000d' || lpad(g::text
   from generate_series(1,16) g;
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace7', approved_at = now()
  where pc_id::text like '30000000-0000-0000-0000-0000000d%';
+-- Refresh tokens of the old binding (E3-6): must be revoked whoever wins.
+insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
+  select ('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid, gen_random_uuid(),
+         sha256(convert_to('rel-old' || g,'UTF8')) from generate_series(1,16) g;
 SQL
-for g in $(seq 1 16); do
-  pc="30000000-0000-0000-0000-0000000d$(printf '%04d' "$g")"
-  psql_run >"$race_dir/rc$g" 2>&1 <<SQL &
+
+# Deterministic barrier (test-only, restored below). A session with
+# nexus.barrier = on, right after it takes the real pc_lock, waits on shared
+# advisory lock 4242, held exclusively by a controller session. The controller
+# releases it only when the expected number of sessions (application_name
+# race_w) is waiting on a lock, so the interleaving is forced every run.
+psql_run >/dev/null <<'SQL'
+create or replace function public.pc_lock(p_pc_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_pc_id::text, 20261124));
+  if pg_catalog.current_setting('nexus.barrier', true) = 'on' then
+    perform pg_catalog.pg_advisory_xact_lock_shared(4242);
+  end if;
+end $$;
+revoke all on function public.pc_lock(uuid) from public, anon, authenticated, service_role;
+SQL
+
+# waiters: number of race_w sessions waiting on a lock.
+waiters() {
+  psql_run -c "select count(*) from pg_stat_activity where application_name = 'race_w' and wait_event_type = 'Lock'"
+}
+# wait_waiters N: poll up to 10 s until N race_w sessions wait on a lock.
+wait_waiters() {
+  local i=0
+  while [ "$(waiters)" -lt "$1" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ "$(waiters)" -ge "$1" ]
+}
+# barrier_up: start the controller in the background and wait until it holds
+# the barrier. barrier_down N: let it release once N sessions are waiting.
+barrier_up() {
+  rm -f "$race_dir/go"
+  psql_run >"$race_dir/ctl" 2>&1 <<'SQL' &
+select pg_advisory_lock(4242) \g /dev/null
+create function pg_temp.hold() returns void language plpgsql as $$
+declare i int := 0;
+begin
+  -- Released by barrier_down through the "release" row below.
+  loop
+    perform pg_stat_clear_snapshot();
+    exit when exists (select 1 from pg_stat_activity where application_name = 'race_go');
+    exit when i > 400;
+    perform pg_sleep(0.05);
+    i := i + 1;
+  end loop;
+end $$;
+select pg_temp.hold() \g /dev/null
+select pg_advisory_unlock(4242) \g /dev/null
+SQL
+  ctl_pid=$!
+  local i=0
+  until [ "$(psql_run -c "select count(*) from pg_locks where locktype = 'advisory' and objid = 4242 and granted")" = 1 ] \
+        || [ $i -ge 200 ]; do sleep 0.05; i=$((i + 1)); done
+}
+barrier_down() {
+  local ok=0
+  wait_waiters "$1" && ok=1
+  # A short session named race_go tells the controller to release.
+  psql_run -c "set application_name = 'race_go'; select pg_sleep(0.5)" >/dev/null &
+  wait "$ctl_pid"
+  [ $ok = 1 ]
+}
+
+rel_consume() {  # $1 = g, $2 = barrier on/off
+  psql_run >"$race_dir/rc$1" 2>&1 <<SQL &
+set application_name = 'race_w';
 begin;
+set local nexus.barrier = '$2';
 set local role service_role;
-select pg_sleep(0.2) \g /dev/null
-select 'consume:' || status from public.pc_login_consume($(h "rel-d$g"), decode(repeat('37',91),'hex'), uuid_send(gen_random_uuid()), now());
-select pg_sleep(0.3) \g /dev/null
+select 'consume:' || status from public.pc_login_consume($(h "rel-d$1"), $(h "rel-new$1"), decode(repeat('37',91),'hex'), uuid_send(gen_random_uuid()), now());
 commit;
 SQL
-  psql_run >"$race_dir/rr$g" 2>&1 <<SQL &
+}
+rel_release() {  # $1 = g, $2 = barrier on/off
+  psql_run >"$race_dir/rr$1" 2>&1 <<SQL &
+set application_name = 'race_w';
 begin;
+set local nexus.barrier = '$2';
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000ace6","role":"authenticated"}', true) \g /dev/null
-select pg_sleep(0.2) \g /dev/null
-select 'release:' || public.pc_release('$pc');
-select pg_sleep(0.3) \g /dev/null
+select 'release:' || public.pc_release('30000000-0000-0000-0000-0000000d$(printf '%04d' "$1")');
 commit;
 SQL
-done
+}
+# Phase A (PCs 1..8): consume holds pc_lock and stops at the barrier, then
+# release starts and must wait. Phase B (PCs 9..16): the other way round.
+# A consume that locked the code row before pc_lock deadlocks in phase B
+# every run (release updates the code rows after the barrier).
+fails=0
+barrier_up
+for g in 1 2 3 4 5 6 7 8; do rel_consume $g on; done
+wait_waiters 8 || fails=$((fails + 1))
+for g in 1 2 3 4 5 6 7 8; do rel_release $g off; done
+barrier_down 16 || fails=$((fails + 1))
+wait
+barrier_up
+for g in 9 10 11 12 13 14 15 16; do rel_release $g on; done
+wait_waiters 8 || fails=$((fails + 1))
+for g in 9 10 11 12 13 14 15 16; do rel_consume $g off; done
+barrier_down 16 || fails=$((fails + 1))
 wait
 err="$(cat "$race_dir"/rc* "$race_dir"/rr* | grep -c 'ERROR' || true)"
 bad=0
@@ -167,14 +252,68 @@ for g in $(seq 1 16); do
   pc="30000000-0000-0000-0000-0000000d$(printf '%04d' "$g")"
   c="$(cat "$race_dir/rc$g")"; r="$(cat "$race_dir/rr$g")"
   owner="$(psql_run -c "select coalesce((select user_id::text from public.my_pcs where pc_id = '$pc'), 'none')")"
-  if [ "$c" = "consume:ok" ] && [ "$r" = "release:pc.not_found" ] \
-     && [ "$owner" = "00000000-0000-0000-0000-00000000ace7" ]; then :
-  elif [ "$c" = "consume:code.invalid" ] && [ "$r" = "release:ok" ] && [ "$owner" = "none" ]; then :
-  else bad=$((bad + 1)); echo "pc $g: $c / $r / $owner" >&2; fi
+  # live refresh tokens of this PC: the new one only (consume won) or none.
+  live="$(psql_run -c "select coalesce(string_agg(case when token_hash = sha256(convert_to('rel-new$g','UTF8')) then 'new' else 'old' end, ','), 'none') from public.pc_refresh_tokens where pc_id = '$pc' and revoked_at is null")"
+  if [ $g -le 8 ] && [ "$c" = "consume:ok" ] && [ "$r" = "release:pc.not_found" ] \
+     && [ "$owner" = "00000000-0000-0000-0000-00000000ace7" ] && [ "$live" = "new" ]; then :
+  elif [ $g -gt 8 ] && [ "$c" = "consume:code.invalid" ] && [ "$r" = "release:ok" ] \
+     && [ "$owner" = "none" ] && [ "$live" = "none" ]; then :
+  else bad=$((bad + 1)); echo "pc $g: $c / $r / $owner / $live" >&2; fi
 done
-[ "$err" = 0 ] && [ "$bad" = 0 ] \
-  || { echo "FAIL race_release_vs_consume errors=$err bad=$bad" >&2; cat "$race_dir"/rc* "$race_dir"/rr* >&2; exit 1; }
+[ "$err" = 0 ] && [ "$bad" = 0 ] && [ "$fails" = 0 ] \
+  || { echo "FAIL race_release_vs_consume errors=$err bad=$bad barrier_fails=$fails" >&2; cat "$race_dir"/rc* "$race_dir"/rr* >&2; exit 1; }
 race_passed=$((race_passed + 1))
+
+# 6. Four sessions rotate one refresh token at once (E3-6). Session 1 takes
+#    pc_lock and stops at the barrier; sessions 2..4 must wait for it.
+#    Exactly one 'ok' (session 1); the next one sees a used token
+#    ('reuse.detected', family revoked), the rest 'revoked'. No ERROR.
+psql_run >/dev/null <<SQL
+insert into auth.users values ('00000000-0000-0000-0000-00000000ace8', 'race8@example.test');
+insert into public.my_pcs (pc_id, user_id, display_name, platform)
+  values ('30000000-0000-0000-0000-00000000ace8', '00000000-0000-0000-0000-00000000ace8', 'Rot', 'windows');
+insert into public.pc_keys values ('30000000-0000-0000-0000-00000000ace8', decode(repeat('38',91),'hex'));
+insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
+  values ('30000000-0000-0000-0000-00000000ace8', gen_random_uuid(), $(h rot-a));
+SQL
+rot() {  # $1 = i, $2 = barrier on/off
+  psql_run >"$race_dir/ro$1" 2>&1 <<SQL &
+set application_name = 'race_w';
+begin;
+set local nexus.barrier = '$2';
+set local role service_role;
+select status from public.pc_rotate_refresh($(h rot-a), $(h "rot-b$1"), '30000000-0000-0000-0000-00000000ace8',
+  decode(repeat('38',91),'hex'), uuid_send(gen_random_uuid()), now());
+commit;
+SQL
+}
+fails=0
+barrier_up
+rot 1 on
+wait_waiters 1 || fails=$((fails + 1))
+for i in 2 3 4; do rot $i off; done
+barrier_down 4 || fails=$((fails + 1))
+wait
+first="$(cat "$race_dir/ro1")"
+ok="$(cat "$race_dir"/ro? | grep -c '^ok$' || true)"
+reuse="$(cat "$race_dir"/ro? | grep -c '^reuse.detected$' || true)"
+rev="$(cat "$race_dir"/ro? | grep -c '^revoked$' || true)"
+err="$(cat "$race_dir"/ro? | grep -c 'ERROR' || true)"
+live="$(psql_run -c "select count(*) from public.pc_refresh_tokens where pc_id = '30000000-0000-0000-0000-00000000ace8' and revoked_at is null")"
+[ "$first" = ok ] && [ "$ok" = 1 ] && [ "$reuse" = 1 ] && [ "$rev" = 2 ] && [ "$err" = 0 ] \
+  && [ "$live" = 0 ] && [ "$fails" = 0 ] \
+  || { echo "FAIL race_rotate_once first=$first ok=$ok reuse=$reuse revoked=$rev errors=$err live=$live barrier_fails=$fails" >&2; cat "$race_dir"/ro? >&2; exit 1; }
+race_passed=$((race_passed + 1))
+
+# Restore the real pc_lock.
+psql_run >/dev/null <<'SQL'
+create or replace function public.pc_lock(p_pc_id uuid)
+returns void language sql security definer set search_path = '' as $$
+  select pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_pc_id::text, 20261124));
+$$;
+revoke all on function public.pc_lock(uuid) from public, anon, authenticated, service_role;
+SQL
 
 echo "race_tests: $race_passed checks passed"
 total=$((total + race_passed))

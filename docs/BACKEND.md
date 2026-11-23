@@ -101,10 +101,10 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 | `pc_login_start(pc_id, spki, name, device_code_hash, user_code_hash, signer_spki, nonce, ts) → text` | `service_role` | `ok` / `pc.key_required` / `request.stale` / `nonce.replay` / `rate.limited` (больше 5 принятых стартов за 10 мин на `pc_id` или уже 3 живых кода у `pc_id`) |
 | `pc_login_describe(user_code_hash) → (status, display_name, requested_at)` | `authenticated` | шаг 1: `ok` с именем ПК и временем запроса (без `pc_id` и ключей) / `code.invalid` / `rate.limited`; помечает код `described_by = auth.uid()` |
 | `pc_login_approve(user_code_hash) → text` | `authenticated` | шаг 2: `ok` / `code.invalid` / `rate.limited`; только если тот же пользователь сделал describe |
-| `pc_login_consume(device_code_hash, signer_spki, nonce, ts) → (status, pc_id, user_id, rebound)` | `service_role` | `ok` / `pending` / `slow_down` / `code.invalid` / `pcs.limit` / `pc.key_required` / `request.stale` / `nonce.replay` |
+| `pc_login_consume(device_code_hash, refresh_hash, signer_spki, nonce, ts) → (status, pc_id, user_id, rebound)` | `service_role` | `ok` / `pending` / `slow_down` / `code.invalid` / `pcs.limit` / `pc.key_required` / `request.stale` / `nonce.replay`; при `ok` сохраняет `refresh_hash` как первый refresh новой семьи (E3-6); `refresh_hash` не 32 байта — исключение |
 | `pc_release(pc_id) → text` | `authenticated`, владелец | `ok` (удаляет `my_pcs` и каскадно `pc_keys`, вызывает `pc_revoke_refresh_tokens`, аннулирует живые коды ПК) / `pc.not_found` (и для чужого ПК) |
-| `cleanup()` | `service_role`; расписание pg_cron — в облаке, позже | удаляет просроченные и использованные коды, nonce старше 1 ч, окна `rate_limits` старше суток |
-| `pc_revoke_refresh_tokens(pc_id, old_user)` | только изнутри `pc_login_consume` и `pc_release` | заглушка; тело — в E3-6 |
+| `cleanup()` | `service_role`; расписание pg_cron — в облаке, позже | удаляет просроченные и использованные коды, nonce старше 1 ч, окна `rate_limits` старше суток, просроченные refresh-токены ПК |
+| `pc_revoke_refresh_tokens(pc_id, old_user)` | только изнутри `pc_login_consume` и `pc_release` | вызывает `pc_revoke_all(pc_id)` (E3-6) |
 | `pc_nonce_use`, `pc_lock`, `pc_approve_gate` | только изнутри функций выше | проверка ts/nonce; advisory-блокировка по `pc_id`; общий лимит describe/approve |
 
 Правила:
@@ -128,7 +128,37 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 - Строгий разбор SPKI: только `id-ecPublicKey` с кривой P-256 (`prime256v1`), несжатая точка на кривой, без лишних байт; другое — отказ до вызова SQL.
 - До запуска — расписание `cleanup()` в pg_cron (например, раз в 10 мин).
 
-Тесты: `tests/sql/50_pc_login.sql` (102 проверки) и `tests/race_tests.sh` (вызывается из `run_sql_tests.sh`; параллельные сессии `psql`: 4 одновременных consume одного кода → ровно один `ok`; 25 одновременных consume для одного аккаунта → ровно 20 ПК; два одобренных кода одного нового `pc_id`, по два consume на каждый → ровно один `ok`, ни одного исключения; один nonce в 4 параллельных start → ровно один `ok`; `pc_release` владельцем параллельно с consume одобренного кода перепривязки, 16 ПК → без deadlock и ошибок, на каждый ПК выигрывает ровно одно из двух, итоговое состояние соответствует победителю).
+Тесты: `tests/sql/50_pc_login.sql` (102 проверки) и `tests/race_tests.sh` (вызывается из `run_sql_tests.sh`; параллельные сессии `psql`: 4 одновременных consume одного кода → ровно один `ok`; 25 одновременных consume для одного аккаунта → ровно 20 ПК; два одобренных кода одного нового `pc_id`, по два consume на каждый → ровно один `ok`, ни одного исключения; один nonce в 4 параллельных start → ровно один `ok`; `pc_release` владельцем параллельно с consume одобренного кода перепривязки, 16 ПК → без deadlock и ошибок, на каждый ПК выигрывает ровно одно из двух, итоговое состояние соответствует победителю, refresh старой привязки отозваны).
+
+## Refresh-токены ПК (миграция `20261123000006_pc_refresh.sql`, E3-6)
+
+Решение владельца: срок refresh ПК — **90 дней, скользящий** (каждая ротация выдаёт новый токен на 90 дней). Токен генерирует Edge Function (не меньше 256 бит из CSPRNG); в базу попадает только 32-байтный хэш (HMAC-SHA-256 с `CODE_HASH_PEPPER` или отдельным pepper — решает E3-7; тесты используют SHA-256).
+
+Таблица `public.pc_refresh_tokens` (`id`, `pc_id` → `my_pcs` с каскадным удалением, `family_id`, `token_hash` unique, `created_at`, `used_at`, `revoked_at`, `expires_at = now() + 90 дней`). RLS включена и принудительна, политик нет, права только у `service_role`. Привязки к пользователю в строке нет: владелец берётся из `my_pcs`, поэтому смена владельца и удаление ПК сразу действуют на токены. У ПК одна живая семья: выдача новой семьи отзывает остальные.
+
+| Функция | Кто вызывает | Результат |
+|---------|--------------|-----------|
+| `pc_rotate_refresh(old_hash, new_hash, pc_id, signer_spki, nonce, ts) → (status, user_id)` | `service_role` (Edge, подписанный запрос ПК) | `ok` + владелец ПК (Edge выдаёт по нему токен прав) / `reuse.detected` / `revoked` / `rate.limited` / `pc.key_required` / `request.stale` / `nonce.replay`; `new_hash` не 32 байта — исключение |
+| `pc_issue_refresh(pc_id, hash) → id` | только изнутри `pc_login_consume` при `ok` | новая семья с первым токеном; прочие семьи ПК отзываются |
+| `pc_revoke_all(pc_id)` | только изнутри (`pc_issue_refresh`, `pc_revoke_refresh_tokens` ← перепривязка и `pc_release`) | отзывает все живые токены ПК |
+
+Правила ротации:
+- Действующий неиспользованный токен → `used_at`, новый токен в той же семье, `ok`.
+- Уже использованный → отзывается **вся семья**, `reuse.detected` (клон; нужен повторный вход ПК). Новый токен не выдаётся.
+- Отозванный, просроченный, неизвестный, чужого `pc_id`, а также ПК, удалённый из `my_pcs`, → одинаковый `revoked`.
+- Подпись запроса — ключом из `pc_keys` (`p_signer_spki`), иначе `pc.key_required`. Лимит — 30 принятых ротаций в час на `pc_id` (бакет `pc_refresh`, считается после проверки ключа).
+- Первый refresh выдаётся только в `pc_login_consume`, в той же транзакции, что возвращает `ok`: Edge генерирует токен на каждый опрос и передаёт его хэш; сохраняется он ровно один раз — при `ok`. Отдельной выдачи refresh для `service_role` нет. Edge отдаёт токен ПК только при `ok`.
+- Перепривязка к другому аккаунту и `pc_release` отзывают токены старой привязки (`pc_revoke_refresh_tokens` → `pc_revoke_all`); удаление строки `my_pcs` удаляет их каскадно.
+
+Подписанная строка ротации (проверяет Edge, E3-7): `nexus-pc-login-v1|refresh|{pcId}|{sha256hex(refreshToken)}|{nonceB64u}|{ts}`.
+
+**Nonce — общий механизм E3-5** (`pc_nonce_use` + `pc_login_nonces`), а не отдельная таблица `pc_request_nonces(pc_id, nonce)`. Причины: те же требования (16..32 байт, ±300 с, одноразовость, очистка в `cleanup()` через 1 ч) уже реализованы и проверены; глобальная уникальность nonce строже уникальности в паре `(pc_id, nonce)` и при 128+ битах случайности не даёт ложных отказов; подписанная строка содержит имя операции, так что nonce одной операции не подходит к другой.
+
+**Порядок блокировок** (как в E3-5d): `pc_lock(pc_id)` → строка `my_pcs` (`FOR KEY SHARE` в rotate, `FOR UPDATE` в consume, `DELETE` в release) → строки токенов (`FOR UPDATE`). Взаимной блокировки rotate ↔ consume ↔ release нет; из параллельных ротаций одного токена `ok` получает ровно одна.
+
+Функции `000005` (`pc_login_consume`, `pc_revoke_refresh_tokens`, `cleanup`) ссылаются на объекты `000006`; plpgsql разрешает имена при вызове, миграции применяются вместе. Миграции ещё не выпущены, поэтому `000005` поправлена на месте (новый параметр consume).
+
+Тесты: `tests/sql/60_pc_refresh.sql` (47 проверок) и `tests/race_tests.sh`, проверка 6: четыре сеанса ротируют один токен → ровно один `ok`, один `reuse.detected`, два `revoked`, семья отозвана. Проверки 5 и 6 **детерминированы**: на время теста `pc_lock` подменяется тестовой версией, которая после настоящей блокировки ждёт разделяемую advisory-блокировку 4242 (`nexus.barrier = on`); сеанс-контроллер держит её, пока нужное число сеансов не встанет в ожидание блокировки (`pg_stat_activity`), затем отпускает; в конце `pc_lock` восстанавливается. В проверке 5 оба порядка (consume первым и release первым) задаются принудительно в каждом прогоне.
 
 ## Токен прав (`supabase/functions/_shared/entitlement.ts`)
 

@@ -19,6 +19,9 @@ create function pg_temp.spki() returns bytea language sql immutable
   as $$ select pg_temp.k(0) $$;
 create function pg_temp.nn() returns bytea language sql volatile
   as $$ select uuid_send(gen_random_uuid()) $$;
+-- Fresh 32-byte refresh token hash for a consume poll (E3-6).
+create function pg_temp.rh() returns bytea language sql volatile
+  as $$ select sha256(uuid_send(gen_random_uuid())) $$;
 create function pg_temp.as_user(u text) returns void language sql
   as $$ select set_config('request.jwt.claims',
           json_build_object('sub', u, 'role', 'authenticated')::text, false) $$;
@@ -35,7 +38,7 @@ create function pg_temp.co(dev text, key bytea)
 begin
   update public.pc_login_codes set last_poll_at = last_poll_at - interval '10 seconds'
    where device_code_hash = pg_temp.h(dev);
-  return query select * from public.pc_login_consume(pg_temp.h(dev), key, pg_temp.nn(), now());
+  return query select * from public.pc_login_consume(pg_temp.h(dev), pg_temp.rh(), key, pg_temp.nn(), now());
 end $$;
 -- Two-step approval by the current user.
 create function pg_temp.ok(usr text) returns text language plpgsql volatile as $$
@@ -65,7 +68,7 @@ end $$;
 do $$ declare f text; r text; begin
   foreach f in array array['public.rate_limit_hit(text,text,int,int)',
       'public.pc_login_start(uuid,bytea,text,bytea,bytea,bytea,bytea,timestamptz)',
-      'public.pc_login_consume(bytea,bytea,bytea,timestamptz)', 'public.cleanup()',
+      'public.pc_login_consume(bytea,bytea,bytea,bytea,timestamptz)', 'public.cleanup()',
       'public.pc_revoke_refresh_tokens(uuid,uuid)', 'public.pc_nonce_use(bytea,timestamptz)',
       'public.pc_lock(uuid)', 'public.pc_approve_gate(uuid)'] loop
     foreach r in array array['anon','authenticated'] loop
@@ -116,7 +119,7 @@ do $$ declare t text; begin
     end;
   end loop;
   begin
-    perform * from public.pc_login_consume(pg_temp.h('dev-1'), pg_temp.spki(), pg_temp.nn(), now());
+    perform * from public.pc_login_consume(pg_temp.h('dev-1'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(), now());
     raise exception 'FAIL authenticated_cannot_consume';
   exception when insufficient_privilege then null;
   end;
@@ -382,7 +385,8 @@ end $$;
 reset role;
 drop table public._revoke_log;
 create or replace function public.pc_revoke_refresh_tokens(p_pc_id uuid, p_old_user uuid)
-returns void language plpgsql security definer set search_path = '' as $$ begin return; end $$;
+returns void language plpgsql security definer set search_path = '' as $$
+begin perform public.pc_revoke_all(p_pc_id); end $$;
 revoke all on function public.pc_revoke_refresh_tokens(uuid, uuid) from public, anon, authenticated, service_role;
 
 -- Binding changed between start and consume: two first-binding codes of one new
@@ -535,7 +539,7 @@ do $$ declare n bytea := pg_temp.nn(); s text; r record; begin
   s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
     pg_temp.h('nc-d2'), pg_temp.h('nc-u2'), pg_temp.spki(), n, now());
   if s <> 'nonce.replay' then raise exception 'FAIL start_nonce_replay (%)', s; end if;
-  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.spki(), n, now());
+  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.rh(), pg_temp.spki(), n, now());
   if r.status <> 'nonce.replay' then raise exception 'FAIL consume_nonce_replay (%)', r; end if;
   s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
     pg_temp.h('nc-d3'), pg_temp.h('nc-u3'), pg_temp.spki(), pg_temp.nn(), now() - interval '301 seconds');
@@ -543,7 +547,7 @@ do $$ declare n bytea := pg_temp.nn(); s text; r record; begin
   s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
     pg_temp.h('nc-d4'), pg_temp.h('nc-u4'), pg_temp.spki(), pg_temp.nn(), now() + interval '301 seconds');
   if s <> 'request.stale' then raise exception 'FAIL start_ts_future_stale (%)', s; end if;
-  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.spki(), pg_temp.nn(),
+  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(),
     now() - interval '301 seconds');
   if r.status <> 'request.stale' then raise exception 'FAIL consume_ts_stale (%)', r; end if;
   s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
@@ -572,9 +576,9 @@ end $$;
 -- Poll rate: second poll within 5 s -> slow_down; 151st poll voids the code.
 set role service_role;
 select pg_temp.st('20000000-0000-0000-0000-0000000005c4', pg_temp.spki(), 'Poll', 'pl-d', 'PL-U', pg_temp.spki()) \g /dev/null
-select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.spki(), pg_temp.nn(), now()) \g /dev/null
+select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(), now()) \g /dev/null
 do $$ begin
-  if (select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.spki(), pg_temp.nn(), now()))
+  if (select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(), now()))
      <> 'slow_down' then
     raise exception 'FAIL poll_within_5s_slow_down';
   end if;
