@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Nexus.Core.Entitlements;
 using Nexus.Core.Power;
 using Nexus.Windows;
 using Nexus.Core.Pairing;
@@ -100,6 +101,19 @@ internal sealed class CommandDispatcher(AgentServices services)
     private async Task<HandlerResult> RunAsync(ValidatedCommand command, ConnectionSession session, CancellationToken cancellationToken)
     {
         var id = command.Envelope.Id;
+        // ENT-2: the plan is checked only here, after every validator step (permission of the device first), and
+        // only while entitlement keys are pinned in this build (see EntitlementTrust.IsConfigured).
+        if (services.Entitlements.Enforced)
+        {
+            if (command.Spec.Type == "account.refresh")
+            {
+                return AccountRefresh(id);
+            }
+            if (PlanCheck(id, command) is { } refused)
+            {
+                return refused;
+            }
+        }
         if (NotYet.TryGetValue(command.Spec.Type, out var reason))
         {
             return Fail(id, ErrorCodes.NotImplemented, reason);
@@ -110,7 +124,8 @@ internal sealed class CommandDispatcher(AgentServices services)
             var forwarded = await ForwardToTrayAsync(id, command, session, cancellationToken).ConfigureAwait(false);
             // Linked lighting only for devices that also hold the rgb permission.
             if (forwarded.Ok && command.Payload is ProfileRefPayload { } run && command.Spec.Type == "profiles.run"
-                && session.CurrentClient().Permissions.HasFlag(Permission.Rgb))
+                && session.CurrentClient().Permissions.HasFlag(Permission.Rgb)
+                && (!services.Entitlements.Enforced || services.Entitlements.Current.Has(PlanPolicy.RgbSync)))
             {
                 return await WithLightingAsync(id, forwarded, run.ProfileId, cancellationToken).ConfigureAwait(false);
             }
@@ -157,16 +172,103 @@ internal sealed class CommandDispatcher(AgentServices services)
         };
     }
 
-    private JsonObject Hello(ConnectionSession session) => new()
+    private JsonObject Hello(ConnectionSession session)
     {
-        ["protocol"] = ProtocolInfo.Version,
-        ["pcId"] = services.Identity.PcId.ToString("D"),
-        ["pcName"] = services.Identity.PcName,
-        ["agentVersion"] = services.Identity.Version,
-        ["authenticated"] = session.CurrentClient().IsAuthenticated,
+        var authenticated = session.CurrentClient().IsAuthenticated;
+        var enforced = services.Entitlements.Enforced;
         // Exactly what works right now: desktop commands only while Nexus.Tray is connected.
-        ["capabilities"] = new JsonArray([.. Implemented.Concat(services.Trays.IsAvailable ? ViaTray : []).Select(t => (JsonNode)t)]),
-    };
+        IEnumerable<string> capabilities = Implemented.Concat(services.Trays.IsAvailable ? ViaTray : []);
+        if (enforced)
+        {
+            capabilities = capabilities.Append("account.refresh").Append(EntitlementsCapability);
+        }
+        var hello = new JsonObject
+        {
+            ["protocol"] = ProtocolInfo.Version,
+            ["pcId"] = services.Identity.PcId.ToString("D"),
+            ["pcName"] = services.Identity.PcName,
+            ["agentVersion"] = services.Identity.Version,
+            ["authenticated"] = authenticated,
+            ["capabilities"] = new JsonArray([.. capabilities.Select(t => (JsonNode)t)]),
+        };
+        if (enforced && authenticated)
+        {
+            // Plan fields only for a signed-in connection; never email, accountId or sub.
+            foreach (var (name, value) in PlanFields(services.Entitlements.Current))
+            {
+                hello[name] = value?.DeepClone();
+            }
+        }
+        return hello;
+    }
+
+    /// <summary>Marker in capabilities: the agent understands plan fields, account.refresh and plan.*.</summary>
+    public const string EntitlementsCapability = "entitlements.v1";
+
+    internal static JsonObject PlanFields(EntitlementStatus status)
+    {
+        var fields = new JsonObject
+        {
+            ["plan"] = status.Plan,
+            ["features"] = new JsonArray([.. status.Features.Select(f => (JsonNode)f)]),
+            ["entitlementState"] = status.WireState,
+        };
+        if (status.ValidUntil is { } until && status.State is not (EntitlementState.None or EntitlementState.Revoked))
+        {
+            fields["validUntil"] = until.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return fields;
+    }
+
+    private readonly AccountRefreshLimiter _refreshLimiter = new(services.Time);
+
+    /// <summary>
+    /// account.refresh: there is no server yet (E4), so it answers the current local state. One call a minute per PC
+    /// (shared by all devices) and one at a time; otherwise rate.limited with retryAfter.
+    /// </summary>
+    private HandlerResult AccountRefresh(Guid id)
+    {
+        if (!_refreshLimiter.TryEnter(out var retryAfter))
+        {
+            return Fail(id, ErrorCodes.RateLimited, "Too many plan refreshes, try again later.", new JsonObject { ["retryAfter"] = retryAfter });
+        }
+        try
+        {
+            return Ok(id, PlanFields(services.Entitlements.Current));
+        }
+        finally
+        {
+            _refreshLimiter.Exit();
+        }
+    }
+
+    /// <summary>plan.required / plan.limit for a command that passed the validator (so the device has the permission).</summary>
+    private HandlerResult? PlanCheck(Guid id, ValidatedCommand command)
+    {
+        var type = command.Spec.Type;
+        var range = (command.Payload as MetricsHistoryPayload)?.Range;
+        var status = services.Entitlements.Current;
+        if (PlanPolicy.RequiredFeature(type, range) is { } feature && !status.Has(feature))
+        {
+            return Fail(id, ErrorCodes.PlanRequired, "This feature needs Nexus PC Pro.",
+                new JsonObject { ["feature"] = feature, ["state"] = status.WireState });
+        }
+        if (PlanPolicy.IsFileTransfer(type))
+        {
+            long bytes = command.Payload switch
+            {
+                Nexus.Core.Files.FileUploadChunkPayload chunk => chunk.Data.Length,
+                Nexus.Core.Files.FileReadPayload read => read.Length,
+                _ => 0,
+            };
+            if (!services.Entitlements.TryUseFileBytes(bytes, PlanPolicy.FreeFileBytesPerDay, out var limit))
+            {
+                return Fail(id, ErrorCodes.PlanLimit, "The Free file transfer limit for today is reached.",
+                    new JsonObject { ["feature"] = PlanPolicy.Files, ["limit"] = limit });
+            }
+        }
+        return null;
+    }
 
     private JsonObject Status() => new()
     {
@@ -549,7 +651,8 @@ internal sealed class CommandDispatcher(AgentServices services)
 
     private static HandlerResult Ok(Guid id, JsonObject payload) => new(Responses.Ok(id, payload), true, null);
 
-    private static HandlerResult Fail(Guid? id, string code, string message) => new(Responses.Error(id, code, message), false, code);
+    private static HandlerResult Fail(Guid? id, string code, string message, JsonObject? details = null) =>
+        new(Responses.Error(id, code, message, details), false, code);
 
     private static Guid? TryReadId(string json) => TryRead(json, "id") is { } text && Guid.TryParseExact(text, "D", out var id) ? id : null;
 
@@ -567,6 +670,45 @@ internal sealed class CommandDispatcher(AgentServices services)
         catch (JsonException)
         {
             return null;
+        }
+    }
+}
+
+/// <summary>account.refresh: at most one call per <see cref="Interval"/> for the whole PC, and one at a time.</summary>
+internal sealed class AccountRefreshLimiter(TimeProvider time)
+{
+    public static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    private readonly Lock _lock = new();
+    private DateTimeOffset? _last;
+    private bool _busy;
+
+    public bool TryEnter(out int retryAfterSeconds)
+    {
+        var now = time.GetUtcNow();
+        lock (_lock)
+        {
+            if (_busy)
+            {
+                retryAfterSeconds = 1;
+                return false;
+            }
+            if (_last is { } last && now - last < Interval && now >= last)
+            {
+                retryAfterSeconds = Math.Clamp((int)Math.Ceiling((Interval - (now - last)).TotalSeconds), 1, 86_400);
+                return false;
+            }
+            _last = now;
+            _busy = true;
+            retryAfterSeconds = 0;
+            return true;
+        }
+    }
+
+    public void Exit()
+    {
+        lock (_lock)
+        {
+            _busy = false;
         }
     }
 }

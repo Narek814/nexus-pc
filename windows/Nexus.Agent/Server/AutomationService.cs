@@ -533,6 +533,17 @@ internal sealed partial class AutomationService : BackgroundService
     /// </summary>
     private void StartTriggered(AutomationDefinition rule, string reason)
     {
+        if (MissingPlanFeature(rule) is { } feature)
+        {
+            // ENT-2: after Pro ends the rule stays, but triggers skip it (COMMERCIAL_PLAN section 0).
+            lock (_lock)
+            {
+                _lastRun[rule.Id] = (_services.Time.GetUtcNow(), false, "пропущена: нужен Nexus PC Pro");
+            }
+            _services.History.Record("automation", $"Автоматизация «{rule.Name}»: пропущена", false,
+                $"{reason}: для этой автоматизации нужен Nexus PC Pro ({feature})");
+            return;
+        }
         if (HasConfirmedOwner(rule))
         {
             // The revocation is checked under _lock together with the start (TryStart).
@@ -554,6 +565,17 @@ internal sealed partial class AutomationService : BackgroundService
         }
         _services.History.Record("automation", $"Автоматизация «{rule.Name}»: пропущена", false,
             $"{reason}: устройство, создавшее автоматизацию, больше не сопряжено с этим ПК");
+    }
+
+    /// <summary>First plan feature the rule needs and the PC does not have now; null if it may run (or plans are not enforced).</summary>
+    internal string? MissingPlanFeature(AutomationDefinition rule)
+    {
+        if (_services.Entitlements is not { Enforced: true } entitlements)
+        {
+            return null;
+        }
+        var status = entitlements.Current;
+        return Nexus.Core.Entitlements.PlanPolicy.RequiredFor(rule).FirstOrDefault(f => !status.Has(f));
     }
 
     /// <returns>Null if there is no such rule of <paramref name="caller"/>; otherwise whether it was running.</returns>

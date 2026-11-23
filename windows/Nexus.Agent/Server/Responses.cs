@@ -8,8 +8,15 @@ internal static class Responses
 {
     public static byte[] Ok(Guid? id, JsonObject? payload = null) => Write(id, ok: true, payload ?? [], error: null);
 
-    public static byte[] Error(Guid? id, string code, string message) =>
-        Write(id, ok: false, payload: null, error: new JsonObject { ["code"] = code, ["message"] = message });
+    public static byte[] Error(Guid? id, string code, string message, JsonObject? details = null)
+    {
+        var error = new JsonObject { ["code"] = code, ["message"] = message };
+        if (details is not null)
+        {
+            error["details"] = details; // feature, state, limit, retryAfter only (response.v1 errorDetails)
+        }
+        return Write(id, ok: false, payload: null, error: error);
+    }
 
     private static byte[] Write(Guid? id, bool ok, JsonObject? payload, JsonObject? error)
     {

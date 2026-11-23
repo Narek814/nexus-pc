@@ -47,6 +47,10 @@ internal sealed record AgentHostOptions
     public string? TrayPath { get; init; }
     public TimeSpan? PairingLifetime { get; init; }
     public TimeSpan? HandshakeTimeout { get; init; }
+    /// <summary>Entitlement keys, revoked kids and issuer; null = the values built into the agent (tests inject test keys).</summary>
+    internal Nexus.Core.Entitlements.EntitlementTrust? EntitlementTrust { get; init; }
+    /// <summary>Clock for entitlement terms (tests move it); null = the system clock.</summary>
+    internal Nexus.Core.Entitlements.IEntitlementClock? EntitlementClock { get; init; }
 }
 
 internal static class AgentHost
@@ -64,6 +68,15 @@ internal static class AgentHost
         var power = options.Power ?? (OperatingSystem.IsWindows() ? new WindowsPowerController() : new UnsupportedPowerController());
         var metricsSource = options.MetricsSource ?? (OperatingSystem.IsWindows() ? new WindowsMetricsSource() : new PortableMetricsSource());
         var services = new AgentServices(identity, devices, power, new AuditLog(options.DataDirectory, options.Time), options.Time, options.PairingLifetime, options.HandshakeTimeout, metricsSource);
+        var entitlementStore = new EntitlementFileStore(options.DataDirectory);
+        services.Entitlements = new Nexus.Core.Entitlements.EntitlementTracker(
+            new Nexus.Core.Entitlements.EntitlementVerifier(options.EntitlementTrust ?? Nexus.Core.Entitlements.PinnedEntitlementKeys.Trust),
+            identity.PcId, entitlementStore, options.EntitlementClock ?? new Nexus.Core.Entitlements.SystemEntitlementClock(options.Time));
+        if (entitlementStore.DiscardedUntrusted)
+        {
+            // Someone else wrote or re-permissioned the file: deleted, treated as "no token".
+            services.Audit.Record(null, "entitlement.file", ok: false, "entitlement.untrustedFile", null);
+        }
 
         var port = options.Port ?? config.Port;
         // Production listens on all IPv4 addresses and filters every connection by the local address it
@@ -109,6 +122,7 @@ internal static class AgentHost
 
         builder.Services.AddSingleton(services);
         builder.Services.AddSingleton<AdminService>();
+        builder.Services.AddHostedService(_ => new EntitlementLoop(services.Entitlements));
         builder.Services.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
         builder.Services.AddSingleton(sp => new OpenRgbHost(options.OpenRgbExecutable, OpenRgbHost.ConfigDirectory(options.DataDirectory), options.OpenRgbPort, sp.GetRequiredService<ILogger<OpenRgbHost>>(),
             options.OpenRgbOwners, OpenRgbHost.PinnedSha256, start: null, anyOs: false));

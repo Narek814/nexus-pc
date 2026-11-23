@@ -44,4 +44,6 @@ internal sealed class AgentServices
     public OpenRgbHost? OpenRgb { get; set; }
     public AutomationService? Automations { get; set; }
     public HistoryStore History { get; }
+    /// <summary>Plan state (ENT-2); set by AgentHost right after construction.</summary>
+    public Nexus.Core.Entitlements.EntitlementTracker Entitlements { get; set; } = null!;
 }
