@@ -3,9 +3,10 @@
 // 401 reauth.required | 429 rate.limited | 400 bad.request | 500 internal.
 // Order: config -> method -> JWT shape -> body -> GoTrue GET /auth/v1/user
 // (GoTrue verifies the JWT signature and expiry and returns the user id) ->
-// freshness (iat of the verified JWT and last_sign_in_at, both <= 5 min) ->
+// freshness (amr password/otp timestamp, iat and last_sign_in_at, all <= 5 min) ->
 // per-user limit 3/h -> per-IP limit -> account_purge (service_role) ->
-// GoTrue admin DELETE /auth/v1/admin/users/{id}.
+// GoTrue admin DELETE /auth/v1/admin/users/{id} (3 attempts, 1 s backoff total;
+// on final failure the user-limit hit is refunded).
 // The user id is never taken from the request body. A failed admin delete
 // after purge answers 500; a retry is safe (account_purge is idempotent, a
 // 404 from the admin delete counts as already deleted).
@@ -99,14 +100,31 @@ export function authFromEnv(env: EnvGet, fetchFn: typeof fetch = fetch): GoTrueA
 }
 
 // Claims of a JWT that GoTrue has already accepted (signature checked there).
-// Only sub and iat are read; anything malformed -> reauth.required.
-export function jwtClaims(jwt: string): { sub: unknown; iat: unknown } | null {
+// Only sub, iat and amr are read; anything malformed -> reauth.required.
+export function jwtClaims(jwt: string): { sub: unknown; iat: unknown; amr: unknown } | null {
   try {
     const p = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(b64uDecode(jwt.split(".")[1])));
-    return p && typeof p === "object" && !Array.isArray(p) ? { sub: p.sub, iat: p.iat } : null;
+    return p && typeof p === "object" && !Array.isArray(p) ? { sub: p.sub, iat: p.iat, amr: p.amr } : null;
   } catch {
     return null;
   }
+}
+
+// Sign-in methods that prove the user just re-entered a secret of this
+// account. oauth/sso/magic links/recovery/totp/anonymous are not accepted:
+// the product signs in by email + password or email code only, and a factor
+// held by a third party (oauth) or a second factor alone is not a re-auth.
+export const REAUTH_METHODS: ReadonlySet<string> = new Set(["password", "otp"]);
+
+// Freshness of the session itself (S-1): amr entries are fixed per session
+// and are not renewed by a refresh, unlike iat. True if any password/otp
+// entry has a fresh timestamp.
+export function freshAmr(amr: unknown, now: number): boolean {
+  if (!Array.isArray(amr)) return false;
+  return amr.some((e) => e !== null && typeof e === "object" && !Array.isArray(e)
+    && typeof (e as { method?: unknown }).method === "string"
+    && REAUTH_METHODS.has((e as { method: string }).method)
+    && fresh((e as { timestamp?: unknown }).timestamp, now));
 }
 
 function b64uDecode(s: string): Uint8Array {
@@ -123,8 +141,25 @@ export async function userKey(pepper: CryptoKey, userId: string): Promise<string
   return b64uEncode(await hmac(pepper, "nexus-user-v1|" + userId));
 }
 
+// Admin delete retries inside one request (S-2): 3 attempts, waits 250 + 750
+// ms (total 1 s, below the 2 s budget).
+export const ADMIN_DELETE_BACKOFF_MS = [250, 750] as const;
+
 export interface DeleteDeps extends Deps {
   auth: AuthApi | null; // null: env missing -> 500
+  sleep?: (ms: number) => Promise<void>; // tests inject a fake
+}
+
+async function deleteWithRetry(auth: AuthApi, id: string, sleep: (ms: number) => Promise<void>): Promise<boolean> {
+  for (let i = 0; ; i++) {
+    try {
+      await auth.deleteUser(id);
+      return true;
+    } catch {
+      if (i >= ADMIN_DELETE_BACKOFF_MS.length) return false;
+      await sleep(ADMIN_DELETE_BACKOFF_MS[i]);
+    }
+  }
 }
 
 export function createHandler(deps: DeleteDeps): (req: Request) => Promise<Response> {
@@ -136,14 +171,26 @@ export function createHandler(deps: DeleteDeps): (req: Request) => Promise<Respo
     const user = await deps.auth.getUser(jwt);
     if (!user) throw new HttpError(401, "auth.required");
     const c = jwtClaims(jwt);
-    if (!c || c.sub !== user.id || !fresh(c.iat, now) || !fresh(user.lastSignInAt, now)) {
+    if (!c || c.sub !== user.id || !freshAmr(c.amr, now) || !fresh(c.iat, now)
+        || !fresh(user.lastSignInAt, now)) {
       throw new HttpError(401, "reauth.required");
     }
-    await hit(db, DELETE_BUCKETS.user, await userKey(cfg.codePepper, user.id));
+    const ukey = await userKey(cfg.codePepper, user.id);
+    await hit(db, DELETE_BUCKETS.user, ukey);
     await hit(db, DELETE_BUCKETS.ip, await ipKey(cfg.codePepper, clientIp(req)));
     const st = await db.rpc("account_purge", { p_user_id: user.id });
     if (st !== "ok") throw new Error("unexpected purge status");
-    await deps.auth.deleteUser(user.id);
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    if (!(await deleteWithRetry(deps.auth, user.id, sleep))) {
+      // Purge done, GoTrue failed: this attempt does not count against the
+      // user limit (the IP limit stays). Refund failure is ignored.
+      try {
+        await db.rpc("rate_limit_refund", {
+          p_bucket: DELETE_BUCKETS.user.name, p_key: ukey, p_window_sec: DELETE_BUCKETS.user.windowSec,
+        });
+      } catch { /* keep 500 */ }
+      throw new Error("admin delete failed");
+    }
     return jsonResponse(200, {});
   }, deps.log);
 }

@@ -9,13 +9,14 @@ import { assertDefaultLog, captureConsole, deps, FakeDb, NOW, post, secretBytes,
 
 const b64u = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const jwtOf = (claims: Record<string, unknown>) => `${b64u({ alg: "HS256", typ: "JWT" })}.${b64u(claims)}.c2ln`;
-const JWT_A = jwtOf({ sub: USER_A, iat: NOW - 60, role: "authenticated" });
+const AMR = (method: string, ts: unknown) => [{ method, timestamp: ts }];
+const JWT_A = jwtOf({ sub: USER_A, iat: NOW - 60, amr: AMR("password", NOW - 60), role: "authenticated" });
 const BEARER = "Bearer " + JWT_A;
 
 class FakeAuth implements AuthApi {
   users: Record<string, AuthUser>;
   calls: string[] = [];
-  deleteFails = false;
+  deleteFails = 0; // number of next deleteUser calls that fail
   constructor(users: Record<string, AuthUser>) { this.users = users; }
   async getUser(jwt: string): Promise<AuthUser | null> {
     this.calls.push("getUser");
@@ -23,16 +24,17 @@ class FakeAuth implements AuthApi {
   }
   async deleteUser(id: string): Promise<void> {
     this.calls.push("delete:" + id);
-    if (this.deleteFails) throw new Error("boom");
+    if (this.deleteFails > 0) { this.deleteFails--; throw new Error("boom"); }
   }
 }
 
 function setup(over: { users?: Record<string, AuthUser>; db?: FakeDb; env?: Record<string, string | undefined> } = {}) {
   const env = over.env ?? testEnv();
-  const db = over.db ?? new FakeDb({ account_purge: () => "ok" });
+  const db = over.db ?? new FakeDb({ account_purge: () => "ok", rate_limit_refund: () => null });
   const auth = new FakeAuth(over.users ?? { [JWT_A]: { id: USER_A, lastSignInAt: NOW - 30 } });
-  const d = { ...deps(db, env), auth };
-  return { h: createHandler(d), db, auth, env, d };
+  const slept: number[] = [];
+  const d = { ...deps(db, env), auth, sleep: async (ms: number) => { slept.push(ms); } };
+  return { h: createHandler(d), db, auth, env, d, slept };
 }
 
 test("ok: verified user purged then admin-deleted; user id only from GoTrue; 200 {}", async () => {
@@ -64,13 +66,13 @@ test("anon / rejected / malformed JWT -> 401 auth.required, no rpc, no delete", 
 
 test("stale login -> 401 reauth.required before limits and purge", async () => {
   const cases: [Record<string, unknown>, number | null][] = [
-    [{ sub: USER_A, iat: NOW - 301 }, NOW - 10], // JWT older than 5 min (refreshed later is not enough)
-    [{ sub: USER_A, iat: NOW - 10 }, NOW - 301], // token refreshed, but no fresh password sign-in
-    [{ sub: USER_A, iat: NOW - 10 }, null],
-    [{ sub: USER_A, iat: NOW + 120 }, NOW], // future iat beyond skew
-    [{ sub: USER_A, iat: "x" }, NOW],
-    [{ sub: USER_A }, NOW],
-    [{ sub: USER_B, iat: NOW }, NOW], // sub differs from the verified user
+    [{ sub: USER_A, iat: NOW - 301, amr: AMR("password", NOW - 10) }, NOW - 10], // JWT older than 5 min (refreshed later is not enough)
+    [{ sub: USER_A, iat: NOW - 10, amr: AMR("password", NOW - 10) }, NOW - 301], // token refreshed, but no fresh password sign-in
+    [{ sub: USER_A, iat: NOW - 10, amr: AMR("password", NOW - 10) }, null],
+    [{ sub: USER_A, iat: NOW + 120, amr: AMR("password", NOW) }, NOW], // future iat beyond skew
+    [{ sub: USER_A, iat: "x", amr: AMR("password", NOW) }, NOW],
+    [{ sub: USER_A, amr: AMR("password", NOW) }, NOW],
+    [{ sub: USER_B, iat: NOW, amr: AMR("password", NOW) }, NOW], // sub differs from the verified user
   ];
   for (const [claims, last] of cases) {
     const jwt = jwtOf(claims);
@@ -82,7 +84,7 @@ test("stale login -> 401 reauth.required before limits and purge", async () => {
     assert.deepEqual(auth.calls, ["getUser"]);
   }
   // Boundary: exactly 300 s old is still fresh.
-  const jwt = jwtOf({ sub: USER_A, iat: NOW - 300 });
+  const jwt = jwtOf({ sub: USER_A, iat: NOW - 300, amr: AMR("otp", NOW - 300) });
   const { h } = setup({ users: { [jwt]: { id: USER_A, lastSignInAt: NOW - 300 } } });
   assert.equal((await h(post({}, { authorization: "Bearer " + jwt }))).status, 200);
 });
@@ -109,14 +111,85 @@ test("limits: user 3/h keyed by HMAC of user id, then IP; 429 before purge", asy
   }
 });
 
+test("S-1: session freshness by amr password/otp; iat and last_sign_in_at stay as extra checks", async () => {
+  const run = async (claims: Record<string, unknown>, last: number | null) => {
+    const jwt = jwtOf(claims);
+    const { h, db } = setup({ users: { [jwt]: { id: USER_A, lastSignInAt: last } } });
+    const res = await h(post({}, { authorization: "Bearer " + jwt }));
+    return { status: res.status, body: await res.text(), rpc: db.calls.length };
+  };
+  const reauth = { status: 401, body: '{"error":"reauth.required"}', rpc: 0 };
+  // iat fresh (refreshed session), amr old -> reauth.
+  assert.deepEqual(await run({ sub: USER_A, iat: NOW - 5, amr: AMR("password", NOW - 4000) }, NOW - 5), reauth);
+  // amr fresh, last_sign_in_at old (another session signed in long ago) -> reauth.
+  assert.deepEqual(await run({ sub: USER_A, iat: NOW - 5, amr: AMR("password", NOW - 5) }, NOW - 4000), reauth);
+  // Both fresh -> ok (password and otp).
+  for (const m of ["password", "otp"]) {
+    assert.equal((await run({ sub: USER_A, iat: NOW - 5, amr: AMR(m, NOW - 5) }, NOW - 5)).status, 200, m);
+  }
+  // Other methods are not a re-auth (oauth, magiclink, totp, recovery, token_refresh).
+  for (const m of ["oauth", "magiclink", "totp", "recovery", "token_refresh", "sso/saml", "anonymous"]) {
+    assert.deepEqual(await run({ sub: USER_A, iat: NOW - 5, amr: AMR(m, NOW - 5) }, NOW - 5), reauth, m);
+  }
+  // A fresh oauth entry next to an old password entry is still reauth;
+  // a fresh password entry among others is ok.
+  assert.deepEqual(await run({ sub: USER_A, iat: NOW - 5,
+    amr: [{ method: "oauth", timestamp: NOW - 5 }, { method: "password", timestamp: NOW - 4000 }] }, NOW - 5), reauth);
+  assert.equal((await run({ sub: USER_A, iat: NOW - 5,
+    amr: [{ method: "totp", timestamp: NOW - 4000 }, { method: "password", timestamp: NOW - 5 }] }, NOW - 5)).status, 200);
+  // Missing / malformed amr, future timestamp beyond skew, boundaries.
+  for (const amr of [undefined, null, [], "password", [null], [{ method: "password" }],
+    [{ method: "password", timestamp: "1" }], [{ method: "password", timestamp: NOW + 61 }],
+    [{ method: "password", timestamp: NOW - 301 }], [{ method: ["password"], timestamp: NOW }]]) {
+    assert.deepEqual(await run({ sub: USER_A, iat: NOW - 5, amr }, NOW - 5), reauth, JSON.stringify(amr));
+  }
+  assert.equal((await run({ sub: USER_A, iat: NOW - 5, amr: AMR("password", NOW + 60) }, NOW - 5)).status, 200);
+  assert.equal((await run({ sub: USER_A, iat: NOW - 5, amr: AMR("password", NOW - 300) }, NOW - 5)).status, 200);
+});
+
+test("S-2: admin delete retried in-function (3 attempts, 1 s backoff); success on retry -> 200, no refund", async () => {
+  const { h, db, auth, slept } = setup();
+  auth.deleteFails = 2;
+  const res = await h(post({}, { authorization: BEARER }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(auth.calls, ["getUser", "delete:" + USER_A, "delete:" + USER_A, "delete:" + USER_A]);
+  assert.deepEqual(slept, [250, 750]);
+  assert.ok(slept.reduce((a, b) => a + b, 0) <= 2000);
+  assert.ok(!db.names().includes("rate_limit_refund"));
+});
+
+test("S-2: admin delete fails 3 times after purge -> 500 and the user-limit hit is refunded", async () => {
+  const env = testEnv();
+  const ukey = createHmac("sha256", secretBytes(env.CODE_HASH_PEPPER)).update("nexus-user-v1|" + USER_A).digest("base64url");
+  const { h, db, auth, slept } = setup({ env });
+  auth.deleteFails = Infinity;
+  const r = await h(post({}, { authorization: BEARER }));
+  assert.equal(r.status, 500);
+  assert.equal(await r.text(), '{"error":"internal"}');
+  assert.equal(auth.calls.filter((c) => c.startsWith("delete")).length, 3);
+  assert.deepEqual(slept, [250, 750]);
+  assert.deepEqual(db.names(), ["rate_limit_hit", "rate_limit_hit", "account_purge", "rate_limit_refund"]);
+  assert.deepEqual(db.calls[3].args, { p_bucket: "edge_user_delete", p_key: ukey, p_window_sec: 3600 });
+  // A failing refund still answers 500 (never 200).
+  const db2 = new FakeDb({ account_purge: () => "ok", rate_limit_refund: () => { throw new Error("x"); } });
+  const s2 = setup({ db: db2 });
+  s2.auth.deleteFails = Infinity;
+  assert.equal((await s2.h(post({}, { authorization: BEARER }))).status, 500);
+  // Purge failure: no admin delete, no refund.
+  const db3 = new FakeDb({ account_purge: () => "nope", rate_limit_refund: () => null });
+  const s3 = setup({ db: db3 });
+  assert.equal((await s3.h(post({}, { authorization: BEARER }))).status, 500);
+  assert.ok(!db3.names().includes("rate_limit_refund"));
+});
+
 test("admin delete fails after purge -> 500; retry purges again (idempotent) and succeeds", async () => {
   const { h, db, auth } = setup();
-  auth.deleteFails = true;
+  auth.deleteFails = Infinity;
   const r1 = await h(post({}, { authorization: BEARER }));
   assert.equal(r1.status, 500);
   assert.equal(await r1.text(), '{"error":"internal"}');
   assert.ok(db.names().includes("account_purge"));
-  auth.deleteFails = false;
+  auth.deleteFails = 0;
   const r2 = await h(post({}, { authorization: BEARER }));
   assert.equal(r2.status, 200);
   assert.equal(db.names().filter((n) => n === "account_purge").length, 2);
