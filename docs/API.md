@@ -73,7 +73,7 @@
 | Команда | Разрешение | Риск | Payload |
 |---------|-----------|------|---------|
 | `system.hello` | — (без авторизации) | read | `{}` → `{ protocol, pcId, pcName, agentVersion, authenticated, capabilities[] }`; после входа — ещё необязательные поля плана (см. «Планы») |
-| `account.refresh` | — (только после входа) | read | `{}` → `{ plan, features[], entitlementState, validUntil? }` (см. «Планы»). Пока агент отвечает `command.notImplemented` (ENT-2) |
+| `account.refresh` | — (только после входа) | read | `{}` → `{ plan, features[], entitlementState, validUntil? }` (см. «Планы»). Агент отвечает текущим локальным состоянием (сервера ещё нет, E4); не чаще 1 раза в минуту на ПК и по одному, иначе `rate.limited` с `retryAfter`. В сборке без закреплённых ключей — `command.notImplemented` |
 | `pair.request` | — (без авторизации) | normal | `{ code: 8 цифр, deviceName, publicKey }` |
 | `auth.begin` | — (без авторизации) | read | `{ deviceId }` |
 | `auth.prove` | — (без авторизации) | read | `{ signature }` |
@@ -188,7 +188,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 ## Планы (Free/Pro, ENT-1)
 
-Решения — `docs/COMMERCIAL_PLAN.md`, раздел 0; безопасность — `SECURITY.md`, «Аккаунты и права». Проверку токена в агенте добавит ENT-2; сейчас агент план не проверяет.
+Решения — `docs/COMMERCIAL_PLAN.md`, раздел 0; безопасность — `SECURITY.md`, «Аккаунты и права». ENT-2: агент проверяет план, только если в сборке закреплены ключи сервера; до выпуска ключей поведение прежнее (нет маркера, нет полей плана, нет `plan.*`). `features[]` — функции из действующего токена (`active`/`grace`); для Free без токена список пуст. Идентификаторы: `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`; `plan.limit` — `feature: "files"`. Действия правил `profile` и `rgb` требуют `profiles` и `rgb.sync`, в том числе при `automations.run` (иначе `plan.required`).
 
 - Расширение аддитивное: `v: 1`; существующие команды, коды, порядок проверок 1–8, `auth.*` и сопряжение не меняются. Ни одна схема `auth.*` / `pair.*` не содержит полей аккаунта.
 - Маркер `entitlements.v1` в `capabilities` значит, что агент понимает поля плана, `account.refresh` и `plan.*`. Может отдаваться и до входа: сообщает только о версии агента.
@@ -225,6 +225,8 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 Поля payload — все обязательны, неизвестные — отказ, время — целые секунды Unix: `v` (`1`), `typ` (`"nexus-ent+v1"`), `iss` (точно равен значению, закреплённому в сборке агента; в фикстурах — `nexus-test-issuer`), `aud` (`"nexus-agent"`), `sub` (непрозрачный, клиентам не передаётся), `pcId` (UUID этого ПК), `plan` (`"free"`/`"pro"`), `features[]`, `iat`, `exp`, `graceUntil` (`0 < exp−iat ≤ 86400`, `0 ≤ graceUntil−exp ≤ 604800`, `iat ≤ now+300`), `jti` (UUID).
 
 **Порядок проверки** (ENT-2; первая неудача — отказ, причина — `reason` фикстур): `format` → `revokedKid` → `unknownKid` → `algorithm` → `signature` → `json` → `schema` → `issuer` → `pcId` → `lifetime` → `grace` → `notYetValid` → `expired` (`now > graceUntil`).
+
+После всех шагов агент принимает токен только с `iat` ≥ максимального принятого (иначе `stale`); после отзыва или перевода часов назад — только с более новым `iat`.
 
 Сроки длиннее допустимых не принимаются, даже если подпись верна. Состояние: `now ≤ exp` — `active`; `exp < now ≤ graceUntil` — `grace`; позже — `expired`; отзыв, сообщённый сервером на связи, — сразу `revoked`, без льготы. При переводе часов назад льгота считается истёкшей до связи с сервером.
 
