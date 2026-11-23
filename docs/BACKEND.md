@@ -27,6 +27,7 @@
 | `tests/run_ts_tests.sh` | Запуск TS-тестов и Python-сверки |
 | `supabase/functions/_shared/{http,pop,codes,db,ratelimit}.ts` | Общие модули Edge (E3-7a, раздел «Edge Functions») |
 | `supabase/functions/{pc-login-start,pc-login-poll,pc-token}/index.ts` | Эндпоинты службы ПК |
+| `supabase/functions/delete-account/index.ts` | Удаление аккаунта (E3-8), клиент GoTrue |
 | `tests/ts/*.test.ts`, `tests/ts/_helpers.ts` | Тесты Edge с подставной БД |
 | `.gitignore` | Исключает локальный `.env` и служебные каталоги CLI |
 
@@ -274,7 +275,37 @@ HTTP-статусы (вторичны, клиент смотрит на `error`)
 
 `public.cleanup()` запускается pg_cron каждые 10 минут (задание `nexus-cleanup`, `*/10 * * * *`; при повторном применении задание заменяется). Если расширения `pg_cron` нет (локальный PostgreSQL в тестах), миграция ничего не делает и пишет `NOTICE`. В облаке Supabase pg_cron включается этой же миграцией (`create extension ... with schema pg_catalog`); проверить при первом развёртывании. Тест — `tests/sql/80_cleanup_schedule.sql` (2 проверки: без pg_cron — пустая операция, либо задание есть ровно одно; `cleanup()` — только `service_role`).
 
-Тесты E3-7b — `tests/ts/pc_app.test.ts` (12 тестов): JWT (нет/неверная форма → без SQL), JWT пользователя в `rpc` (и в `PostgrestDb` через подставной `fetch`), отказ PostgREST → `auth.required`, бакеты IP, побайтное совпадение `code.invalid`, требования `http.ts`, перехват `console.*`. Всего `run_ts_tests.sh`: **59** тестов; `run_sql_tests.sh`: **250** проверок.
+Тесты E3-7b — `tests/ts/pc_app.test.ts` (12 тестов): JWT (нет/неверная форма → без SQL), JWT пользователя в `rpc` (и в `PostgrestDb` через подставной `fetch`), отказ PostgREST → `auth.required`, бакеты IP, побайтное совпадение `code.invalid`, требования `http.ts`, перехват `console.*`. Всего (после E3-8) `run_ts_tests.sh`: **75** тестов; `run_sql_tests.sh`: **266** проверок.
+
+## Удаление аккаунта (E3-8: миграция `20261123000009_account_delete.sql`, Edge `delete-account`)
+
+### `public.account_purge(p_user_id uuid) → 'ok'` (только `service_role`, security definer, пустой `search_path`)
+
+Удаляет все строки пользователя в схеме `public`:
+1. коды входа ПК, которые он описал или одобрил (`described_by`/`approved_by`) — первыми, чтобы идущий `pc_login_consume` дождался блокировки строки и его результат увидело следующее удаление;
+2. для каждого его ПК под `pc_lock` (тот же порядок блокировок, что у `pc_release` и consume): отзыв всех refresh (`pc_revoke_all`), удаление кодов этого ПК, удаление `my_pcs` (каскадом уходят `pc_keys` и `pc_refresh_tokens`);
+3. `subscriptions`, `profiles`;
+4. строки `rate_limits` с ключом = `user_id` (лимит одобрения `pc_login_approve`). Бакеты с HMAC-ключом (лимит `delete-account`, лимиты IP) не удаляются и истекают через `cleanup()` — так лимит 3/час сохраняется при повторе.
+
+`payment_events` не трогается: там нет `user_id`, а срок хранения платёжных записей по закону — **НУЖНО РЕШЕНИЕ** (решение владельца: до E7 не удаляются). Строка `auth.users` остаётся до удаления через GoTrue; после него каскады FK убирают всё, что могло появиться между purge и удалением.
+
+Идемпотентна: повторный вызов (в т. ч. для уже удалённого пользователя) — `'ok'`, ничего не меняет. `null` — ошибка `invalid_parameter_value`. Бывшие ПК пользователя: `pc_rotate_refresh` → `revoked`, `entitlement_for_pc` → `unlinked`, значит `pc-token` отвечает `401 revoked`, новый токен прав не выдаётся. Сопряжения ПК с телефонами не затрагиваются: их на сервере нет.
+
+### `POST /functions/v1/delete-account`
+
+Тело — ровно `{}` (строгий JSON из `http.ts`; любое поле, в т. ч. `userId`, → `400 bad.request`). `user_id` из тела не принимается никогда.
+
+Порядок: конфигурация → метод → форма JWT → тело → **GoTrue `GET /auth/v1/user`** (JWT пользователя в `Authorization`, `apikey` — anon) → свежесть входа → лимит пользователя → лимит IP → `account_purge` (`service_role`) → **GoTrue `DELETE /auth/v1/admin/users/{id}`** (`service_role` в `apikey` и `Authorization`) → `200 {}`.
+
+- **Проверка JWT.** Подпись и срок проверяет GoTrue; `user_id` берётся из его ответа (`id`, UUID). 401/403 от GoTrue (истёк, чужая подпись, anon-ключ вместо JWT) → `401 auth.required`; иной сбой → `500 internal`.
+- **Свежесть (`reauth.required`).** Только после того, как GoTrue принял JWT, Edge читает из него `sub` и `iat`. Требуется всё сразу: `sub` = `id` от GoTrue; `iat` не старше 300 с (и не позже чем через 60 с — допуск часов); `last_sign_in_at` из ответа GoTrue не старше 300 с. Иначе → `401 {"error":"reauth.required"}` без лимитов и SQL. Почему оба: `iat` меняется при каждом обновлении сессии refresh-токеном, поэтому сам по себе не доказывает повторный ввод пароля; `last_sign_in_at` GoTrue обновляет при входе (пароль, код), а не при refresh. Проверка обоих не слабее каждой. Клиент перед удалением заново входит паролем и сразу вызывает `delete-account`. **Для стенда:** подтвердить, что `last_sign_in_at` не обновляется при `grant_type=refresh_token`.
+- **Лимиты** (`rate_limit_hit`, `service_role`): `edge_user_delete` — 3 за 3600 с, ключ `b64u(HMAC(CODE_HASH_PEPPER, "nexus-user-v1|" + user_id))`; затем `edge_ip_delete` — 10 за 3600 с на IP (`clientIp`, ключ как у остальных лимитов IP). Отказ → `429 rate.limited`, `retryAfter` 3600; purge не вызывается.
+- **Сбой удаления в GoTrue после purge** → `500 internal`. Повтор безопасен: purge идемпотентна, `404` от admin API считается «уже удалён». Каждый повтор расходует лимит пользователя (3/час).
+- Журнал — только `{fn, status, ms}`: без JWT, email, `user_id`, IP. В аргументах `rpc` лимитов нет ни `user_id`, ни IP.
+
+Новый код ошибки: **`reauth.required`** (401) — вход старше 5 минут; клиент просит ввести пароль снова.
+
+Тесты: `tests/sql/90_account_delete.sql` (16 проверок: права, null, 0 строк A во всех таблицах, отпечаток данных B и `payment_events` не изменился, бывшие ПК A → `revoked`/`unlinked`, ПК B работает, идемпотентность, повтор после удаления `auth.users`); `tests/ts/delete_account.test.ts` (8 тестов: успех и порядок вызовов, anon/неверный JWT → `auth.required`, 7 вариантов несвежего входа → `reauth.required`, граница 300 с, лимиты пользователя и IP, сбой admin delete → 500 и успешный повтор, `GoTrueApi` через подставной `fetch`, журнал). Мутации (6 в Edge, 3 в SQL) ловятся тестами.
 
 ## Токен прав (`supabase/functions/_shared/entitlement.ts`)
 
@@ -298,7 +329,7 @@ bash backend/tests/run_sql_tests.sh
 bash backend/tests/run_ts_tests.sh
 ```
 
-Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (67 тестов, из них 7 в `audit_e3_7c.test.ts`): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
+Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (75 тестов, из них 7 в `audit_e3_7c.test.ts`): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
 
 ## Переменные окружения
 
