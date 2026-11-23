@@ -103,6 +103,435 @@
           "message": "x"
         }
       }
+    },
+    {
+      "name": "system.hello before auth.prove: no plan fields",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": false
+        }
+      }
+    },
+    {
+      "name": "system.hello after auth.prove with plan (pro, active)",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "pro",
+          "features": [
+            "automations",
+            "files.unlimited",
+            "rgb.sync"
+          ],
+          "entitlementState": "active",
+          "validUntil": "2026-11-23T12:00:00Z"
+        }
+      }
+    },
+    {
+      "name": "system.hello after auth.prove, free without token",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "free",
+          "features": [],
+          "entitlementState": "none"
+        }
+      }
+    },
+    {
+      "name": "system.hello after auth.prove, pro in grace",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "pro",
+          "features": [
+            "automations"
+          ],
+          "entitlementState": "grace",
+          "validUntil": "2026-11-29T12:00:00Z"
+        }
+      }
+    },
+    {
+      "name": "system.hello with plan fields before auth is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": false,
+          "plan": "free",
+          "features": [],
+          "entitlementState": "none"
+        }
+      }
+    },
+    {
+      "name": "system.hello with account email is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "free",
+          "features": [],
+          "entitlementState": "none",
+          "email": "a@example.com"
+        }
+      }
+    },
+    {
+      "name": "system.hello with accountId is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "free",
+          "features": [],
+          "entitlementState": "none",
+          "accountId": "acc_1"
+        }
+      }
+    },
+    {
+      "name": "plan fields: unknown plan is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "enterprise",
+          "features": [],
+          "entitlementState": "active"
+        }
+      }
+    },
+    {
+      "name": "plan fields: unknown entitlementState is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "pro",
+          "features": [],
+          "entitlementState": "trial"
+        }
+      }
+    },
+    {
+      "name": "plan fields: plan without entitlementState is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "protocol": 1,
+          "pcId": "86a77e46-afba-4ab0-8f08-68ff922e9cc2",
+          "pcName": "GAMING-PC",
+          "agentVersion": "0.2.0",
+          "capabilities": [
+            "system.hello",
+            "auth.begin",
+            "auth.prove",
+            "pair.request",
+            "account.refresh",
+            "pc.status",
+            "entitlements.v1"
+          ],
+          "authenticated": true,
+          "plan": "pro",
+          "features": []
+        }
+      }
+    },
+    {
+      "name": "account.refresh revoked: free, no grace",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "plan": "free",
+          "features": [],
+          "entitlementState": "revoked"
+        }
+      }
+    },
+    {
+      "name": "account.refresh expired",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "plan": "free",
+          "features": [],
+          "entitlementState": "expired",
+          "validUntil": "2026-11-20T12:00:00Z"
+        }
+      }
+    },
+    {
+      "name": "plan.required with details",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "plan.required",
+          "message": "This feature needs Nexus PC Pro.",
+          "details": {
+            "feature": "automations",
+            "state": "expired"
+          }
+        }
+      }
+    },
+    {
+      "name": "plan.limit with details",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "plan.limit",
+          "message": "File size limit for the Free plan.",
+          "details": {
+            "feature": "files.transfer",
+            "limit": 104857600
+          }
+        }
+      }
+    },
+    {
+      "name": "rate.limited with retryAfter",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "rate.limited",
+          "message": "Try again later.",
+          "details": {
+            "retryAfter": 60
+          }
+        }
+      }
+    },
+    {
+      "name": "plan.required without details (details optional)",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "plan.required",
+          "message": "This feature needs Nexus PC Pro."
+        }
+      }
+    },
+    {
+      "name": "error.details with unknown field is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "plan.required",
+          "message": "x",
+          "details": {
+            "feature": "automations",
+            "accountId": "acc_1"
+          }
+        }
+      }
+    },
+    {
+      "name": "error.details with bad retryAfter is invalid",
+      "valid": false,
+      "message": {
+        "v": 1,
+        "id": "6d1f21c9-5248-4e2d-a817-7a5e5da67901",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "rate.limited",
+          "message": "x",
+          "details": {
+            "retryAfter": 0
+          }
+        }
+      }
     }
   ]
 }

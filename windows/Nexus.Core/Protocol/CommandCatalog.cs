@@ -33,6 +33,8 @@ public sealed class CommandCatalog
         new("pair.request", Permission.None, RiskClass.Normal, RequiresAuth: false, PayloadParsers.PairRequest),
         new("auth.begin", Permission.None, RiskClass.Read, RequiresAuth: false, PayloadParsers.AuthBegin),
         new("auth.prove", Permission.None, RiskClass.Read, RequiresAuth: false, PayloadParsers.AuthProve),
+        // Plans (ENT-1): after login, no device permission. No handler yet (ENT-2): command.notImplemented.
+        new("account.refresh", Permission.None, RiskClass.Read, true, PayloadParsers.Empty),
         new("pc.status", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.Empty),
         new("metrics.snapshot", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.Empty),
         new("metrics.history", Permission.Monitoring, RiskClass.Read, true, PayloadParsers.MetricsHistory),
