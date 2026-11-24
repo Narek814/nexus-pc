@@ -80,7 +80,10 @@ New-Service -Name NexusPCAgent -BinaryPathName '"C:\Program Files\NexusPC\Agent\
 
 ```powershell
 sc.exe failure NexusPCAgent reset= 86400 actions= restart/5000/restart/5000/restart/60000
+sc.exe failureflag NexusPCAgent 1
 ```
+
+Вторая команда включает перезапуск и тогда, когда служба остановилась с ошибкой, а не только при аварийном завершении. Установщик выполняет обе при установке и обновлении.
 
 ```powershell
 sc.exe start NexusPCAgent

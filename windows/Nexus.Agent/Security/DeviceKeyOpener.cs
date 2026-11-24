@@ -56,7 +56,7 @@ internal static class DeviceKeyOpener
     /// <summary>
     /// Production source of the key: Windows = the machine CNG key only (TPM, else Software KSP). Elsewhere only the
     /// development file key, and only when NEXUS_DEV_FILE_KEY names it; otherwise there is no key (degraded mode).
-    /// Never a fallback from CNG to a file.
+    /// Never a fallback from CNG to a file. The file key is compiled only on non-Windows build hosts (E4-3b).
     /// </summary>
     public static IDeviceKey OpenDefault(Func<string, string?> environment, string dataDirectory)
     {

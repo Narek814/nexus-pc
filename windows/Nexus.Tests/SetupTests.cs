@@ -82,12 +82,22 @@ public sealed class SetupPlanTests
     }
 
     [Fact]
+    public void Service_recovery_sets_failure_actions_then_failureflag()
+    {
+        var steps = SetupPlan.ServiceRecovery(System32);
+        Assert.Equal(2, steps.Count);
+        Assert.Equal(SetupPlan.ScFailure(System32).Args, steps[0].Args);
+        Assert.Equal(["failureflag", SetupPlan.ServiceName, "1"], steps[1].Args);
+        Assert.All(steps, c => Assert.Equal(Path.Combine(System32, "sc.exe"), c.File));
+    }
+
+    [Fact]
     public void Every_command_uses_an_absolute_system_path()
     {
         Command[] all =
         [
             SetupPlan.ScQuery(System32), SetupPlan.ScStop(System32), SetupPlan.ScStart(System32), SetupPlan.ScDelete(System32),
-            SetupPlan.ScCreate(System32, AgentExe), SetupPlan.ScConfig(System32, AgentExe), SetupPlan.ScFailure(System32),
+            SetupPlan.ScCreate(System32, AgentExe), SetupPlan.ScConfig(System32, AgentExe), SetupPlan.ScFailure(System32), SetupPlan.ScFailureFlag(System32),
             SetupPlan.ScDescription(System32), SetupPlan.FirewallAdd(System32, AgentExe), SetupPlan.FirewallDelete(System32),
             SetupPlan.LegacyFirewallDelete(System32),
             SetupPlan.ListNetworks(System32), SetupPlan.MakePrivate(System32, 9),

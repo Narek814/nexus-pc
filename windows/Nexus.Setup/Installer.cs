@@ -735,7 +735,10 @@ internal sealed class Installer(SetupOptions options, TextWriter log) : IInstall
         var exists = RunQuiet(SetupPlan.ScQuery(_system32)).Exit != 1060; // ERROR_SERVICE_DOES_NOT_EXIST
         Must(exists ? SetupPlan.ScConfig(_system32, agentExe) : SetupPlan.ScCreate(_system32, agentExe));
         RunQuiet(SetupPlan.ScDescription(_system32));
-        Must(SetupPlan.ScFailure(_system32));
+        foreach (var command in SetupPlan.ServiceRecovery(_system32))
+        {
+            Must(command); // sc failure, then sc failureflag 1 (E4-3b)
+        }
         RunQuiet(SetupPlan.FirewallDelete(_system32)); // also replaces the rule made by hand earlier
         RemoveLegacyFirewallRule();
         Must(SetupPlan.FirewallAdd(_system32, agentExe));

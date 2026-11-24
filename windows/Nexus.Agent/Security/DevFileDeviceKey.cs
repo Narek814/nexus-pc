@@ -7,7 +7,8 @@ namespace Nexus.Agent.Security;
 /// Development and CI only, never Windows (owner decision for E4-3a): a permanent P-256 PC key in a separate file,
 /// so the agent can run on macOS for the iOS live tests. It exists only when the variable
 /// <see cref="EnvironmentVariable"/> names the file explicitly; nothing falls back to it. The code is not compiled
-/// into Windows builds (Nexus.Agent.csproj: NEXUS_DEV_FILE_KEY only without a win-* RuntimeIdentifier) and refuses
+/// into any Windows build (Nexus.Agent.csproj, E4-3b: NEXUS_DEV_FILE_KEY only on a non-Windows build host without a
+/// win-* RuntimeIdentifier, so not into Debug builds made on Windows either) and refuses
 /// to run on Windows anyway. The file is created 0600 in a 0700 folder, never inside the data folder, and its
 /// path is never logged.
 /// </summary>

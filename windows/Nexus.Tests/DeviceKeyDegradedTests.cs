@@ -375,6 +375,7 @@ public sealed class DevFileDeviceKeyTests : IDisposable
         }
     }
 
+#if NEXUS_DEV_FILE_KEY // E4-3b: same condition as Nexus.Agent.csproj; the type does not exist in Windows builds
     private static Func<string, string?> Env(string? value) => name => name == "NEXUS_DEV_FILE_KEY" ? value : null;
 
     [Fact]
@@ -449,6 +450,21 @@ public sealed class DevFileDeviceKeyTests : IDisposable
 #pragma warning restore CA1416
         Assert.False(File.Exists(Path.Combine(_folder, "device.key")));
     }
+#endif
+
+    [Fact]
+    public void AgentAssembly_HasFileKeyTypeOnlyOutsideWindows()
+    {
+        var type = typeof(Nexus.Agent.Security.DeviceKeyOpener).Assembly.GetType("Nexus.Agent.Security.DevFileDeviceKey");
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Null(type); // E4-3b: no Windows build has the file key, Debug and RID-less builds included
+        }
+        else
+        {
+            Assert.NotNull(type);
+        }
+    }
 
     [Fact]
     public void WindowsBuilds_DoNotCompileTheFileKey()
@@ -458,7 +474,15 @@ public sealed class DevFileDeviceKeyTests : IDisposable
         {
             Assert.DoesNotContain("NEXUS_DEV_FILE_KEY", DefineConstants(project, rid), StringComparison.Ordinal);
         }
-        Assert.Contains("NEXUS_DEV_FILE_KEY", DefineConstants(project, null), StringComparison.Ordinal); // the check itself works
+        if (OperatingSystem.IsWindows())
+        {
+            // E4-3b: a Windows build host never defines it, not even without a RuntimeIdentifier (Debug, dotnet build).
+            Assert.DoesNotContain("NEXUS_DEV_FILE_KEY", DefineConstants(project, null), StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("NEXUS_DEV_FILE_KEY", DefineConstants(project, null), StringComparison.Ordinal); // the check itself works
+        }
     }
 
     private static string DefineConstants(string project, string? rid)
