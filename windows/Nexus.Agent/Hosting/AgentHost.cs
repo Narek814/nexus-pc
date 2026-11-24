@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Nexus.Agent.Admin;
+using Nexus.Agent.Security;
 using Nexus.Core.Power;
 using Nexus.Windows;
 using Nexus.Agent.Server;
@@ -51,8 +52,24 @@ internal sealed record AgentHostOptions
     internal Nexus.Core.Entitlements.EntitlementTrust? EntitlementTrust { get; init; }
     /// <summary>Clock for entitlement terms (tests move it); null = the system clock.</summary>
     internal Nexus.Core.Entitlements.IEntitlementClock? EntitlementClock { get; init; }
-    /// <summary>The permanent PC key; null = the machine CNG key (Windows). Tests inject a file-backed key.</summary>
-    internal Nexus.Agent.Security.IDeviceKey? DeviceKey { get; init; }
+    /// <summary>
+    /// Opens the permanent PC key; null = <see cref="DeviceKeyOpener.OpenDefault"/> (Windows: the machine CNG key).
+    /// Tests inject a file-backed key or a factory that fails.
+    /// </summary>
+    internal Func<IDeviceKey>? DeviceKeyFactory { get; init; }
+    /// <summary>Pauses between key attempts; null = 2, 5, 10 s (tests pass zeros).</summary>
+    internal IReadOnlyList<TimeSpan>? DeviceKeyPauses { get; init; }
+    /// <summary>Where "key unavailable" is reported besides audit.log; null = the Windows event log (console elsewhere).</summary>
+    internal Action<string>? EventLog { get; init; }
+}
+
+/// <summary>Exit code for Program after the host stops (non-zero: the service manager restarts the agent).</summary>
+internal sealed class AgentRunState
+{
+    /// <summary>"key.retry": stopped on purpose so that the service manager starts the agent again.</summary>
+    public const int KeyRetryExitCode = 4;
+
+    public int ExitCode { get; set; }
 }
 
 internal static class AgentHost
@@ -60,19 +77,71 @@ internal static class AgentHost
     public const string ServiceName = "NexusPCAgent";
     public const string WebSocketPath = "/v1/ws";
 
-    public static WebApplication Build(string[] args, AgentHostOptions options)
+    /// <summary>
+    /// Normal mode when the PC key opens. Otherwise "key unavailable" (E4-3a, fail-closed for the network): no
+    /// identity, no certificate, no plan token and no listening port; config.json, entitlement.json and the
+    /// certificate are not read or changed. Local functions keep working.
+    /// </summary>
+    public static IHost Build(string[] args, AgentHostOptions options)
     {
         AgentPaths.EnsureSecureDirectory(options.DataDirectory);
-        var deviceKey = options.DeviceKey ?? (OperatingSystem.IsWindows()
-            ? Nexus.Agent.Security.DeviceKeyStore.OpenOrCreate()
-            : throw new PlatformNotSupportedException("The PC key needs Windows CNG; pass AgentHostOptions.DeviceKey."));
-        var config = AgentConfig.LoadOrCreate(options.DataDirectory, Nexus.Core.Security.PcIdDerivation.FromSpki(deviceKey.Spki), out var pcIdChange);
-        var certificate = AgentCertificate.LoadOrCreate(options.DataDirectory, ref config);
-        var identity = new AgentIdentity(config.PcId, Environment.MachineName, certificate, deviceKey);
+        var audit = new AuditLog(options.DataDirectory, options.Time);
+        var factory = options.DeviceKeyFactory ?? (() => DeviceKeyOpener.OpenDefault(Environment.GetEnvironmentVariable, options.DataDirectory));
+        var deviceKey = DeviceKeyOpener.Open(factory, options.DeviceKeyPauses ?? DeviceKeyOpener.DefaultPauses, options.Time, out var failure);
         var devices = new JsonDeviceStore(options.DataDirectory);
         var power = options.Power ?? (OperatingSystem.IsWindows() ? new WindowsPowerController() : new UnsupportedPowerController());
         var metricsSource = options.MetricsSource ?? (OperatingSystem.IsWindows() ? new WindowsMetricsSource() : new PortableMetricsSource());
-        var services = new AgentServices(identity, devices, power, new AuditLog(options.DataDirectory, options.Time), options.Time, options.PairingLifetime, options.HandshakeTimeout, metricsSource);
+        if (deviceKey is null)
+        {
+            audit.Record(null, "device.keyUnavailable", ok: false, failure!.Error, null);
+            var report = $"Nexus PC: the PC protection key could not be opened ({failure.Error}, {failure.Attempts} attempts). "
+                + "Phones cannot connect or pair until it opens; local functions keep working. "
+                + "Restart the Nexus PC service to try again. If the key is lost, every phone must be paired again.";
+            if (options.EventLog is { } log)
+            {
+                log(report);
+            }
+            else if (OperatingSystem.IsWindows())
+            {
+                AgentPaths.WriteEventLog(report, AgentPaths.KeyUnavailableEventId);
+            }
+            else
+            {
+                Console.Error.WriteLine(report);
+            }
+            return BuildKeyUnavailable(args, options, new LocalServices(devices, power, audit, options.Time, metricsSource), failure);
+        }
+        return BuildNormal(args, options, deviceKey, new DeviceSetup(devices, power, audit, metricsSource));
+    }
+
+    private sealed record DeviceSetup(JsonDeviceStore Devices, IPowerController Power, AuditLog Audit, IMetricsSource MetricsSource);
+
+    private static IHost BuildKeyUnavailable(string[] args, AgentHostOptions options, LocalServices services, DeviceKeyUnavailable failure)
+    {
+        // A plain host: no Kestrel at all, so no port can be bound (not even ASP.NET Core's default one).
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { Args = args, ContentRootPath = AppContext.BaseDirectory });
+        builder.Services.AddWindowsService(o => o.ServiceName = ServiceName);
+        var runState = new AgentRunState();
+        builder.Services.AddSingleton(runState);
+        builder.Services.AddSingleton(services);
+        builder.Services.AddSingleton(sp => new AdminService(services, failure, () =>
+        {
+            runState.ExitCode = AgentRunState.KeyRetryExitCode;
+            sp.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+        }));
+        AddLocalServices(builder.Services, options, services, options.TrayPath);
+        var app = builder.Build();
+        WireLocalServices(app.Services, options, services);
+        return app;
+    }
+
+    private static WebApplication BuildNormal(string[] args, AgentHostOptions options, IDeviceKey deviceKey, DeviceSetup setup)
+    {
+        // pcId and config.json only from here on, after the key opened.
+        var config = AgentConfig.LoadOrCreate(options.DataDirectory, Nexus.Core.Security.PcIdDerivation.FromSpki(deviceKey.Spki), out var pcIdChange);
+        var certificate = AgentCertificate.LoadOrCreate(options.DataDirectory, ref config);
+        var identity = new AgentIdentity(config.PcId, Environment.MachineName, certificate, deviceKey);
+        var services = new AgentServices(identity, setup.Devices, setup.Power, setup.Audit, options.Time, options.PairingLifetime, options.HandshakeTimeout, setup.MetricsSource);
         var entitlementStore = new EntitlementFileStore(options.DataDirectory);
         services.Entitlements = new Nexus.Core.Entitlements.EntitlementTracker(
             new Nexus.Core.Entitlements.EntitlementVerifier(options.EntitlementTrust ?? Nexus.Core.Entitlements.PinnedEntitlementKeys.Trust),
@@ -139,29 +208,15 @@ internal static class AgentHost
             }
         });
 
+        builder.Services.AddSingleton(new AgentRunState());
         builder.Services.AddSingleton(services);
-        builder.Services.AddSingleton<AdminService>();
+        builder.Services.AddSingleton<LocalServices>(services);
+        builder.Services.AddSingleton(_ => new AdminService(services));
         builder.Services.AddHostedService(_ => new EntitlementLoop(services.Entitlements));
-        builder.Services.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
-        builder.Services.AddSingleton(sp => new OpenRgbHost(options.OpenRgbExecutable, OpenRgbHost.ConfigDirectory(options.DataDirectory), options.OpenRgbPort, sp.GetRequiredService<ILogger<OpenRgbHost>>(),
-            options.OpenRgbOwners, OpenRgbHost.PinnedSha256, start: null, anyOs: false));
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<OpenRgbHost>());
-        builder.Services.AddSingleton(sp => new AutomationService(services, options.DataDirectory, options.TimeZone, sp.GetRequiredService<ILogger<AutomationService>>()));
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<AutomationService>());
-        if (options.EnableSessionPipe)
-        {
-            var trayPath = options.TrayPath ?? config.TrayPath ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Tray", "Nexus.Tray.exe"));
-            builder.Services.AddHostedService(sp => new TraySessionServer(services.Trays, sp.GetRequiredService<AdminService>(), options.SessionPipeName, trayPath, sp.GetRequiredService<ILogger<TraySessionServer>>()));
-        }
-        if (options.EnableAdminPipe)
-        {
-            builder.Services.AddHostedService(sp => new AdminPipeServer(sp.GetRequiredService<AdminService>(), options.AdminPipeName, sp.GetRequiredService<ILogger<AdminPipeServer>>()));
-        }
+        AddLocalServices(builder.Services, options, services, options.TrayPath ?? config.TrayPath);
 
         var app = builder.Build();
-        services.Automations = app.Services.GetRequiredService<AutomationService>();
-        services.OpenRgb = app.Services.GetRequiredService<OpenRgbHost>();
-        services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort, services.OpenRgb.Guard);
+        WireLocalServices(app.Services, options, services);
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         app.Map(WebSocketPath, async context =>
@@ -178,6 +233,33 @@ internal static class AgentHost
             await session.RunAsync(stopping.Token).ConfigureAwait(false);
         });
         return app;
+    }
+
+    /// <summary>Both modes: metrics, OpenRGB, automations, the tray channel and the admin pipe.</summary>
+    private static void AddLocalServices(IServiceCollection collection, AgentHostOptions options, LocalServices services, string? trayPath)
+    {
+        collection.AddHostedService(sp => new MetricsLoop(services.Metrics, sp.GetRequiredService<ILogger<MetricsLoop>>()));
+        collection.AddSingleton(sp => new OpenRgbHost(options.OpenRgbExecutable, OpenRgbHost.ConfigDirectory(options.DataDirectory), options.OpenRgbPort, sp.GetRequiredService<ILogger<OpenRgbHost>>(),
+            options.OpenRgbOwners, OpenRgbHost.PinnedSha256, start: null, anyOs: false));
+        collection.AddHostedService(sp => sp.GetRequiredService<OpenRgbHost>());
+        collection.AddSingleton(sp => new AutomationService(services, options.DataDirectory, options.TimeZone, sp.GetRequiredService<ILogger<AutomationService>>()));
+        collection.AddHostedService(sp => sp.GetRequiredService<AutomationService>());
+        if (options.EnableSessionPipe)
+        {
+            var expectedTray = trayPath ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Tray", "Nexus.Tray.exe"));
+            collection.AddHostedService(sp => new TraySessionServer(services.Trays, sp.GetRequiredService<AdminService>(), options.SessionPipeName, expectedTray, sp.GetRequiredService<ILogger<TraySessionServer>>()));
+        }
+        if (options.EnableAdminPipe)
+        {
+            collection.AddHostedService(sp => new AdminPipeServer(sp.GetRequiredService<AdminService>(), options.AdminPipeName, sp.GetRequiredService<ILogger<AdminPipeServer>>()));
+        }
+    }
+
+    private static void WireLocalServices(IServiceProvider provider, AgentHostOptions options, LocalServices services)
+    {
+        services.Automations = provider.GetRequiredService<AutomationService>();
+        services.OpenRgb = provider.GetRequiredService<OpenRgbHost>();
+        services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort, services.OpenRgb.Guard);
     }
 
     private static List<IPEndPoint> BoundEndpoints(WebApplication app)

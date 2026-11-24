@@ -101,6 +101,12 @@ jobs:
           # Self-contained: the PC needs no separate .NET installation.
           dotnet publish windows/Nexus.Agent -c Release -r win-x64 --self-contained true -p:Version=$v -o staging/Agent
           if ($LASTEXITCODE) { exit 1 }
+          # The development file key (E4-3a) must never be compiled into the Windows agent.
+          # Type names are UTF-8 metadata; string literals are UTF-16 (#US heap).
+          $bytes = [IO.File]::ReadAllBytes("staging/Agent/Nexus.Agent.dll")
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          $utf16 = [Text.Encoding]::Unicode.GetString($bytes)
+          if ($ascii.Contains('DevFileDeviceKey') -or $ascii.Contains('NEXUS_DEV_FILE_KEY') -or $utf16.Contains('NEXUS_DEV_FILE_KEY')) { throw 'development file key compiled into the Windows agent' }
           dotnet publish windows/Nexus.Tray -c Release -r win-x64 --self-contained true -p:Version=$v -o staging/Tray
           if ($LASTEXITCODE) { exit 1 }
 

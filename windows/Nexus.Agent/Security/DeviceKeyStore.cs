@@ -44,12 +44,20 @@ internal sealed class DeviceKeyStore : IDeviceKey
     public bool Created { get; }
 
     /// <summary>Opens the existing key (any provider) or creates it: Platform Crypto Provider first, then Software KSP.</summary>
-    public static DeviceKeyStore OpenOrCreate(string keyName = KeyName)
+    public static DeviceKeyStore OpenOrCreate(string keyName = KeyName) => OpenOrCreate(keyName, machineKey: true);
+
+    /// <summary>
+    /// <paramref name="machineKey"/> false is for tests only (no administrator rights needed): a key of the current
+    /// user in the Software KSP, same algorithm and policy. Production always uses the machine key.
+    /// </summary>
+    internal static DeviceKeyStore OpenOrCreate(string keyName, bool machineKey)
     {
-        CngProvider[] providers = [CngProvider.MicrosoftPlatformCryptoProvider, CngProvider.MicrosoftSoftwareKeyStorageProvider];
+        CngProvider[] providers = machineKey
+            ? [CngProvider.MicrosoftPlatformCryptoProvider, CngProvider.MicrosoftSoftwareKeyStorageProvider]
+            : [CngProvider.MicrosoftSoftwareKeyStorageProvider];
         foreach (var provider in providers)
         {
-            if (TryOpen(keyName, provider) is { } existing)
+            if (TryOpen(keyName, provider, machineKey) is { } existing)
             {
                 return new DeviceKeyStore(existing, provider.Provider, created: false);
             }
@@ -61,7 +69,7 @@ internal sealed class DeviceKeyStore : IDeviceKey
                 var key = CngKey.Create(CngAlgorithm.ECDsaP256, keyName, new CngKeyCreationParameters
                 {
                     Provider = provider,
-                    KeyCreationOptions = CngKeyCreationOptions.MachineKey,
+                    KeyCreationOptions = machineKey ? CngKeyCreationOptions.MachineKey : CngKeyCreationOptions.None,
                     ExportPolicy = CngExportPolicies.None,
                     KeyUsage = CngKeyUsages.Signing,
                 });
@@ -76,20 +84,21 @@ internal sealed class DeviceKeyStore : IDeviceKey
     }
 
     /// <summary>Removes the key (tests only).</summary>
-    internal static void Delete(string keyName)
+    internal static void Delete(string keyName, bool machineKey = true)
     {
         foreach (var provider in new[] { CngProvider.MicrosoftPlatformCryptoProvider, CngProvider.MicrosoftSoftwareKeyStorageProvider })
         {
-            TryOpen(keyName, provider)?.Delete();
+            TryOpen(keyName, provider, machineKey)?.Delete();
         }
     }
 
-    private static CngKey? TryOpen(string keyName, CngProvider provider)
+    private static CngKey? TryOpen(string keyName, CngProvider provider, bool machineKey)
     {
+        var scope = machineKey ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None;
         try
         {
-            return CngKey.Exists(keyName, provider, CngKeyOpenOptions.MachineKey)
-                ? CngKey.Open(keyName, provider, CngKeyOpenOptions.MachineKey)
+            return CngKey.Exists(keyName, provider, scope)
+                ? CngKey.Open(keyName, provider, scope)
                 : null;
         }
         catch (CryptographicException)

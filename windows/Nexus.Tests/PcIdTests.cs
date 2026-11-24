@@ -9,11 +9,23 @@ using Nexus.Core.Security;
 namespace Nexus.Tests;
 
 /// <summary>
-/// Test stand-in for the machine CNG key: a P-256 key kept outside the data directory (so data-directory
-/// checks see nothing new), one per data directory, so pcId stays stable across agent restarts in tests.
+/// Test stand-in for the machine CNG key: a P-256 key in its own folder next to the data directory (never inside
+/// it, so data-directory checks see nothing new), one per data directory, so pcId stays stable across agent
+/// restarts in the same test. Parallel tests never share a file; <see cref="Delete"/> (called by
+/// AgentTestHost.DeleteDirectory) removes it, and whatever a test left behind is removed when the test run exits.
 /// </summary>
 internal sealed class FileDeviceKey : IDeviceKey
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> Folders = new(StringComparer.Ordinal);
+
+    static FileDeviceKey() => AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+    {
+        foreach (var folder in Folders.Keys)
+        {
+            DeleteFolder(folder);
+        }
+    };
+
     private readonly ECDsa _ecdsa;
 
     private FileDeviceKey(ECDsa ecdsa, bool created)
@@ -27,12 +39,15 @@ internal sealed class FileDeviceKey : IDeviceKey
     public string Provider => "test";
     public bool Created { get; }
 
-    public static string KeyPath(string dataDirectory) => Path.Combine(Path.GetTempPath(), "nexus-test-keys",
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(dataDirectory)))) + ".key");
+    /// <summary>"&lt;data directory&gt;-key": a sibling folder, unique per data directory.</summary>
+    public static string KeyFolder(string dataDirectory) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataDirectory)) + "-key";
+
+    public static string KeyPath(string dataDirectory) => Path.Combine(KeyFolder(dataDirectory), "device.key");
 
     public static FileDeviceKey OpenOrCreate(string dataDirectory)
     {
         var path = KeyPath(dataDirectory);
+        Folders.TryAdd(KeyFolder(dataDirectory), 0);
         var ecdsa = ECDsa.Create();
         if (File.Exists(path))
         {
@@ -41,8 +56,41 @@ internal sealed class FileDeviceKey : IDeviceKey
         }
         ecdsa.GenerateKey(ECCurve.NamedCurves.nistP256);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, ecdsa.ExportPkcs8PrivateKey());
+        try
+        {
+            using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+            file.Write(ecdsa.ExportPkcs8PrivateKey());
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            // Created by someone else in the meantime: never overwrite, use that one.
+            ecdsa.ImportPkcs8PrivateKey(File.ReadAllBytes(path), out _);
+            return new FileDeviceKey(ecdsa, created: false);
+        }
         return new FileDeviceKey(ecdsa, created: true);
+    }
+
+    /// <summary>Removes the key of this data directory (its folder).</summary>
+    public static void Delete(string dataDirectory)
+    {
+        var folder = KeyFolder(dataDirectory);
+        DeleteFolder(folder);
+        Folders.TryRemove(folder, out _);
+    }
+
+    private static void DeleteFolder(string folder)
+    {
+        try
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // best effort at exit
+        }
     }
 
     public byte[] SignP1363(ReadOnlySpan<byte> data) =>
@@ -56,13 +104,11 @@ public sealed class PcIdTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "nexus-pcid-" + Guid.NewGuid().ToString("N"));
 
-    public PcIdTests() => Directory.CreateDirectory(_dir);
+    // Created like the agent's own data folder (protected DACL on Windows), not with an inherited %TEMP% ACL:
+    // the agent tests below start the agent on it, and its start-up check must pass unchanged (CI on aef3cec).
+    public PcIdTests() => AgentTestHost.CreateDataDirectory(_dir);
 
-    public void Dispose()
-    {
-        Directory.Delete(_dir, recursive: true);
-        File.Delete(FileDeviceKey.KeyPath(_dir));
-    }
+    public void Dispose() => AgentTestHost.DeleteDirectory(_dir);
 
     private static JsonDocument Fixture() => JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "shared", "pc-id", "derive.v1.json")));
 
@@ -190,8 +236,12 @@ public sealed class PcIdTests : IDisposable
     }
 }
 
-/// <summary>E4-3 on Windows only: the machine CNG key (needs admin; CI windows-latest).</summary>
-public sealed class DeviceKeyStoreWindowsTests
+/// <summary>
+/// E4-3 on Windows only (CI windows-latest): the CNG key. The machine key needs administrator rights; without
+/// them that test says so in its output (xunit 2.9 has no dynamic skip). The user-key variant (Software KSP,
+/// tests only) checks P-256, P1363 signatures, non-exportability and stability without rights.
+/// </summary>
+public sealed class DeviceKeyStoreWindowsTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [Fact]
     public void MachineKey_IsP256_Stable_SignsP1363_AndIsNotExportable()
@@ -200,20 +250,44 @@ public sealed class DeviceKeyStoreWindowsTests
         {
             return; // Windows-only: CNG
         }
-        Run();
+        if (!Elevated())
+        {
+            output.WriteLine("Not elevated: the machine key test needs administrator rights and did not run (UserKey_* covers the key without rights).");
+            return;
+        }
+        Run(machineKey: true);
+    }
+
+    [Fact]
+    public void UserKey_IsP256_Stable_SignsP1363_AndIsNotExportable()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // Windows-only: CNG
+        }
+        Run(machineKey: false);
     }
 
     [SupportedOSPlatform("windows")]
-    private static void Run()
+    private static bool Elevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void Run(bool machineKey)
     {
         var name = "NexusPC-Device-test-" + Guid.NewGuid().ToString("N");
         try
         {
             byte[] spki;
-            using (var key = DeviceKeyStore.OpenOrCreate(name))
+            using (var key = DeviceKeyStore.OpenOrCreate(name, machineKey))
             {
                 Assert.True(key.Created);
-                Assert.Contains(key.Provider, new[] { "Microsoft Platform Crypto Provider", "Microsoft Software Key Storage Provider" });
+                Assert.Contains(key.Provider, machineKey
+                    ? new[] { "Microsoft Platform Crypto Provider", "Microsoft Software Key Storage Provider" }
+                    : new[] { "Microsoft Software Key Storage Provider" });
                 spki = key.Spki;
                 Assert.True(PcIdDerivation.IsP256Spki(spki));
                 var data = "hello"u8.ToArray();
@@ -224,7 +298,7 @@ public sealed class DeviceKeyStoreWindowsTests
                 Assert.True(pub.VerifyData(data, sig, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
                 Assert.ThrowsAny<CryptographicException>(() => key.TryExportPrivateKey());
             }
-            using (var reopened = DeviceKeyStore.OpenOrCreate(name))
+            using (var reopened = DeviceKeyStore.OpenOrCreate(name, machineKey))
             {
                 Assert.False(reopened.Created);
                 Assert.Equal(spki, reopened.Spki);
@@ -232,7 +306,7 @@ public sealed class DeviceKeyStoreWindowsTests
         }
         finally
         {
-            DeviceKeyStore.Delete(name);
+            DeviceKeyStore.Delete(name, machineKey);
         }
     }
 }

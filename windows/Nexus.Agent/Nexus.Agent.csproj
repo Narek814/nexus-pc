@@ -11,6 +11,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.1.0</Version>
   </PropertyGroup>
+  <!--
+    Development/CI file key (E4-3a, owner decision): compiled only into builds without a Windows RuntimeIdentifier
+    (macOS CI, Linux tests). The installer publishes with -r win-x64, so the code does not exist there; any build
+    that has it still refuses it on Windows at run time, and it is used only with NEXUS_DEV_FILE_KEY set.
+  -->
+  <PropertyGroup Condition="!$(RuntimeIdentifier.StartsWith('win'))">
+    <DefineConstants>$(DefineConstants);NEXUS_DEV_FILE_KEY</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />

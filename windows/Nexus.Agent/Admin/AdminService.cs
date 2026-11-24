@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
+using Nexus.Agent.Security;
 using Nexus.Agent.Server;
 using Nexus.Core.Pairing;
 using Nexus.Core.Security;
@@ -17,18 +18,60 @@ internal sealed class AdminConnectionState
 /// Operations for the person at the PC (run elevated): open pairing, approve, list and revoke devices.
 /// Transport-independent so it is tested directly; AdminPipeServer exposes it locally only.
 /// </summary>
-internal sealed class AdminService(AgentServices services)
+internal sealed class AdminService
 {
+    /// <summary>Error for everything that needs the PC key while it is unavailable (E4-3a).</summary>
+    public const string KeyUnavailable = "keyUnavailable";
+    public const string RateLimited = "rateLimited";
+    public static readonly TimeSpan KeyRetryInterval = TimeSpan.FromSeconds(60);
+
+    private readonly LocalServices services;
+    private readonly AgentServices? _agent;
+    private readonly DeviceKeyUnavailable? _keyUnavailable;
+    private readonly Action? _restart;
+    private readonly Lock _retryLock = new();
+    private DateTimeOffset? _lastRetry;
+
+    /// <summary>Normal mode: the PC key opened, identity and pairing exist.</summary>
+    public AdminService(AgentServices services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        this.services = services;
+        _agent = services;
+    }
+
+    /// <summary>
+    /// "Key unavailable" mode: status without pcId, no pairing, and "key.retry" which stops the agent through
+    /// <paramref name="restart"/> (non-zero exit, the service manager starts it again).
+    /// </summary>
+    public AdminService(LocalServices services, DeviceKeyUnavailable keyUnavailable, Action restart)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(keyUnavailable);
+        ArgumentNullException.ThrowIfNull(restart);
+        this.services = services;
+        _keyUnavailable = keyUnavailable;
+        _restart = restart;
+    }
+
+    /// <summary>Identity and pairing; a refusal (<see cref="KeyUnavailable"/>) without the PC key.</summary>
+    private AgentServices Agent => _agent ?? throw new InvalidOperationException(KeyUnavailable);
+
     public async Task<JsonObject> HandleAsync(JsonObject request, AdminConnectionState state, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(state);
         var op = request["op"]?.GetValue<string>();
+        if (_agent is null && op is not null && op.StartsWith("pair.", StringComparison.Ordinal))
+        {
+            return Error(KeyUnavailable); // no pcId, no certificate: nothing to pair with
+        }
         try
         {
             return op switch
             {
-                "status" => Status(),
+                "status" => _keyUnavailable is { } unavailable ? UnavailableStatus(unavailable) : Status(),
+                "key.retry" => KeyRetry(),
                 "pair.start" => PairStart(state),
                 "pair.wait" => await PairWaitAsync(state, cancellationToken).ConfigureAwait(false),
                 "pair.decide" => PairDecide(request, state),
@@ -76,13 +119,13 @@ internal sealed class AdminService(AgentServices services)
         ArgumentNullException.ThrowIfNull(state);
         if (state.PairingSessionId is { } id)
         {
-            services.Pairing.Cancel(id); // nobody is left to approve, so nothing may be approved
+            _agent?.Pairing.Cancel(id); // nobody is left to approve, so nothing may be approved
         }
     }
 
     public PairingLink CreateLink(string code)
     {
-        var identity = services.Identity;
+        var identity = Agent.Identity;
         // Addresses as they are now (Wi-Fi may have come up after the service started), not at start-up.
         var bound = identity.Endpoints;
         var port = bound.Count > 0 ? bound[0].Port : 0;
@@ -98,20 +141,57 @@ internal sealed class AdminService(AgentServices services)
 
     private JsonObject Status() => Ok(new JsonObject
     {
-        ["pcId"] = services.Identity.PcId.ToString("D"),
-        ["pcName"] = services.Identity.PcName,
-        ["version"] = services.Identity.Version,
-        ["fingerprint"] = services.Identity.Fingerprint,
-        ["endpoints"] = new JsonArray([.. services.Identity.Endpoints.Select(e => (JsonNode)e.ToString())]),
+        ["state"] = "ready",
+        ["pcId"] = Agent.Identity.PcId.ToString("D"),
+        ["pcName"] = Agent.Identity.PcName,
+        ["version"] = Agent.Identity.Version,
+        ["fingerprint"] = Agent.Identity.Fingerprint,
+        ["endpoints"] = new JsonArray([.. Agent.Identity.Endpoints.Select(e => (JsonNode)e.ToString())]),
         ["addresses"] = new JsonArray([.. Hosting.NetworkAddresses.EligibleLocalAddresses().Select(a => (JsonNode)a.ToString())]),
         ["pairedDevices"] = services.Devices.All.Count,
         ["auditLog"] = services.Audit.FilePath,
         ["openRgb"] = services.OpenRgb?.State, // read by the tray to show "lighting taken over" (T2)
     });
 
+    /// <summary>No pcId, fingerprint, addresses or QR: without the PC key the agent has no identity (E4-3a).</summary>
+    private JsonObject UnavailableStatus(DeviceKeyUnavailable unavailable) => Ok(new JsonObject
+    {
+        ["state"] = KeyUnavailable,
+        ["error"] = unavailable.Error,
+        ["attempts"] = unavailable.Attempts,
+        ["lastAttemptUtc"] = unavailable.LastAttemptUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        ["pairedDevices"] = services.Devices.All.Count,
+        ["auditLog"] = services.Audit.FilePath,
+        ["openRgb"] = services.OpenRgb?.State,
+    });
+
+    /// <summary>
+    /// Admin pipe only (the tray may not ask: it is not in SessionOps.AllowedFromTray). At most once a minute, so
+    /// a loop cannot hammer the key store (TPM lockout); the service manager starts the agent again.
+    /// </summary>
+    private JsonObject KeyRetry()
+    {
+        if (_keyUnavailable is null || _restart is null)
+        {
+            return Error("the PC key is available");
+        }
+        var now = services.Time.GetUtcNow();
+        lock (_retryLock)
+        {
+            if (_lastRetry is { } last && now - last < KeyRetryInterval)
+            {
+                return Error(RateLimited);
+            }
+            _lastRetry = now;
+        }
+        services.Audit.Record(null, "device.keyRetry", ok: true, null, null);
+        _restart();
+        return Ok(new JsonObject { ["restarting"] = true });
+    }
+
     private JsonObject PairStart(AdminConnectionState state)
     {
-        var ticket = services.Pairing.Start(services.PairingLifetime);
+        var ticket = Agent.Pairing.Start(Agent.PairingLifetime);
         state.PairingSessionId = ticket.SessionId;
         return Ok(new JsonObject
         {
@@ -127,7 +207,7 @@ internal sealed class AdminService(AgentServices services)
         {
             return Error("call pair.start first");
         }
-        var pending = await services.Pairing.WaitForRequestAsync(id, cancellationToken).ConfigureAwait(false);
+        var pending = await Agent.Pairing.WaitForRequestAsync(id, cancellationToken).ConfigureAwait(false);
         return pending is null
             ? Error("pairing expired")
             : Ok(new JsonObject { ["deviceName"] = pending.DeviceName, ["verificationCode"] = pending.VerificationCode });
@@ -141,7 +221,7 @@ internal sealed class AdminService(AgentServices services)
         }
         var approve = request["approve"]?.GetValue<bool>() ?? false;
         var before = services.Devices.All.Select(d => d.DeviceId).ToHashSet();
-        if (!services.Pairing.Decide(id, approve))
+        if (!Agent.Pairing.Decide(id, approve))
         {
             return Error("no device is waiting for approval");
         }
@@ -154,7 +234,7 @@ internal sealed class AdminService(AgentServices services)
     {
         if (state.PairingSessionId is { } id)
         {
-            services.Pairing.Cancel(id);
+            Agent.Pairing.Cancel(id);
             state.PairingSessionId = null;
         }
         return Ok([]);
