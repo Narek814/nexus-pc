@@ -4,8 +4,10 @@ using Nexus.Core.Security;
 
 namespace Nexus.Agent.Server;
 
-internal sealed class AgentIdentity(Guid pcId, string pcName, X509Certificate2 certificate)
+internal sealed class AgentIdentity(Guid pcId, string pcName, X509Certificate2 certificate, Nexus.Agent.Security.IDeviceKey? deviceKey = null)
 {
+    /// <summary>The permanent PC key PcId is derived from; null only for identities built by hand in unit tests.</summary>
+    public Nexus.Agent.Security.IDeviceKey? DeviceKey { get; } = deviceKey;
     public Guid PcId { get; } = pcId;
     public string PcName { get; } = pcName;
     public X509Certificate2 Certificate { get; } = certificate;

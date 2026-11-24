@@ -92,6 +92,8 @@ internal sealed class AgentTestHost : IAsyncDisposable
             OpenRgbOwners = openRgbOwners,
             EntitlementTrust = entitlementTrust,
             EntitlementClock = entitlementClock,
+            // The machine CNG key is never touched by tests: a key file in the data directory keeps pcId stable across restarts.
+            DeviceKey = FileDeviceKey.OpenOrCreate(dataDirectory),
         });
         await app.StartAsync();
         return new AgentTestHost(app, dataDirectory, power, sessionPipe);

@@ -51,6 +51,8 @@ internal sealed record AgentHostOptions
     internal Nexus.Core.Entitlements.EntitlementTrust? EntitlementTrust { get; init; }
     /// <summary>Clock for entitlement terms (tests move it); null = the system clock.</summary>
     internal Nexus.Core.Entitlements.IEntitlementClock? EntitlementClock { get; init; }
+    /// <summary>The permanent PC key; null = the machine CNG key (Windows). Tests inject a file-backed key.</summary>
+    internal Nexus.Agent.Security.IDeviceKey? DeviceKey { get; init; }
 }
 
 internal static class AgentHost
@@ -61,9 +63,12 @@ internal static class AgentHost
     public static WebApplication Build(string[] args, AgentHostOptions options)
     {
         AgentPaths.EnsureSecureDirectory(options.DataDirectory);
-        var config = AgentConfig.LoadOrCreate(options.DataDirectory);
+        var deviceKey = options.DeviceKey ?? (OperatingSystem.IsWindows()
+            ? Nexus.Agent.Security.DeviceKeyStore.OpenOrCreate()
+            : throw new PlatformNotSupportedException("The PC key needs Windows CNG; pass AgentHostOptions.DeviceKey."));
+        var config = AgentConfig.LoadOrCreate(options.DataDirectory, Nexus.Core.Security.PcIdDerivation.FromSpki(deviceKey.Spki), out var pcIdChange);
         var certificate = AgentCertificate.LoadOrCreate(options.DataDirectory, ref config);
-        var identity = new AgentIdentity(config.PcId, Environment.MachineName, certificate);
+        var identity = new AgentIdentity(config.PcId, Environment.MachineName, certificate, deviceKey);
         var devices = new JsonDeviceStore(options.DataDirectory);
         var power = options.Power ?? (OperatingSystem.IsWindows() ? new WindowsPowerController() : new UnsupportedPowerController());
         var metricsSource = options.MetricsSource ?? (OperatingSystem.IsWindows() ? new WindowsMetricsSource() : new PortableMetricsSource());
@@ -72,6 +77,20 @@ internal static class AgentHost
         services.Entitlements = new Nexus.Core.Entitlements.EntitlementTracker(
             new Nexus.Core.Entitlements.EntitlementVerifier(options.EntitlementTrust ?? Nexus.Core.Entitlements.PinnedEntitlementKeys.Trust),
             identity.PcId, entitlementStore, options.EntitlementClock ?? new Nexus.Core.Entitlements.SystemEntitlementClock(options.Time));
+        // Logged once: only when the key or config.json changes. Paired phones keep their records but must pair
+        // again (owner decision 1A): their auth transcript carries the former pcId and no longer verifies.
+        if (deviceKey.Created)
+        {
+            services.Audit.Record(null, "device.key", ok: true, null, deviceKey.Provider);
+        }
+        if (pcIdChange == AgentConfig.PcIdChange.MigratedFromLegacy)
+        {
+            services.Audit.Record(null, "pcId.migrated", ok: true, null, config.LegacyPcId?.ToString("D"));
+        }
+        else if (pcIdChange == AgentConfig.PcIdChange.KeyReplaced)
+        {
+            services.Audit.Record(null, "pcId.keyReplaced", ok: false, "device.keyLost", deviceKey.Provider);
+        }
         if (entitlementStore.DiscardedUntrusted)
         {
             // Someone else wrote or re-permissioned the file: deleted, treated as "no token".

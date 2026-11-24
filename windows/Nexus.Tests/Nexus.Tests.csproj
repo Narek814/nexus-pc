@@ -22,6 +22,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\shared\protocol\fixtures\**\*.json" Link="shared\fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\shared\fixtures\pc-id\*.json" Link="shared\pc-id\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\shared\schemas\*.json" Link="shared\schemas\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
