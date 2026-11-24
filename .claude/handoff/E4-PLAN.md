@@ -134,3 +134,7 @@ security-auditor (дополнение к разделу 5): нет пути с�
 Зависит от: E4-3 (aef3cec)
 ```
 Текст для документации, если выбран fail-closed (ARCHITECTURE.md раздел D, docs/SECURITY*): «Без действующего постоянного ключа NexusPC-Device-v1 агент не запускается: временные ключи, старый pcId и обходы не используются. Причина пишется в журнал событий Windows. Восстановление — перезапуск службы; при потере ключа все телефоны нужно сопрячь заново.»
+
+### CI на aef3cec — красный (E4-3 не принят окончательно), чинить вместе с E4-3a
+1. .NET tests (windows-latest): 2 падения — PcIdTests.Agent_KeyLost_WarnsInAudit и Agent_OldInstall_MigratesLogsOnceAndKeepsPairedDevices: DataDirectoryUntrustedException (тест сам создаёт каталог nexus-pcid-* в %TEMP% с наследуемым ACL). Исправление: создавать каталог тем же способом, что AgentTestHost (защищённый DACL).
+2. iOS (macos-latest), шаг «Start a real Nexus.Agent»: агент падает PlatformNotSupportedException — на macOS нет CNG, AgentHost требует AgentHostOptions.DeviceKey. Живые тесты NexusKit не запускаются. Нужен источник ключа для не-Windows (только dev/CI) — ЖДЁТ РЕШЕНИЯ ВЛАДЕЛЬЦА.
