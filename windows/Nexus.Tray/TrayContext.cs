@@ -14,6 +14,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem _autostart;
     private readonly UserAppStore _store;
     private readonly AgentConnection _agent;
+    private readonly AccountController _account;
     private readonly SynchronizationContext _ui;
     private readonly string? _sharedFolder;
     private readonly ToolStripMenuItem _stopScreen;
@@ -74,10 +75,17 @@ internal sealed class TrayContext : ApplicationContext
         var logPath = Path.Combine(dataDir, "tray.log");
         var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(logPath, message));
         _agent = agent;
+        // E4-5: the sign-in attempt lives in the service's memory; the tray keeps only "started at T" (no codes).
+        _account = new AccountController(agent, new Nexus.Core.Account.LoginMarkerFile(Path.Combine(dataDir, "login-pending.json")));
+        _account.Notice += (_, text) => Notify(text);
         agent.ConnectedChanged += (_, connected) => _ui.Post(async _ =>
         {
             UpdateStatus(connected);
             await CheckLightingAsync(); // also reads the PC key state at once
+            if (connected)
+            {
+                await _account.CheckAsync(atStartup: true); // a sign-in left from before this tray start
+            }
         }, null);
         agent.StatusChanged += (_, status) => _ui.Post(_ =>
         {
@@ -97,6 +105,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(_keyRetry);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
+        menu.Items.Add(TrayText.AccountMenu, null, (_, _) => Show(() => new AccountForm(_account)));
         menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
         menu.Items.Add("Устройства и разрешения…", null, (_, _) => Show(() => new DevicesForm(_agent, agentPath)));
         menu.Items.Add("Настроить подсветку (OpenRGB)…", null, (_, _) => OpenRgbWindow(agentPath));
@@ -270,6 +279,7 @@ internal sealed class TrayContext : ApplicationContext
         _icon.Visible = false;
         _icon.Dispose();
         _currentIcon.Dispose();
+        _account.Dispose();
         _agent.Dispose();
         base.ExitThreadCore();
     }

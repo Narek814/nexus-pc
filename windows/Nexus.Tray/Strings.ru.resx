@@ -21,4 +21,85 @@
   <data name="KeyRetry" xml:space="preserve">
     <value>Повторить</value>
   </data>
+  <data name="AccountMenu" xml:space="preserve">
+    <value>Аккаунт…</value>
+  </data>
+  <data name="AccountTitle" xml:space="preserve">
+    <value>Nexus PC — аккаунт</value>
+  </data>
+  <data name="AccountHeading" xml:space="preserve">
+    <value>Аккаунт Nexus PC</value>
+  </data>
+  <data name="AccountChecking" xml:space="preserve">
+    <value>Проверяем…</value>
+  </data>
+  <data name="AccountSignedOut" xml:space="preserve">
+    <value>Этот ПК не привязан к аккаунту Nexus PC.</value>
+  </data>
+  <data name="AccountSignIn" xml:space="preserve">
+    <value>Войти</value>
+  </data>
+  <data name="AccountStarting" xml:space="preserve">
+    <value>Получаем код…</value>
+  </data>
+  <data name="AccountCodeHint" xml:space="preserve">
+    <value>В приложении Nexus PC на iPhone выберите добавление ПК в аккаунт и введите этот код:</value>
+  </data>
+  <data name="AccountExpiresIn" xml:space="preserve">
+    <value>Код действует ещё {0}. Ждём подтверждения на iPhone…</value>
+  </data>
+  <data name="AccountCancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="AccountClose" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="AccountLinked" xml:space="preserve">
+    <value>Этот ПК привязан к аккаунту Nexus PC, который подтвердил вход на iPhone. Почта аккаунта на ПК не хранится: её видно в приложении.</value>
+  </data>
+  <data name="AccountPlan" xml:space="preserve">
+    <value>План: {0}</value>
+  </data>
+  <data name="PlanFree" xml:space="preserve">
+    <value>Бесплатный</value>
+  </data>
+  <data name="PlanPro" xml:space="preserve">
+    <value>Pro</value>
+  </data>
+  <data name="AccountUnlink" xml:space="preserve">
+    <value>Отвязать</value>
+  </data>
+  <data name="AccountUnlinkConfirm" xml:space="preserve">
+    <value>Отвязать этот ПК от аккаунта? План на этом ПК станет бесплатным. Чтобы полностью убрать ПК из аккаунта, удалите его и в приложении на iPhone.</value>
+  </data>
+  <data name="ProblemRateLimited" xml:space="preserve">
+    <value>Слишком много попыток. Подождите минуту и попробуйте снова.</value>
+  </data>
+  <data name="ProblemPcsLimit" xml:space="preserve">
+    <value>В аккаунте уже максимальное число ПК. Удалите один в приложении на iPhone и попробуйте снова.</value>
+  </data>
+  <data name="ProblemNetwork" xml:space="preserve">
+    <value>Нет связи с сервером Nexus PC. Проверьте подключение к интернету и попробуйте снова.</value>
+  </data>
+  <data name="ProblemNotConfigured" xml:space="preserve">
+    <value>Вход в аккаунт недоступен в этой версии Nexus PC.</value>
+  </data>
+  <data name="ProblemServiceUnavailable" xml:space="preserve">
+    <value>Нет связи со службой Nexus PC.</value>
+  </data>
+  <data name="ProblemExpired" xml:space="preserve">
+    <value>Вход не завершён вовремя. Нажмите «Войти», чтобы получить новый код.</value>
+  </data>
+  <data name="ProblemFailed" xml:space="preserve">
+    <value>Не удалось войти. Попробуйте снова.</value>
+  </data>
+  <data name="NoticeResuming" xml:space="preserve">
+    <value>Вход не завершён — завершаем.</value>
+  </data>
+  <data name="NoticeSignedIn" xml:space="preserve">
+    <value>Этот ПК привязан к вашему аккаунту Nexus PC.</value>
+  </data>
+  <data name="NoticeRetry" xml:space="preserve">
+    <value>Вход не завершён. Откройте «Аккаунт» в меню Nexus PC и войдите снова.</value>
+  </data>
 </root>

@@ -21,4 +21,85 @@
   <data name="KeyRetry" xml:space="preserve">
     <value>Try again</value>
   </data>
+  <data name="AccountMenu" xml:space="preserve">
+    <value>Account…</value>
+  </data>
+  <data name="AccountTitle" xml:space="preserve">
+    <value>Nexus PC — account</value>
+  </data>
+  <data name="AccountHeading" xml:space="preserve">
+    <value>Nexus PC account</value>
+  </data>
+  <data name="AccountChecking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="AccountSignedOut" xml:space="preserve">
+    <value>This PC is not linked to a Nexus PC account.</value>
+  </data>
+  <data name="AccountSignIn" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="AccountStarting" xml:space="preserve">
+    <value>Getting a code…</value>
+  </data>
+  <data name="AccountCodeHint" xml:space="preserve">
+    <value>In the Nexus PC app on your iPhone, choose to add a PC to your account and enter this code:</value>
+  </data>
+  <data name="AccountExpiresIn" xml:space="preserve">
+    <value>The code is valid for {0} more. Waiting for confirmation on the iPhone…</value>
+  </data>
+  <data name="AccountCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="AccountClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="AccountLinked" xml:space="preserve">
+    <value>This PC is linked to the Nexus PC account that confirmed the sign-in on the iPhone. The account's email is not stored on this PC: you can see it in the app.</value>
+  </data>
+  <data name="AccountPlan" xml:space="preserve">
+    <value>Plan: {0}</value>
+  </data>
+  <data name="PlanFree" xml:space="preserve">
+    <value>Free</value>
+  </data>
+  <data name="PlanPro" xml:space="preserve">
+    <value>Pro</value>
+  </data>
+  <data name="AccountUnlink" xml:space="preserve">
+    <value>Unlink</value>
+  </data>
+  <data name="AccountUnlinkConfirm" xml:space="preserve">
+    <value>Unlink this PC from the account? The plan on this PC becomes Free. To remove the PC from your account completely, also remove it in the app on your iPhone.</value>
+  </data>
+  <data name="ProblemRateLimited" xml:space="preserve">
+    <value>Too many attempts. Wait a minute and try again.</value>
+  </data>
+  <data name="ProblemPcsLimit" xml:space="preserve">
+    <value>Your account already has the maximum number of PCs. Remove one in the app on your iPhone and try again.</value>
+  </data>
+  <data name="ProblemNetwork" xml:space="preserve">
+    <value>No connection to the Nexus PC server. Check the internet connection and try again.</value>
+  </data>
+  <data name="ProblemNotConfigured" xml:space="preserve">
+    <value>Signing in to an account is not available in this version of Nexus PC.</value>
+  </data>
+  <data name="ProblemServiceUnavailable" xml:space="preserve">
+    <value>No connection to the Nexus PC service.</value>
+  </data>
+  <data name="ProblemExpired" xml:space="preserve">
+    <value>Sign-in was not finished in time. Press "Sign in" to get a new code.</value>
+  </data>
+  <data name="ProblemFailed" xml:space="preserve">
+    <value>Sign-in failed. Try again.</value>
+  </data>
+  <data name="NoticeResuming" xml:space="preserve">
+    <value>Sign-in was not finished — finishing it now.</value>
+  </data>
+  <data name="NoticeSignedIn" xml:space="preserve">
+    <value>This PC is now linked to your Nexus PC account.</value>
+  </data>
+  <data name="NoticeRetry" xml:space="preserve">
+    <value>Sign-in was not finished. Open "Account" in the Nexus PC menu and sign in again.</value>
+  </data>
 </root>
