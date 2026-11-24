@@ -145,8 +145,11 @@ internal sealed partial class AccountClient : IDisposable
             }
             var state = _loginResult switch
             {
-                null => _store.Load() is not null ? "ok" : "none",
-                "ok" or "expired" => _loginResult,
+                // "ok" is derived from the token on disk, not only from the last attempt: after a Wipe (revoked,
+                // pc.key_required, unlink) or an unreadable store the PC is not linked, so it must never read "ok"
+                // next to linked:false. Wipe() also clears _loginResult; this check covers any other path.
+                null or "ok" => _store.Load() is not null ? "ok" : "none",
+                "expired" => _loginResult,
                 _ => "failed",
             };
             var view = new JsonObject { ["state"] = state };
@@ -336,6 +339,7 @@ internal sealed partial class AccountClient : IDisposable
         {
             LogDeleteFailed(_log, ex.GetType().Name);
         }
+        _loginResult = null; // an earlier "ok" no longer holds (PollAsync sets its own result after Wipe)
         _entitlements.MarkRevoked();
     }
 

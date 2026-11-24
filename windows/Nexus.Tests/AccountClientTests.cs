@@ -410,6 +410,34 @@ public sealed class AccountClientTests : IDisposable
         Assert.Contains($"account.token False {error}", _audit);
     }
 
+    [Fact]
+    public async Task Login_status_is_not_ok_after_the_token_was_revoked()
+    {
+        var (client, fake) = await SignedInAsync();
+        fake.TokenError = "revoked";
+        Assert.Equal(RefreshOutcome.Revoked, (await client.RefreshAsync(CancellationToken.None)).Outcome);
+        var data = (await client.LoginStatusAsync(CancellationToken.None)).Data!;
+        Assert.NotEqual("ok", data["state"]!.GetValue<string>());
+        Assert.False(data["linked"]!.GetValue<bool>());
+        Assert.Equal("free", _tracker.Current.Plan);
+        Assert.Equal(EntitlementState.Revoked, _tracker.Current.State);
+    }
+
+    [Fact]
+    public async Task Unpolled_login_never_changes_the_plan()
+    {
+        var (client, fake) = Create();
+        var plan = _tracker.Current.Plan;
+        var state = _tracker.Current.State;
+        Assert.True((await client.StartLoginAsync(CancellationToken.None)).Ok);
+        _time.Now = _time.Now.AddHours(2);
+        Assert.Equal("expired", (await client.LoginStatusAsync(CancellationToken.None)).Data!["state"]!.GetValue<string>());
+        Assert.Null(_store.Load());
+        Assert.DoesNotContain(fake.Requests, r => r.Function == "pc-login-poll");
+        Assert.Equal(plan, _tracker.Current.Plan);
+        Assert.Equal(state, _tracker.Current.State);
+    }
+
     [Theory]
     [InlineData("bad.request", 400)]
     [InlineData("some.future_code", 400)]
