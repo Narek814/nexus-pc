@@ -46,7 +46,7 @@ echo "catalog: revoke_hook_body ok"
 
 total=0
 for f in "$HERE"/sql/[1-9]*.sql; do
-  out="$(psql_run -f "$f")"
+  out="$(psql_run -v pcid_fixture="$(dirname "$BACKEND")/shared/fixtures/pc-id/derive.v1.json" -f "$f")"
   n="$(printf '%s\n' "$out" | sed -n 's/^PASSED \([0-9]*\)$/\1/p' | tail -n1)"
   [ -n "$n" ] || { echo "no PASSED line in $(basename "$f")" >&2; exit 1; }
   echo "$(basename "$f"): $n checks passed"

@@ -11,7 +11,11 @@ grant insert on _results to authenticated, anon, service_role;
 create function pg_temp.h(t text) returns bytea language sql immutable
   as $$ select sha256(convert_to(t, 'UTF8')) $$;
 create function pg_temp.k(n int) returns bytea language sql immutable
-  as $$ select decode(repeat(to_hex(48 + n), 91), 'hex') $$;
+  as $$ select decode('3059301306072a8648ce3d020106082a8648ce3d03010703420004'
+          || repeat(to_hex(48 + n), 64), 'hex') $$;
+-- pcId derived from key n (E4-2, docs/API.md «Идентификатор ПК»).
+create function pg_temp.pc(n int) returns uuid language sql immutable security definer
+  as $$ select public.pc_id_from_spki(pg_temp.k(n)) $$;
 create function pg_temp.nn() returns bytea language sql volatile
   as $$ select uuid_send(gen_random_uuid()) $$;
 create function pg_temp.as_user(u text) returns void language sql
@@ -88,11 +92,11 @@ end $$;
 
 -- First refresh comes with consume 'ok', exactly once.
 do $$ declare s text; n int; begin
-  s := pg_temp.bind('20000000-0000-0000-0000-0000000006a1', pg_temp.k(1), pg_temp.k(1),
+  s := pg_temp.bind(pg_temp.pc(31), pg_temp.k(31), pg_temp.k(31),
     '00000000-0000-0000-0000-0000000006a1', 'a', 'r-a');
   if s <> 'ok' then raise exception 'FAIL consume_issues_refresh (%)', s; end if;
   select count(*) into n from public.pc_refresh_tokens
-   where pc_id = '20000000-0000-0000-0000-0000000006a1';
+   where pc_id = pg_temp.pc(31);
   if n <> 1 or not exists (select 1 from public.pc_refresh_tokens
       where token_hash = pg_temp.h('r-a') and used_at is null and revoked_at is null
         and expires_at between now() + interval '90 days' - interval '1 minute'
@@ -106,20 +110,20 @@ end $$;
 -- code stores nothing either.
 set role service_role;
 do $$ declare s text; begin
-  s := public.pc_login_start('20000000-0000-0000-0000-0000000006a2', pg_temp.k(2), 'P',
-    pg_temp.h('d-pend'), pg_temp.h('U-pend'), pg_temp.k(2), pg_temp.nn(), now());
+  s := public.pc_login_start(pg_temp.pc(32), pg_temp.k(32), 'P',
+    pg_temp.h('d-pend'), pg_temp.h('U-pend'), pg_temp.k(32), pg_temp.nn(), now());
   select status into s from public.pc_login_consume(pg_temp.h('d-pend'), pg_temp.h('r-pend'),
-    pg_temp.k(2), pg_temp.nn(), now());
+    pg_temp.k(32), pg_temp.nn(), now());
   if s <> 'pending' or exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('r-pend')) then
     raise exception 'FAIL pending_poll_no_refresh (%)', s;
   end if;
   select status into s from public.pc_login_consume(pg_temp.h('d-a'), pg_temp.h('r-a2'),
-    pg_temp.k(1), pg_temp.nn(), now());
+    pg_temp.k(31), pg_temp.nn(), now());
   if s <> 'code.invalid' or exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('r-a2')) then
     raise exception 'FAIL second_consume_no_refresh (%)', s;
   end if;
   begin
-    perform public.pc_login_consume(pg_temp.h('d-pend'), '\x00'::bytea, pg_temp.k(2), pg_temp.nn(), now());
+    perform public.pc_login_consume(pg_temp.h('d-pend'), '\x00'::bytea, pg_temp.k(32), pg_temp.nn(), now());
     raise exception 'FAIL consume_bad_refresh_hash';
   exception when invalid_parameter_value then null;
   end;
@@ -139,7 +143,7 @@ do $$ begin
   end;
   begin
     perform public.pc_rotate_refresh(pg_temp.h('r-a'), pg_temp.h('x'),
-      '20000000-0000-0000-0000-0000000006a1', pg_temp.k(1), pg_temp.nn(), now());
+      pg_temp.pc(31), pg_temp.k(31), pg_temp.nn(), now());
     raise exception 'FAIL authenticated_cannot_rotate';
   exception when insufficient_privilege then null;
   end;
@@ -161,11 +165,11 @@ reset role;
 set role service_role;
 do $$ declare r record; fam int; begin
   select * into r from public.pc_rotate_refresh(pg_temp.h('r-a'), pg_temp.h('r-b'),
-    '20000000-0000-0000-0000-0000000006a1', pg_temp.k(1), pg_temp.nn(), now());
+    pg_temp.pc(31), pg_temp.k(31), pg_temp.nn(), now());
   if r.status <> 'ok' or r.user_id <> '00000000-0000-0000-0000-0000000006a1' then
     raise exception 'FAIL rotate_a_b (%)', r;
   end if;
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a1', 'r-b', 'r-c', pg_temp.k(1)) <> 'ok' then
+  if pg_temp.rot(pg_temp.pc(31), 'r-b', 'r-c', pg_temp.k(31)) <> 'ok' then
     raise exception 'FAIL rotate_b_c';
   end if;
   select count(distinct family_id) into fam from public.pc_refresh_tokens
@@ -179,18 +183,18 @@ do $$ declare r record; fam int; begin
   insert into _results values ('rotate_a_b'), ('rotate_returns_owner'), ('rotate_b_c'),
     ('rotation_same_family_sliding');
 
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a1', 'r-a', 'r-x', pg_temp.k(1)) <> 'reuse.detected' then
+  if pg_temp.rot(pg_temp.pc(31), 'r-a', 'r-x', pg_temp.k(31)) <> 'reuse.detected' then
     raise exception 'FAIL reuse_detected';
   end if;
   if exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('r-x')) then
     raise exception 'FAIL reuse_issues_nothing';
   end if;
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a1', 'r-b', 'r-y', pg_temp.k(1)) <> 'revoked'
-     or pg_temp.rot('20000000-0000-0000-0000-0000000006a1', 'r-c', 'r-z', pg_temp.k(1)) <> 'revoked' then
+  if pg_temp.rot(pg_temp.pc(31), 'r-b', 'r-y', pg_temp.k(31)) <> 'revoked'
+     or pg_temp.rot(pg_temp.pc(31), 'r-c', 'r-z', pg_temp.k(31)) <> 'revoked' then
     raise exception 'FAIL family_revoked_after_reuse';
   end if;
   if exists (select 1 from public.pc_refresh_tokens
-              where pc_id = '20000000-0000-0000-0000-0000000006a1' and revoked_at is null) then
+              where pc_id = pg_temp.pc(31) and revoked_at is null) then
     raise exception 'FAIL family_revoked_rows';
   end if;
   insert into _results values ('reuse_detected'), ('reuse_issues_nothing'),
@@ -200,29 +204,29 @@ reset role;
 
 -- Second PC of user A with a fresh family, for the request checks.
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
-  values ('20000000-0000-0000-0000-0000000006a3', '00000000-0000-0000-0000-0000000006a1', 'Two', 'windows');
-insert into public.pc_keys values ('20000000-0000-0000-0000-0000000006a3', pg_temp.k(3));
+  values (pg_temp.pc(33), '00000000-0000-0000-0000-0000000006a1', 'Two', 'windows');
+insert into public.pc_keys values (pg_temp.pc(33), pg_temp.k(33));
 insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
-  values ('20000000-0000-0000-0000-0000000006a3', gen_random_uuid(), pg_temp.h('t-1'));
+  values (pg_temp.pc(33), gen_random_uuid(), pg_temp.h('t-1'));
 
 set role service_role;
 do $$ declare n bytea := pg_temp.nn(); s text; cnt bigint; begin
   -- Same nonce twice: second refused, token not spent by it.
   select status into s from public.pc_rotate_refresh(pg_temp.h('t-1'), pg_temp.h('t-2'),
-    '20000000-0000-0000-0000-0000000006a3', pg_temp.k(3), n, now());
+    pg_temp.pc(33), pg_temp.k(33), n, now());
   if s <> 'ok' then raise exception 'FAIL rotate_with_nonce_ok (%)', s; end if;
   select status into s from public.pc_rotate_refresh(pg_temp.h('t-2'), pg_temp.h('t-3'),
-    '20000000-0000-0000-0000-0000000006a3', pg_temp.k(3), n, now());
+    pg_temp.pc(33), pg_temp.k(33), n, now());
   if s <> 'nonce.replay' then raise exception 'FAIL rotate_nonce_replay (%)', s; end if;
   -- ts window +-300 s.
   select status into s from public.pc_rotate_refresh(pg_temp.h('t-2'), pg_temp.h('t-3'),
-    '20000000-0000-0000-0000-0000000006a3', pg_temp.k(3), pg_temp.nn(), now() - interval '301 seconds');
+    pg_temp.pc(33), pg_temp.k(33), pg_temp.nn(), now() - interval '301 seconds');
   if s <> 'request.stale' then raise exception 'FAIL rotate_ts_old_stale (%)', s; end if;
   select status into s from public.pc_rotate_refresh(pg_temp.h('t-2'), pg_temp.h('t-3'),
-    '20000000-0000-0000-0000-0000000006a3', pg_temp.k(3), pg_temp.nn(), now() + interval '301 seconds');
+    pg_temp.pc(33), pg_temp.k(33), pg_temp.nn(), now() + interval '301 seconds');
   if s <> 'request.stale' then raise exception 'FAIL rotate_ts_future_stale (%)', s; end if;
   select status into s from public.pc_rotate_refresh(pg_temp.h('t-2'), pg_temp.h('t-3'),
-    '20000000-0000-0000-0000-0000000006a3', pg_temp.k(3), '\x0011'::bytea, now());
+    pg_temp.pc(33), pg_temp.k(33), '\x0011'::bytea, now());
   if s <> 'request.stale' then raise exception 'FAIL rotate_short_nonce (%)', s; end if;
   if exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('t-3'))
      or exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('t-2') and used_at is not null) then
@@ -231,21 +235,21 @@ do $$ declare n bytea := pg_temp.nn(); s text; cnt bigint; begin
   -- Signer must be the PC key.
   -- Wrong key for a bound pc_id: 'revoked', the same as for an unbound one (R-4).
   select coalesce(sum(count), 0) into cnt from public.rate_limits
-   where bucket = 'pc_refresh' and key = '20000000-0000-0000-0000-0000000006a3';
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 't-2', 't-3', pg_temp.k(4)) <> 'revoked'
-     or pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 't-2', 't-3', null) <> 'revoked'
-     or pg_temp.rot('20000000-0000-0000-0000-0000000006af', 't-2', 't-3', pg_temp.k(4)) <> 'revoked' then
+   where bucket = 'pc_refresh' and key = pg_temp.pc(33)::text;
+  if pg_temp.rot(pg_temp.pc(33), 't-2', 't-3', pg_temp.k(34)) <> 'revoked'
+     or pg_temp.rot(pg_temp.pc(33), 't-2', 't-3', null) <> 'revoked'
+     or pg_temp.rot('20000000-0000-0000-0000-0000000006af', 't-2', 't-3', pg_temp.k(34)) <> 'revoked' then
     raise exception 'FAIL rotate_needs_pc_key';
   end if;
   if exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('t-3'))
      or exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('t-2') and used_at is not null)
      or (select coalesce(sum(count), 0) from public.rate_limits
-          where bucket = 'pc_refresh' and key = '20000000-0000-0000-0000-0000000006a3') <> cnt then
+          where bucket = 'pc_refresh' and key = pg_temp.pc(33)::text) <> cnt then
     raise exception 'FAIL wrong_key_spends_nothing';
   end if;
   insert into _results values ('wrong_key_spends_nothing');
   -- Unknown token, token of another PC: the same 'revoked'.
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 'nope', 't-3', pg_temp.k(3)) <> 'revoked' then
+  if pg_temp.rot(pg_temp.pc(33), 'nope', 't-3', pg_temp.k(33)) <> 'revoked' then
     raise exception 'FAIL rotate_unknown_revoked';
   end if;
   insert into _results values ('rotate_with_nonce_ok'), ('rotate_nonce_replay'), ('rotate_ts_old_stale'),
@@ -253,12 +257,12 @@ do $$ declare n bytea := pg_temp.nn(); s text; cnt bigint; begin
     ('rotate_needs_pc_key'), ('rotate_unknown_revoked');
   -- ts within the window is accepted.
   select status into s from public.pc_rotate_refresh(pg_temp.h('t-2'), pg_temp.h('t-3'),
-    '20000000-0000-0000-0000-0000000006a3', pg_temp.k(3), pg_temp.nn(), now() - interval '299 seconds');
+    pg_temp.pc(33), pg_temp.k(33), pg_temp.nn(), now() - interval '299 seconds');
   if s <> 'ok' then raise exception 'FAIL rotate_ts_within_window (%)', s; end if;
   insert into _results values ('rotate_ts_within_window');
   begin
-    perform public.pc_rotate_refresh(pg_temp.h('t-3'), null, '20000000-0000-0000-0000-0000000006a3',
-      pg_temp.k(3), pg_temp.nn(), now());
+    perform public.pc_rotate_refresh(pg_temp.h('t-3'), null, pg_temp.pc(33),
+      pg_temp.k(33), pg_temp.nn(), now());
     raise exception 'FAIL rotate_bad_new_hash';
   exception when invalid_parameter_value then null;
   end;
@@ -268,11 +272,11 @@ reset role;
 
 -- Token of PC a3 presented for PC a1 (own key of a1): 'revoked', a3 untouched.
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
-  values ('20000000-0000-0000-0000-0000000006b2', '00000000-0000-0000-0000-0000000006b1', 'B', 'windows');
-insert into public.pc_keys values ('20000000-0000-0000-0000-0000000006b2', pg_temp.k(5));
+  values (pg_temp.pc(35), '00000000-0000-0000-0000-0000000006b1', 'B', 'windows');
+insert into public.pc_keys values (pg_temp.pc(35), pg_temp.k(35));
 set role service_role;
 do $$ begin
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006b2', 't-3', 't-4', pg_temp.k(5)) <> 'revoked'
+  if pg_temp.rot(pg_temp.pc(35), 't-3', 't-4', pg_temp.k(35)) <> 'revoked'
      or exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('t-3') and used_at is not null) then
     raise exception 'FAIL rotate_other_pc_token_revoked';
   end if;
@@ -284,7 +288,7 @@ reset role;
 update public.pc_refresh_tokens set expires_at = now() - interval '1 second' where token_hash = pg_temp.h('t-3');
 set role service_role;
 do $$ begin
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 't-3', 't-4', pg_temp.k(3)) <> 'revoked'
+  if pg_temp.rot(pg_temp.pc(33), 't-3', 't-4', pg_temp.k(33)) <> 'revoked'
      or exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('t-4')) then
     raise exception 'FAIL rotate_expired_revoked';
   end if;
@@ -295,37 +299,37 @@ reset role;
 -- Retry after a lost response (R-1): the same old token with the same new
 -- hash (Edge derives new from old) within 60 s gets 'ok' again, no change.
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
-  values ('20000000-0000-0000-0000-0000000006a6', '00000000-0000-0000-0000-0000000006a1', 'Retry', 'windows');
-insert into public.pc_keys values ('20000000-0000-0000-0000-0000000006a6', pg_temp.k(10));
+  values (pg_temp.pc(40), '00000000-0000-0000-0000-0000000006a1', 'Retry', 'windows');
+insert into public.pc_keys values (pg_temp.pc(40), pg_temp.k(40));
 insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
-  values ('20000000-0000-0000-0000-0000000006a6', gen_random_uuid(), pg_temp.h('i-0'));
+  values (pg_temp.pc(40), gen_random_uuid(), pg_temp.h('i-0'));
 set role service_role;
 do $$ declare r record; s text; begin
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'i-0', 'i-1', pg_temp.k(10)) <> 'ok' then
+  if pg_temp.rot(pg_temp.pc(40), 'i-0', 'i-1', pg_temp.k(40)) <> 'ok' then
     raise exception 'FAIL retry_setup';
   end if;
   -- Lost response: the PC sends the same old token again (new nonce).
   select * into r from public.pc_rotate_refresh(pg_temp.h('i-0'), pg_temp.h('i-1'),
-    '20000000-0000-0000-0000-0000000006a6', pg_temp.k(10), pg_temp.nn(), now());
+    pg_temp.pc(40), pg_temp.k(40), pg_temp.nn(), now());
   if r.status <> 'ok' or r.user_id <> '00000000-0000-0000-0000-0000000006a1' then
     raise exception 'FAIL retry_in_window_ok (%)', r;
   end if;
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'i-0', 'i-1', pg_temp.k(10)) <> 'ok' then
+  if pg_temp.rot(pg_temp.pc(40), 'i-0', 'i-1', pg_temp.k(40)) <> 'ok' then
     raise exception 'FAIL retry_twice_ok';
   end if;
-  if (select count(*) from public.pc_refresh_tokens where pc_id = '20000000-0000-0000-0000-0000000006a6') <> 2
+  if (select count(*) from public.pc_refresh_tokens where pc_id = pg_temp.pc(40)) <> 2
      or exists (select 1 from public.pc_refresh_tokens
-                 where pc_id = '20000000-0000-0000-0000-0000000006a6' and revoked_at is not null)
+                 where pc_id = pg_temp.pc(40) and revoked_at is not null)
      or not exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('i-1')
                      and used_at is null and revoked_at is null) then
     raise exception 'FAIL retry_changes_nothing';
   end if;
   -- Retry with another new hash is a clone, not a retry.
-  s := pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'i-0', 'i-x', pg_temp.k(10));
+  s := pg_temp.rot(pg_temp.pc(40), 'i-0', 'i-x', pg_temp.k(40));
   if s <> 'reuse.detected' then raise exception 'FAIL retry_other_new_hash_reuse (%)', s; end if;
   if exists (select 1 from public.pc_refresh_tokens where token_hash = pg_temp.h('i-x'))
      or exists (select 1 from public.pc_refresh_tokens
-                 where pc_id = '20000000-0000-0000-0000-0000000006a6' and revoked_at is null) then
+                 where pc_id = pg_temp.pc(40) and revoked_at is null) then
     raise exception 'FAIL retry_other_new_hash_reuse';
   end if;
   insert into _results values ('retry_in_window_ok'), ('retry_twice_ok'), ('retry_changes_nothing'),
@@ -335,21 +339,21 @@ reset role;
 
 -- Retry after the new token was already used: 'reuse.detected'.
 insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
-  values ('20000000-0000-0000-0000-0000000006a6', gen_random_uuid(), pg_temp.h('j-0'));
+  values (pg_temp.pc(40), gen_random_uuid(), pg_temp.h('j-0'));
 set role service_role;
 do $$ declare s text; begin
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'j-0', 'j-1', pg_temp.k(10)) <> 'ok'
-     or pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'j-1', 'j-2', pg_temp.k(10)) <> 'ok' then
+  if pg_temp.rot(pg_temp.pc(40), 'j-0', 'j-1', pg_temp.k(40)) <> 'ok'
+     or pg_temp.rot(pg_temp.pc(40), 'j-1', 'j-2', pg_temp.k(40)) <> 'ok' then
     raise exception 'FAIL retry_after_new_setup';
   end if;
-  s := pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'j-0', 'j-1', pg_temp.k(10));
+  s := pg_temp.rot(pg_temp.pc(40), 'j-0', 'j-1', pg_temp.k(40));
   if s <> 'reuse.detected' then raise exception 'FAIL retry_after_new_used_reuse (%)', s; end if;
   if exists (select 1 from public.pc_refresh_tokens
-                 where pc_id = '20000000-0000-0000-0000-0000000006a6' and revoked_at is null) then
+                 where pc_id = pg_temp.pc(40) and revoked_at is null) then
     raise exception 'FAIL retry_after_new_used_reuse';
   end if;
   -- Retry of the old token after the family is revoked: 'revoked'.
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'j-1', 'j-2', pg_temp.k(10)) <> 'revoked' then
+  if pg_temp.rot(pg_temp.pc(40), 'j-1', 'j-2', pg_temp.k(40)) <> 'revoked' then
     raise exception 'FAIL retry_after_family_revoked';
   end if;
   insert into _results values ('retry_after_new_used_reuse'), ('retry_after_family_revoked');
@@ -358,14 +362,14 @@ reset role;
 
 -- Window edge: 59 s after rotation still a retry, 61 s is reuse.
 insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
-  values ('20000000-0000-0000-0000-0000000006a6', gen_random_uuid(), pg_temp.h('w-0'));
+  values (pg_temp.pc(40), gen_random_uuid(), pg_temp.h('w-0'));
 set role service_role;
-select pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'w-0', 'w-1', pg_temp.k(10)) \g /dev/null
+select pg_temp.rot(pg_temp.pc(40), 'w-0', 'w-1', pg_temp.k(40)) \g /dev/null
 reset role;
 update public.pc_refresh_tokens set used_at = now() - interval '59 seconds' where token_hash = pg_temp.h('w-0');
 set role service_role;
 do $$ begin
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'w-0', 'w-1', pg_temp.k(10)) <> 'ok' then
+  if pg_temp.rot(pg_temp.pc(40), 'w-0', 'w-1', pg_temp.k(40)) <> 'ok' then
     raise exception 'FAIL retry_59s_ok';
   end if;
   insert into _results values ('retry_59s_ok');
@@ -375,10 +379,10 @@ update public.pc_refresh_tokens set used_at = now() - interval '61 seconds' wher
 set role service_role;
 do $$ declare s text; begin
   -- Rotation and the row check in separate statements (one snapshot each).
-  s := pg_temp.rot('20000000-0000-0000-0000-0000000006a6', 'w-0', 'w-1', pg_temp.k(10));
+  s := pg_temp.rot(pg_temp.pc(40), 'w-0', 'w-1', pg_temp.k(40));
   if s <> 'reuse.detected' then raise exception 'FAIL retry_61s_reuse (%)', s; end if;
   if exists (select 1 from public.pc_refresh_tokens
-                 where pc_id = '20000000-0000-0000-0000-0000000006a6' and revoked_at is null) then
+                 where pc_id = pg_temp.pc(40) and revoked_at is null) then
     raise exception 'FAIL retry_61s_reuse';
   end if;
   -- The retry hash stays a hash: no plaintext column exists.
@@ -395,17 +399,17 @@ truncate public.rate_limits;
 -- Rate limit: 30 attempts per hour per pc_id, 31st refused.
 truncate public.rate_limits;
 insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
-  values ('20000000-0000-0000-0000-0000000006a3', gen_random_uuid(), pg_temp.h('rl-0'));
+  values (pg_temp.pc(33), gen_random_uuid(), pg_temp.h('rl-0'));
 set role service_role;
 do $$ declare i int; s text; begin
   for i in 1..30 loop
-    s := pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 'rl-' || (i - 1), 'rl-' || i, pg_temp.k(3));
+    s := pg_temp.rot(pg_temp.pc(33), 'rl-' || (i - 1), 'rl-' || i, pg_temp.k(33));
     if s <> 'ok' then raise exception 'FAIL rotate_rate_limit_30_ok (% at %)', s, i; end if;
   end loop;
-  s := pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 'rl-30', 'rl-31', pg_temp.k(3));
+  s := pg_temp.rot(pg_temp.pc(33), 'rl-30', 'rl-31', pg_temp.k(33));
   if s <> 'rate.limited' then raise exception 'FAIL rotate_rate_limited (%)', s; end if;
   -- Limit is per pc_id: PC b2 unaffected (its unknown token -> 'revoked').
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006b2', 'zz', 'zz2', pg_temp.k(5)) <> 'revoked' then
+  if pg_temp.rot(pg_temp.pc(35), 'zz', 'zz2', pg_temp.k(35)) <> 'revoked' then
     raise exception 'FAIL rotate_rate_limit_per_pc';
   end if;
   insert into _results values ('rotate_rate_limit_30_ok'), ('rotate_rate_limited'), ('rotate_rate_limit_per_pc');
@@ -417,11 +421,11 @@ truncate public.rate_limits;
 -- its refresh tokens; rotation then gives 'revoked'.
 set role service_role;
 do $$ begin
-  delete from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000006a3';
-  if exists (select 1 from public.pc_refresh_tokens where pc_id = '20000000-0000-0000-0000-0000000006a3') then
+  delete from public.my_pcs where pc_id = pg_temp.pc(33);
+  if exists (select 1 from public.pc_refresh_tokens where pc_id = pg_temp.pc(33)) then
     raise exception 'FAIL delete_pc_removes_refresh';
   end if;
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a3', 'rl-30', 'rl-31', pg_temp.k(3)) <> 'revoked' then
+  if pg_temp.rot(pg_temp.pc(33), 'rl-30', 'rl-31', pg_temp.k(33)) <> 'revoked' then
     raise exception 'FAIL rotate_after_delete_revoked';
   end if;
   insert into _results values ('delete_pc_removes_refresh'), ('rotate_after_delete_revoked');
@@ -430,32 +434,32 @@ reset role;
 
 -- pc_release by the owner: refresh of this PC no longer works.
 do $$ declare s text; begin
-  s := pg_temp.bind('20000000-0000-0000-0000-0000000006a4', pg_temp.k(6), pg_temp.k(6),
+  s := pg_temp.bind(pg_temp.pc(36), pg_temp.k(36), pg_temp.k(36),
     '00000000-0000-0000-0000-0000000006a1', 'rel', 'rel-0');
   if s <> 'ok' then raise exception 'FAIL release_setup (%)', s; end if;
 end $$;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000006a1') \g /dev/null
-select public.pc_release('20000000-0000-0000-0000-0000000006a4') \g /dev/null
+select public.pc_release(pg_temp.pc(36)) \g /dev/null
 reset role;
 set role service_role;
 do $$ begin
-  if exists (select 1 from public.pc_refresh_tokens where pc_id = '20000000-0000-0000-0000-0000000006a4'
+  if exists (select 1 from public.pc_refresh_tokens where pc_id = pg_temp.pc(36)
               and revoked_at is null)
-     or pg_temp.rot('20000000-0000-0000-0000-0000000006a4', 'rel-0', 'rel-1', pg_temp.k(6)) <> 'revoked' then
+     or pg_temp.rot(pg_temp.pc(36), 'rel-0', 'rel-1', pg_temp.k(36)) <> 'revoked' then
     raise exception 'FAIL release_revokes_refresh';
   end if;
   insert into _results values ('release_revokes_refresh');
 end $$;
 reset role;
 
--- Rebind to another account (start signed by the old key): the old family is
+-- Rebind to another account (same key, E4-2): the old family is
 -- revoked, the new binding gets its own refresh.
 do $$ declare s text; begin
-  s := pg_temp.bind('20000000-0000-0000-0000-0000000006a5', pg_temp.k(7), pg_temp.k(7),
+  s := pg_temp.bind(pg_temp.pc(37), pg_temp.k(37), pg_temp.k(37),
     '00000000-0000-0000-0000-0000000006a1', 'old', 'rb-old');
   if s <> 'ok' then raise exception 'FAIL rebind_setup (%)', s; end if;
-  s := pg_temp.bind('20000000-0000-0000-0000-0000000006a5', pg_temp.k(8), pg_temp.k(7),
+  s := pg_temp.bind(pg_temp.pc(37), pg_temp.k(37), pg_temp.k(37),
     '00000000-0000-0000-0000-0000000006b1', 'new', 'rb-new');
   if s <> 'ok' then raise exception 'FAIL rebind_setup2 (%)', s; end if;
   if (select revoked_at from public.pc_refresh_tokens where token_hash = pg_temp.h('rb-old')) is null
@@ -465,11 +469,11 @@ do $$ declare s text; begin
 end $$;
 set role service_role;
 do $$ declare r record; begin
-  if pg_temp.rot('20000000-0000-0000-0000-0000000006a5', 'rb-old', 'rb-x', pg_temp.k(8)) <> 'revoked' then
+  if pg_temp.rot(pg_temp.pc(37), 'rb-old', 'rb-x', pg_temp.k(37)) <> 'revoked' then
     raise exception 'FAIL rebind_old_refresh_rejected';
   end if;
   select * into r from public.pc_rotate_refresh(pg_temp.h('rb-new'), pg_temp.h('rb-new2'),
-    '20000000-0000-0000-0000-0000000006a5', pg_temp.k(8), pg_temp.nn(), now());
+    pg_temp.pc(37), pg_temp.k(37), pg_temp.nn(), now());
   if r.status <> 'ok' or r.user_id <> '00000000-0000-0000-0000-0000000006b1' then
     raise exception 'FAIL rebind_new_refresh_ok (%)', r;
   end if;
@@ -478,13 +482,13 @@ do $$ declare r record; begin
 end $$;
 reset role;
 
--- Re-login of the same account with a new key also starts a new family.
+-- Re-login of the same account (same key, E4-2: no rotation) also starts a new family.
 do $$ declare s text; begin
-  s := pg_temp.bind('20000000-0000-0000-0000-0000000006a5', pg_temp.k(9), pg_temp.k(8),
+  s := pg_temp.bind(pg_temp.pc(37), pg_temp.k(37), pg_temp.k(37),
     '00000000-0000-0000-0000-0000000006b1', 'same', 'rb-same');
   if s <> 'ok' then raise exception 'FAIL relogin_setup (%)', s; end if;
   if (select count(*) from public.pc_refresh_tokens
-       where pc_id = '20000000-0000-0000-0000-0000000006a5' and revoked_at is null) <> 1
+       where pc_id = pg_temp.pc(37) and revoked_at is null) <> 1
      or (select revoked_at from public.pc_refresh_tokens where token_hash = pg_temp.h('rb-same')) is not null then
     raise exception 'FAIL relogin_one_live_family';
   end if;

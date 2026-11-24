@@ -11,10 +11,15 @@ grant insert on _results to authenticated, anon, service_role;
 -- Test helpers (temp schema, dropped with the session).
 create function pg_temp.h(t text) returns bytea language sql immutable
   as $$ select sha256(convert_to(t, 'UTF8')) $$;
--- Fake SPKI blobs: key n -> 91 bytes of 0x30+n. Signatures are verified by the
--- Edge Function; SQL only gets the key it verified with.
+-- Fake SPKI blobs: key n -> P-256 SPKI prefix + 0x04 + 64 bytes of 0x30+n
+-- (not a curve point; curve checks and signatures are done by the Edge
+-- Function, SQL only gets the key it verified with).
 create function pg_temp.k(n int) returns bytea language sql immutable
-  as $$ select decode(repeat(to_hex(48 + n), 91), 'hex') $$;
+  as $$ select decode('3059301306072a8648ce3d020106082a8648ce3d03010703420004'
+          || repeat(to_hex(48 + n), 64), 'hex') $$;
+-- pcId of key n (E4-2); definer so that API roles in tests can call it.
+create function pg_temp.pc(n int) returns uuid language sql immutable security definer
+  as $$ select public.pc_id_from_spki(pg_temp.k(n)) $$;
 create function pg_temp.spki() returns bytea language sql immutable
   as $$ select pg_temp.k(0) $$;
 create function pg_temp.nn() returns bytea language sql volatile
@@ -100,7 +105,7 @@ end $$;
 -- First binding: start signed by the new key itself.
 set role service_role;
 do $$ begin
-  if pg_temp.st('20000000-0000-0000-0000-0000000005a1', pg_temp.spki(), 'Home PC',
+  if pg_temp.st(pg_temp.pc(0), pg_temp.spki(), 'Home PC',
        'dev-1', 'USER-1', pg_temp.spki()) <> 'ok' then
     raise exception 'FAIL first_binding_start_ok';
   end if;
@@ -148,7 +153,7 @@ do $$ declare t text; begin
   exception when insufficient_privilege then null;
   end;
   begin
-    perform public.pc_release('20000000-0000-0000-0000-0000000005a1');
+    perform public.pc_release(pg_temp.pc(0));
     raise exception 'FAIL anon_cannot_release';
   exception when insufficient_privilege then null;
   end;
@@ -224,11 +229,11 @@ do $$ declare r record; begin
   if r.status <> 'ok' or r.user_id <> '00000000-0000-0000-0000-0000000005a1' or r.rebound then
     raise exception 'FAIL consume_ok (%)', r;
   end if;
-  if not exists (select 1 from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005a1'
+  if not exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(0)
                  and user_id = '00000000-0000-0000-0000-0000000005a1' and display_name = 'Home PC') then
     raise exception 'FAIL pc_in_approver_my_pcs';
   end if;
-  if (select public_key_spki from public.pc_keys where pc_id = '20000000-0000-0000-0000-0000000005a1') <> pg_temp.spki() then
+  if (select public_key_spki from public.pc_keys where pc_id = pg_temp.pc(0)) <> pg_temp.spki() then
     raise exception 'FAIL pc_key_stored';
   end if;
   select * into r from pg_temp.co('dev-1', pg_temp.spki());
@@ -244,7 +249,7 @@ reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
 do $$ begin
-  if exists (select 1 from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005a1') then
+  if exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(0)) then
     raise exception 'FAIL other_user_does_not_see_pc';
   end if;
   insert into _results values ('other_user_does_not_see_pc');
@@ -265,21 +270,25 @@ revoke all on function public.pc_revoke_refresh_tokens(uuid, uuid) from public, 
 
 set role service_role;
 do $$ declare s text; begin
-  s := pg_temp.st('20000000-0000-0000-0000-0000000005a1', pg_temp.k(1), 'Evil', 'evil-1', 'EVIL-1', null);
+  s := pg_temp.st(pg_temp.pc(0), pg_temp.k(1), 'Evil', 'evil-1', 'EVIL-1', null);
   if s <> 'pc.key_required' then raise exception 'FAIL rebind_unsigned_refused (%)', s; end if;
-  s := pg_temp.st('20000000-0000-0000-0000-0000000005a1', pg_temp.k(1), 'Evil', 'evil-2', 'EVIL-2', pg_temp.k(1));
+  s := pg_temp.st(pg_temp.pc(0), pg_temp.k(1), 'Evil', 'evil-2', 'EVIL-2', pg_temp.k(1));
   if s <> 'pc.key_required' then raise exception 'FAIL rebind_new_key_only_refused (%)', s; end if;
   if exists (select 1 from public.pc_login_codes where display_name = 'Evil') then
     raise exception 'FAIL rebind_refused_no_row';
   end if;
   if exists (select 1 from public.rate_limits where bucket = 'pc_login_start'
-             and key = '20000000-0000-0000-0000-0000000005a1' and count > 1) then
+             and key = pg_temp.pc(0)::text and count > 1) then
     raise exception 'FAIL start_refused_not_counted';
   end if;
-  s := pg_temp.st('20000000-0000-0000-0000-0000000005a1', pg_temp.k(1), 'Moved PC', 'dev-2', 'USER-2', pg_temp.spki());
+  -- E4-2: the key is never rotated; a rebind with another key is refused even
+  -- when signed by the stored key.
+  s := pg_temp.st(pg_temp.pc(0), pg_temp.k(1), 'Moved PC', 'dev-2x', 'USER-2X', pg_temp.spki());
+  if s <> 'pc.key_required' then raise exception 'FAIL rebind_rotated_key_refused (%)', s; end if;
+  s := pg_temp.st(pg_temp.pc(0), pg_temp.spki(), 'Moved PC', 'dev-2', 'USER-2', pg_temp.spki());
   if s <> 'ok' then raise exception 'FAIL rebind_old_key_start_ok (%)', s; end if;
   insert into _results values ('rebind_unsigned_refused'), ('rebind_new_key_only_refused'),
-    ('rebind_refused_no_row'), ('start_refused_not_counted'), ('rebind_old_key_start_ok');
+    ('rebind_refused_no_row'), ('start_refused_not_counted'), ('rebind_rotated_key_refused'), ('rebind_old_key_start_ok');
 end $$;
 reset role;
 set role authenticated;
@@ -288,39 +297,39 @@ select pg_temp.ok('USER-2') \g /dev/null
 reset role;
 set role service_role;
 do $$ declare r record; begin
-  -- Consume must be signed by the new key, not the old one.
-  select * into r from pg_temp.co('dev-2', pg_temp.spki());
-  if r.status <> 'pc.key_required' then raise exception 'FAIL rebind_consume_needs_new_key (%)', r; end if;
+  -- Consume must be signed by the (unchanged) key, not by another one.
   select * into r from pg_temp.co('dev-2', pg_temp.k(1));
+  if r.status <> 'pc.key_required' then raise exception 'FAIL rebind_consume_needs_same_key (%)', r; end if;
+  select * into r from pg_temp.co('dev-2', pg_temp.spki());
   if r.status <> 'ok' or not r.rebound or r.user_id <> '00000000-0000-0000-0000-0000000005b1' then
     raise exception 'FAIL rebind_ok (%)', r;
   end if;
-  insert into _results values ('rebind_consume_needs_new_key'), ('rebind_ok');
+  insert into _results values ('rebind_consume_needs_same_key'), ('rebind_ok');
 end $$;
 reset role;
 do $$ begin
-  if (select user_id from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005a1')
+  if (select user_id from public.my_pcs where pc_id = pg_temp.pc(0))
      <> '00000000-0000-0000-0000-0000000005b1' then
     raise exception 'FAIL rebind_moves_my_pcs';
   end if;
-  if (select count(*) from public._revoke_log where pc_id = '20000000-0000-0000-0000-0000000005a1'
+  if (select count(*) from public._revoke_log where pc_id = pg_temp.pc(0)
       and old_user = '00000000-0000-0000-0000-0000000005a1') <> 1 then
     raise exception 'FAIL rebind_calls_revoke_hook';
   end if;
-  if (select public_key_spki from public.pc_keys where pc_id = '20000000-0000-0000-0000-0000000005a1')
-     <> pg_temp.k(1) then
-    raise exception 'FAIL rebind_replaces_key';
+  if (select public_key_spki from public.pc_keys where pc_id = pg_temp.pc(0))
+     <> pg_temp.spki() then
+    raise exception 'FAIL rebind_keeps_key';
   end if;
-  insert into _results values ('rebind_moves_my_pcs'), ('rebind_calls_revoke_hook'), ('rebind_replaces_key');
+  insert into _results values ('rebind_moves_my_pcs'), ('rebind_calls_revoke_hook'), ('rebind_keeps_key');
 end $$;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
 do $$ begin
-  if exists (select 1 from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005a1') then
+  if exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(0)) then
     raise exception 'FAIL old_owner_loses_pc';
   end if;
   -- A cannot release B's PC; the answer is the same as for an unknown PC.
-  if public.pc_release('20000000-0000-0000-0000-0000000005a1') <> 'pc.not_found'
+  if public.pc_release(pg_temp.pc(0)) <> 'pc.not_found'
      or public.pc_release(gen_random_uuid()) <> 'pc.not_found' then
     raise exception 'FAIL release_other_users_pc_refused';
   end if;
@@ -328,9 +337,9 @@ do $$ begin
 end $$;
 reset role;
 do $$ begin
-  if not exists (select 1 from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005a1')
+  if not exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(0))
      or exists (select 1 from public._revoke_log where old_user = '00000000-0000-0000-0000-0000000005a1'
-                and pc_id = '20000000-0000-0000-0000-0000000005a1' offset 1) then
+                and pc_id = pg_temp.pc(0) offset 1) then
     raise exception 'FAIL release_other_users_pc_no_effect';
   end if;
   insert into _results values ('release_other_users_pc_no_effect');
@@ -339,13 +348,13 @@ end $$;
 -- Release by the owner (B): a pending old-key code is voided, PC and key removed,
 -- refresh revoked; afterwards a start without the old key is a first binding.
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005a1', pg_temp.k(3), 'Pending', 'rel-old', 'REL-OLD', pg_temp.k(1)) \g /dev/null
+select pg_temp.st(pg_temp.pc(0), pg_temp.spki(), 'Pending', 'rel-old', 'REL-OLD', pg_temp.spki()) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
 do $$ begin
-  if public.pc_release('20000000-0000-0000-0000-0000000005a1') <> 'ok' then raise exception 'FAIL release_ok'; end if;
-  if exists (select 1 from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005a1') then
+  if public.pc_release(pg_temp.pc(0)) <> 'ok' then raise exception 'FAIL release_ok'; end if;
+  if exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(0)) then
     raise exception 'FAIL release_removes_my_pcs';
   end if;
   if (select status from public.pc_login_describe(pg_temp.h('REL-OLD'))) <> 'code.invalid' then
@@ -355,10 +364,10 @@ do $$ begin
 end $$;
 reset role;
 do $$ begin
-  if exists (select 1 from public.pc_keys where pc_id = '20000000-0000-0000-0000-0000000005a1') then
+  if exists (select 1 from public.pc_keys where pc_id = pg_temp.pc(0)) then
     raise exception 'FAIL release_removes_key';
   end if;
-  if (select count(*) from public._revoke_log where pc_id = '20000000-0000-0000-0000-0000000005a1'
+  if (select count(*) from public._revoke_log where pc_id = pg_temp.pc(0)
       and old_user = '00000000-0000-0000-0000-0000000005b1') <> 1 then
     raise exception 'FAIL release_calls_revoke_hook';
   end if;
@@ -366,10 +375,15 @@ do $$ begin
 end $$;
 set role service_role;
 do $$ begin
-  if pg_temp.st('20000000-0000-0000-0000-0000000005a1', pg_temp.k(2), 'Fresh', 'rel-new', 'REL-NEW', pg_temp.k(2)) <> 'ok' then
+  -- E4-2: after release the same key binds again (first binding); a foreign key
+  -- cannot take over the released pcId.
+  if pg_temp.st(pg_temp.pc(0), pg_temp.k(2), 'Fresh', 'rel-x', 'REL-X', pg_temp.k(2)) <> 'pc.key_required' then
+    raise exception 'FAIL start_after_release_foreign_key_refused';
+  end if;
+  if pg_temp.st(pg_temp.pc(0), pg_temp.spki(), 'Fresh', 'rel-new', 'REL-NEW', pg_temp.spki()) <> 'ok' then
     raise exception 'FAIL start_after_release_first_binding';
   end if;
-  insert into _results values ('start_after_release_first_binding');
+  insert into _results values ('start_after_release_foreign_key_refused'), ('start_after_release_first_binding');
 end $$;
 reset role;
 set role authenticated;
@@ -378,11 +392,11 @@ select pg_temp.ok('REL-NEW') \g /dev/null
 reset role;
 set role service_role;
 do $$ declare r record; begin
-  select * into r from pg_temp.co('rel-new', pg_temp.k(2));
+  select * into r from pg_temp.co('rel-new', pg_temp.spki());
   if r.status <> 'ok' or r.rebound or r.user_id <> '00000000-0000-0000-0000-0000000005a1' then
     raise exception 'FAIL consume_after_release_ok (%)', r;
   end if;
-  select * into r from pg_temp.co('rel-old', pg_temp.k(3));
+  select * into r from pg_temp.co('rel-old', pg_temp.spki());
   if r.status <> 'code.invalid' then raise exception 'FAIL released_code_stays_invalid (%)', r; end if;
   insert into _results values ('consume_after_release_ok'), ('released_code_stays_invalid');
 end $$;
@@ -402,8 +416,8 @@ end $$;
 -- pc_id, both approved; the second consume is refused, not a silent takeover.
 truncate public.rate_limits;
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005f1', pg_temp.k(4), 'Twin A', 'tw-a', 'TW-A', pg_temp.k(4)) \g /dev/null
-select pg_temp.st('20000000-0000-0000-0000-0000000005f1', pg_temp.k(5), 'Twin B', 'tw-b', 'TW-B', pg_temp.k(5)) \g /dev/null
+select pg_temp.st(pg_temp.pc(4), pg_temp.k(4), 'Twin A', 'tw-a', 'TW-A', pg_temp.k(4)) \g /dev/null
+select pg_temp.st(pg_temp.pc(4), pg_temp.k(4), 'Twin B', 'tw-b', 'TW-B', pg_temp.k(4)) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
@@ -414,10 +428,10 @@ reset role;
 set role service_role;
 do $$ begin
   if (select status from pg_temp.co('tw-a', pg_temp.k(4))) <> 'ok'
-     or (select status from pg_temp.co('tw-b', pg_temp.k(5))) <> 'code.invalid' then
+     or (select status from pg_temp.co('tw-b', pg_temp.k(4))) <> 'code.invalid' then
     raise exception 'FAIL consume_binding_changed_invalid';
   end if;
-  if (select user_id from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000005f1')
+  if (select user_id from public.my_pcs where pc_id = pg_temp.pc(4))
      <> '00000000-0000-0000-0000-0000000005a1' then
     raise exception 'FAIL consume_binding_changed_keeps_owner';
   end if;
@@ -427,17 +441,17 @@ reset role;
 -- Defence in depth: a my_pcs row without pc_keys appearing after a first-binding
 -- start (no such path today) also blocks the consume.
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005f2', pg_temp.k(4), 'Twin C', 'tw-c', 'TW-C', pg_temp.k(4)) \g /dev/null
+select pg_temp.st(pg_temp.pc(6), pg_temp.k(6), 'Twin C', 'tw-c', 'TW-C', pg_temp.k(6)) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
 select pg_temp.ok('TW-C') \g /dev/null
 reset role;
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
-  values ('20000000-0000-0000-0000-0000000005f2', '00000000-0000-0000-0000-0000000005b1', 'Keyless', 'windows');
+  values (pg_temp.pc(6), '00000000-0000-0000-0000-0000000005b1', 'Keyless', 'windows');
 set role service_role;
 do $$ begin
-  if (select status from pg_temp.co('tw-c', pg_temp.k(4))) <> 'code.invalid' then
+  if (select status from pg_temp.co('tw-c', pg_temp.k(6))) <> 'code.invalid' then
     raise exception 'FAIL consume_keyless_binding_invalid';
   end if;
   insert into _results values ('consume_keyless_binding_invalid');
@@ -446,8 +460,8 @@ reset role;
 
 -- Expired code -> code.invalid on describe/approve and consume.
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005a2', pg_temp.spki(), 'Old', 'dev-3', 'USER-3', pg_temp.spki()) \g /dev/null
-select pg_temp.st('20000000-0000-0000-0000-0000000005a2', pg_temp.spki(), 'Old', 'dev-4', 'USER-4', pg_temp.spki()) \g /dev/null
+select pg_temp.st(pg_temp.pc(10), pg_temp.k(10), 'Old', 'dev-3', 'USER-3', pg_temp.k(10)) \g /dev/null
+select pg_temp.st(pg_temp.pc(10), pg_temp.k(10), 'Old', 'dev-4', 'USER-4', pg_temp.k(10)) \g /dev/null
 reset role;
 do $$ begin
   if (select max(expires_at - created_at) from public.pc_login_codes) <> interval '5 minutes'
@@ -474,8 +488,8 @@ end $$;
 reset role;
 set role service_role;
 do $$ begin
-  if (select status from pg_temp.co('dev-3', pg_temp.spki())) <> 'code.invalid'
-     or (select status from pg_temp.co('dev-4', pg_temp.spki())) <> 'code.invalid' then
+  if (select status from pg_temp.co('dev-3', pg_temp.k(10))) <> 'code.invalid'
+     or (select status from pg_temp.co('dev-4', pg_temp.k(10))) <> 'code.invalid' then
     raise exception 'FAIL consume_expired_invalid';
   end if;
   insert into _results values ('consume_expired_invalid');
@@ -494,8 +508,8 @@ do $$ begin
   end if;
   begin
     set local role service_role;
-    perform public.pc_login_start(gen_random_uuid(), pg_temp.spki(), 'x', convert_to('ABCD-1234','UTF8'),
-      pg_temp.h('z'), pg_temp.spki(), pg_temp.nn(), now());
+    perform public.pc_login_start(pg_temp.pc(20), pg_temp.k(20), 'x', convert_to('ABCD-1234','UTF8'),
+      pg_temp.h('z'), pg_temp.k(20), pg_temp.nn(), now());
     raise exception 'FAIL plaintext_code_rejected';
   exception when check_violation then null;
   end;
@@ -508,29 +522,29 @@ reset role;
 set role service_role;
 do $$ declare i int; s text; begin
   for i in 1..8 loop
-    s := pg_temp.st('20000000-0000-0000-0000-0000000005c1', pg_temp.spki(), 'R', 'un-d' || i, 'un-u' || i, null);
+    s := pg_temp.st(pg_temp.pc(11), pg_temp.k(11), 'R', 'un-d' || i, 'un-u' || i, null);
     if s <> 'pc.key_required' then raise exception 'FAIL start_unsigned_first_binding_refused (%)', s; end if;
   end loop;
   if exists (select 1 from public.rate_limits where bucket = 'pc_login_start'
-             and key = '20000000-0000-0000-0000-0000000005c1') then
+             and key = pg_temp.pc(11)::text) then
     raise exception 'FAIL start_unsigned_not_counted';
   end if;
   for i in 1..3 loop
-    s := pg_temp.st('20000000-0000-0000-0000-0000000005c1', pg_temp.spki(), 'R', 'rs-d' || i, 'rs-u' || i, pg_temp.spki());
+    s := pg_temp.st(pg_temp.pc(11), pg_temp.k(11), 'R', 'rs-d' || i, 'rs-u' || i, pg_temp.k(11));
     if s <> 'ok' then raise exception 'FAIL start_3_live_ok (%: %)', i, s; end if;
   end loop;
-  s := pg_temp.st('20000000-0000-0000-0000-0000000005c1', pg_temp.spki(), 'R', 'rs-dx', 'rs-ux', pg_temp.spki());
+  s := pg_temp.st(pg_temp.pc(11), pg_temp.k(11), 'R', 'rs-dx', 'rs-ux', pg_temp.k(11));
   if s <> 'rate.limited' then raise exception 'FAIL start_4th_live_limited (%)', s; end if;
   -- Codes 2 and 3 run out; slots free up, the per-pc counter still applies.
   update public.pc_login_codes set expires_at = now() - interval '1 second'
    where device_code_hash in (pg_temp.h('rs-d2'), pg_temp.h('rs-d3'));
-  s := pg_temp.st('20000000-0000-0000-0000-0000000005c1', pg_temp.spki(), 'R', 'rs-d5', 'rs-u5', pg_temp.spki());
+  s := pg_temp.st(pg_temp.pc(11), pg_temp.k(11), 'R', 'rs-d5', 'rs-u5', pg_temp.k(11));
   if s <> 'ok' then raise exception 'FAIL start_5th_ok (%)', s; end if;
   update public.pc_login_codes set expires_at = now() - interval '1 second'
    where device_code_hash = pg_temp.h('rs-d5');
-  s := pg_temp.st('20000000-0000-0000-0000-0000000005c1', pg_temp.spki(), 'R', 'rs-d6', 'rs-u6', pg_temp.spki());
+  s := pg_temp.st(pg_temp.pc(11), pg_temp.k(11), 'R', 'rs-d6', 'rs-u6', pg_temp.k(11));
   if s <> 'rate.limited' then raise exception 'FAIL start_6th_rate_limited (%)', s; end if;
-  if (select count(*) from public.pc_login_codes where pc_id = '20000000-0000-0000-0000-0000000005c1') <> 4 then
+  if (select count(*) from public.pc_login_codes where pc_id = pg_temp.pc(11)) <> 4 then
     raise exception 'FAIL start_limited_no_row';
   end if;
   insert into _results values ('start_unsigned_first_binding_refused'), ('start_unsigned_not_counted'),
@@ -542,27 +556,27 @@ reset role;
 -- Signed-request freshness: ts within +-300 s, each nonce once (start and consume share it).
 set role service_role;
 do $$ declare n bytea := pg_temp.nn(); s text; r record; begin
-  s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
-    pg_temp.h('nc-d1'), pg_temp.h('nc-u1'), pg_temp.spki(), n, now() - interval '299 seconds');
+  s := public.pc_login_start(pg_temp.pc(12), pg_temp.k(12), 'N',
+    pg_temp.h('nc-d1'), pg_temp.h('nc-u1'), pg_temp.k(12), n, now() - interval '299 seconds');
   if s <> 'ok' then raise exception 'FAIL ts_within_window_ok (%)', s; end if;
-  s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
-    pg_temp.h('nc-d2'), pg_temp.h('nc-u2'), pg_temp.spki(), n, now());
+  s := public.pc_login_start(pg_temp.pc(12), pg_temp.k(12), 'N',
+    pg_temp.h('nc-d2'), pg_temp.h('nc-u2'), pg_temp.k(12), n, now());
   if s <> 'nonce.replay' then raise exception 'FAIL start_nonce_replay (%)', s; end if;
-  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.rh(), pg_temp.spki(), n, now());
+  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.rh(), pg_temp.k(12), n, now());
   if r.status <> 'nonce.replay' then raise exception 'FAIL consume_nonce_replay (%)', r; end if;
-  s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
-    pg_temp.h('nc-d3'), pg_temp.h('nc-u3'), pg_temp.spki(), pg_temp.nn(), now() - interval '301 seconds');
+  s := public.pc_login_start(pg_temp.pc(12), pg_temp.k(12), 'N',
+    pg_temp.h('nc-d3'), pg_temp.h('nc-u3'), pg_temp.k(12), pg_temp.nn(), now() - interval '301 seconds');
   if s <> 'request.stale' then raise exception 'FAIL start_ts_old_stale (%)', s; end if;
-  s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
-    pg_temp.h('nc-d4'), pg_temp.h('nc-u4'), pg_temp.spki(), pg_temp.nn(), now() + interval '301 seconds');
+  s := public.pc_login_start(pg_temp.pc(12), pg_temp.k(12), 'N',
+    pg_temp.h('nc-d4'), pg_temp.h('nc-u4'), pg_temp.k(12), pg_temp.nn(), now() + interval '301 seconds');
   if s <> 'request.stale' then raise exception 'FAIL start_ts_future_stale (%)', s; end if;
-  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(),
+  select * into r from public.pc_login_consume(pg_temp.h('nc-d1'), pg_temp.rh(), pg_temp.k(12), pg_temp.nn(),
     now() - interval '301 seconds');
   if r.status <> 'request.stale' then raise exception 'FAIL consume_ts_stale (%)', r; end if;
-  s := public.pc_login_start('20000000-0000-0000-0000-0000000005c2', pg_temp.spki(), 'N',
-    pg_temp.h('nc-d5'), pg_temp.h('nc-u5'), pg_temp.spki(), null, now());
+  s := public.pc_login_start(pg_temp.pc(12), pg_temp.k(12), 'N',
+    pg_temp.h('nc-d5'), pg_temp.h('nc-u5'), pg_temp.k(12), null, now());
   if s <> 'request.stale' then raise exception 'FAIL start_no_nonce_refused (%)', s; end if;
-  if (select count(*) from public.pc_login_codes where pc_id = '20000000-0000-0000-0000-0000000005c2') <> 1 then
+  if (select count(*) from public.pc_login_codes where pc_id = pg_temp.pc(12)) <> 1 then
     raise exception 'FAIL freshness_refused_no_row';
   end if;
   insert into _results values ('ts_within_window_ok'), ('start_nonce_replay'), ('consume_nonce_replay'),
@@ -571,11 +585,11 @@ do $$ declare n bytea := pg_temp.nn(); s text; r record; begin
 end $$;
 reset role;
 -- Replay across transactions (the nonce row is committed).
-select public.pc_login_start('20000000-0000-0000-0000-0000000005c3', pg_temp.spki(), 'N',
-  pg_temp.h('nc2-d1'), pg_temp.h('nc2-u1'), pg_temp.spki(), '\x000102030405060708090a0b0c0d0e0f', now()) \g /dev/null
+select public.pc_login_start(pg_temp.pc(13), pg_temp.k(13), 'N',
+  pg_temp.h('nc2-d1'), pg_temp.h('nc2-u1'), pg_temp.k(13), '\x000102030405060708090a0b0c0d0e0f', now()) \g /dev/null
 do $$ begin
-  if public.pc_login_start('20000000-0000-0000-0000-0000000005c3', pg_temp.spki(), 'N',
-       pg_temp.h('nc2-d2'), pg_temp.h('nc2-u2'), pg_temp.spki(), '\x000102030405060708090a0b0c0d0e0f', now())
+  if public.pc_login_start(pg_temp.pc(13), pg_temp.k(13), 'N',
+       pg_temp.h('nc2-d2'), pg_temp.h('nc2-u2'), pg_temp.k(13), '\x000102030405060708090a0b0c0d0e0f', now())
      <> 'nonce.replay' then
     raise exception 'FAIL nonce_replay_next_tx';
   end if;
@@ -584,10 +598,10 @@ end $$;
 
 -- Poll rate: second poll within 5 s -> slow_down; 151st poll voids the code.
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005c4', pg_temp.spki(), 'Poll', 'pl-d', 'PL-U', pg_temp.spki()) \g /dev/null
-select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(), now()) \g /dev/null
+select pg_temp.st(pg_temp.pc(14), pg_temp.k(14), 'Poll', 'pl-d', 'PL-U', pg_temp.k(14)) \g /dev/null
+select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.rh(), pg_temp.k(14), pg_temp.nn(), now()) \g /dev/null
 do $$ begin
-  if (select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.rh(), pg_temp.spki(), pg_temp.nn(), now()))
+  if (select status from public.pc_login_consume(pg_temp.h('pl-d'), pg_temp.rh(), pg_temp.k(14), pg_temp.nn(), now()))
      <> 'slow_down' then
     raise exception 'FAIL poll_within_5s_slow_down';
   end if;
@@ -597,10 +611,10 @@ reset role;
 update public.pc_login_codes set attempts = 149 where device_code_hash = pg_temp.h('pl-d');
 set role service_role;
 do $$ begin
-  if (select status from pg_temp.co('pl-d', pg_temp.spki())) <> 'pending' then
+  if (select status from pg_temp.co('pl-d', pg_temp.k(14))) <> 'pending' then
     raise exception 'FAIL poll_150_allowed';
   end if;
-  if (select status from pg_temp.co('pl-d', pg_temp.spki())) <> 'code.invalid' then
+  if (select status from pg_temp.co('pl-d', pg_temp.k(14))) <> 'code.invalid' then
     raise exception 'FAIL poll_151_invalid';
   end if;
   insert into _results values ('poll_150_allowed'), ('poll_151_invalid');
@@ -625,12 +639,12 @@ do $$ declare bad text; i int := 0; begin
       'PC' || chr(8232) || 'x', 'PC' || chr(8233) || 'x'] loop
     i := i + 1;
     begin
-      perform pg_temp.st(gen_random_uuid(), pg_temp.spki(), bad, 'bad-d' || i, 'bad-u' || i, pg_temp.spki());
+      perform pg_temp.st(pg_temp.pc(19), pg_temp.k(19), bad, 'bad-d' || i, 'bad-u' || i, pg_temp.k(19));
       raise exception 'FAIL display_name_rejects_cc_cf (%)', i;
     exception when check_violation then null;
     end;
   end loop;
-  if pg_temp.st(gen_random_uuid(), pg_temp.spki(), 'Мой ПК 🎮 — Dev', 'good-d', 'good-u', pg_temp.spki()) <> 'ok' then
+  if pg_temp.st(pg_temp.pc(19), pg_temp.k(19), 'Мой ПК 🎮 — Dev', 'good-d', 'good-u', pg_temp.k(19)) <> 'ok' then
     raise exception 'FAIL display_name_allows_unicode';
   end if;
   insert into _results values ('display_name_rejects_cc_cf'), ('display_name_allows_unicode');
@@ -642,10 +656,10 @@ reset role;
 -- transaction, like separate API calls.
 truncate public.rate_limits;
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005d1', pg_temp.spki(), 'Valid', 'rl-dev', 'RL-VALID', pg_temp.spki()) \g /dev/null
+select pg_temp.st(pg_temp.pc(15), pg_temp.k(15), 'Valid', 'rl-dev', 'RL-VALID', pg_temp.k(15)) \g /dev/null
 -- RL-VALID is described by B below and cannot be taken over (E3-5d N5), so
 -- user A approves a separate code.
-select pg_temp.st('20000000-0000-0000-0000-0000000005d3', pg_temp.spki(), 'Other', 'rl-dev-a', 'RL-OTHER', pg_temp.spki()) \g /dev/null
+select pg_temp.st(pg_temp.pc(16), pg_temp.k(16), 'Other', 'rl-dev-a', 'RL-OTHER', pg_temp.k(16)) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005b1') \g /dev/null
@@ -686,7 +700,7 @@ insert into public.rate_limits
          to_timestamp(floor(extract(epoch from now()) / 600) * 600 + d), 10000
     from (values (0), (600)) v(d);
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005d2', pg_temp.spki(), 'G', 'gl-dev', 'GL-U', pg_temp.spki()) \g /dev/null
+select pg_temp.st(pg_temp.pc(17), pg_temp.k(17), 'G', 'gl-dev', 'GL-U', pg_temp.k(17)) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005a1') \g /dev/null
@@ -772,10 +786,10 @@ reset role;
 -- E3-5d: nonce longer than 32 bytes is refused (Edge limit mirrored in SQL).
 set role service_role;
 do $$ begin
-  if public.pc_login_start(gen_random_uuid(), pg_temp.spki(), 'N', pg_temp.h('n33-d'), pg_temp.h('N33-U'),
-       pg_temp.spki(), decode(repeat('ab', 33), 'hex'), now()) <> 'request.stale'
-     or public.pc_login_start(gen_random_uuid(), pg_temp.spki(), 'N', pg_temp.h('n32-d'), pg_temp.h('N32-U'),
-       pg_temp.spki(), decode(repeat('ab', 32), 'hex'), now()) <> 'ok' then
+  if public.pc_login_start(pg_temp.pc(21), pg_temp.k(21), 'N', pg_temp.h('n33-d'), pg_temp.h('N33-U'),
+       pg_temp.k(21), decode(repeat('ab', 33), 'hex'), now()) <> 'request.stale'
+     or public.pc_login_start(pg_temp.pc(21), pg_temp.k(21), 'N', pg_temp.h('n32-d'), pg_temp.h('N32-U'),
+       pg_temp.k(21), decode(repeat('ab', 32), 'hex'), now()) <> 'ok' then
     raise exception 'FAIL nonce_max_32_bytes';
   end if;
   insert into _results values ('nonce_max_32_bytes');
@@ -826,7 +840,7 @@ insert into public.my_pcs (pc_id, user_id, display_name, platform)
   select ('20000000-0000-0000-0000-0000000e' || lpad(g::text, 4, '0'))::uuid,
          '00000000-0000-0000-0000-0000000005e1', 'P' || g, 'windows' from generate_series(1, 20) g;
 set role service_role;
-select pg_temp.st('20000000-0000-0000-0000-0000000005e9', pg_temp.spki(), 'Extra', 'lim-dev', 'LIM-USER', pg_temp.spki()) \g /dev/null
+select pg_temp.st(pg_temp.pc(18), pg_temp.k(18), 'Extra', 'lim-dev', 'LIM-USER', pg_temp.k(18)) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005e1') \g /dev/null
@@ -834,7 +848,7 @@ select pg_temp.ok('LIM-USER') \g /dev/null
 reset role;
 set role service_role;
 do $$ begin
-  if (select status from pg_temp.co('lim-dev', pg_temp.spki())) <> 'pcs.limit' then
+  if (select status from pg_temp.co('lim-dev', pg_temp.k(18))) <> 'pcs.limit' then
     raise exception 'FAIL consume_respects_20_limit';
   end if;
   insert into _results values ('consume_respects_20_limit');
@@ -843,7 +857,7 @@ reset role;
 delete from public.my_pcs where pc_id = '20000000-0000-0000-0000-0000000e0001';
 set role service_role;
 do $$ begin
-  if (select status from pg_temp.co('lim-dev', pg_temp.spki())) <> 'ok' then
+  if (select status from pg_temp.co('lim-dev', pg_temp.k(18))) <> 'ok' then
     raise exception 'FAIL consume_after_freeing_slot';
   end if;
   if exists (select 1 from public.pc_keys where pc_id = '20000000-0000-0000-0000-0000000e0001') then

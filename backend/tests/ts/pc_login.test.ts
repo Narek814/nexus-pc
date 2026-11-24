@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createHandler as startHandler } from "../../supabase/functions/pc-login-start/index.ts";
 import { createHandler as pollHandler } from "../../supabase/functions/pc-login-poll/index.ts";
-import { consumeString, sha256hex, startString } from "../../supabase/functions/_shared/pop.ts";
+import { readFileSync } from "node:fs";
+import { consumeString, pcIdFromSpki, sha256hex, startString } from "../../supabase/functions/_shared/pop.ts";
 import { b64uEncode } from "../../supabase/functions/_shared/entitlement.ts";
 import { deps, FakeDb, HASH_ARGS, hex, nonce, NOW, payload, PC, pcKey, post, sign, testEnv, USER_A, USER_B,
   verifyTokens, captureConsole, assertDefaultLog, randomSecret, secretBytes, type PcKey } from "./_helpers.ts";
@@ -13,9 +14,43 @@ const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "file
 
 async function startBody(signer: PcKey, spkiB64u: string, over: Record<string, unknown> = {}, signedName?: string) {
   const n = nonce(), ts = NOW, name = (over.name as string) ?? "Gaming PC";
-  const sig = await sign(signer, await startString(PC, spkiB64u, signedName ?? name, n, ts));
-  return { pcId: PC, spki: spkiB64u, name, nonce: n, ts, sig, ...over };
+  // E4-2: pcId is derived from the spki in the body.
+  const pcId = (await pcIdFromSpki(Buffer.from(spkiB64u, "base64url"))) ?? PC;
+  const sig = await sign(signer, await startString(pcId, spkiB64u, signedName ?? name, n, ts));
+  return { pcId, spki: spkiB64u, name, nonce: n, ts, sig, ...over };
 }
+
+const DERIVE = JSON.parse(readFileSync(new URL("../../../shared/fixtures/pc-id/derive.v1.json", import.meta.url), "utf8")) as {
+  valid: { name: string; spkiB64u: string; pcId: string }[]; invalid: { name: string; spkiB64u: string }[];
+};
+
+test("pcIdFromSpki: all fixture vectors (valid -> pcId, invalid -> null)", async () => {
+  assert.ok(DERIVE.valid.length >= 5 && DERIVE.invalid.length >= 5);
+  for (const v of DERIVE.valid) {
+    assert.equal(await pcIdFromSpki(new Uint8Array(Buffer.from(v.spkiB64u, "base64url"))), v.pcId, v.name);
+  }
+  for (const v of DERIVE.invalid) {
+    assert.equal(await pcIdFromSpki(new Uint8Array(Buffer.from(v.spkiB64u, "base64url"))), null, v.name);
+  }
+});
+
+test("start (E4-2): pcId not derived from spki -> pc.key_required before any rpc, also for rebind", async () => {
+  const k = await pcKey(), other = await pcKey();
+  const otherId = (await pcIdFromSpki(other.spki))!;
+  for (const stored of [null, k.spki]) {
+    // Correctly signed over the foreign pcId: still refused.
+    const n = nonce();
+    const sig = await sign(k, await startString(otherId, k.spkiB64u, "Gaming PC", n, NOW));
+    for (const body of [{ pcId: otherId, spki: k.spkiB64u, name: "Gaming PC", nonce: n, ts: NOW, sig },
+      { ...(await startBody(k, k.spkiB64u)), pcId: PC }]) {
+      const db = startDb(stored);
+      const res = await startHandler(deps(db))(post(body));
+      assert.equal(res.status, 403);
+      assert.deepEqual(await res.json(), { error: "pc.key_required" });
+      assert.equal(db.calls.length, 0);
+    }
+  }
+});
 
 function startDb(stored: Uint8Array | null, status = "ok") {
   return new FakeDb({ pc_key_get: () => (stored ? hex(stored) : null), pc_login_start: () => status });
@@ -54,7 +89,7 @@ test("start, first binding: signer = spki, nonce/ts from signed string, only HMA
   const a = db.calls[3].args;
   assert.equal(a.p_signer_spki, hex(k.spki));
   assert.equal(a.p_spki, hex(k.spki));
-  assert.equal(a.p_pc_id, PC);
+  assert.equal(a.p_pc_id, await pcIdFromSpki(k.spki));
   assert.equal(a.p_name, "Gaming PC");
   assert.equal(a.p_nonce, hex(Buffer.from(body.nonce, "base64url")));
   assert.equal(a.p_ts, new Date(NOW * 1000).toISOString());

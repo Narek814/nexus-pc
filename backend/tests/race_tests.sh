@@ -6,12 +6,18 @@ mkdir -p "$race_dir"
 race_passed=0
 
 h() { printf "sha256(convert_to('%s','UTF8'))" "$1"; }
+# E4-2: pcId = pc_id_from_spki(spki). kx BYTE: fake P-256 SPKI (prefix, 0x04,
+# 64 x BYTE); pcid BYTE: its pcId (computed as postgres).
+SPKI_PFX=3059301306072a8648ce3d020106082a8648ce3d03010703420004
+kx() { printf "decode('%s' || repeat('%s',64),'hex')" "$SPKI_PFX" "$1"; }
+kg() { printf "decode('%s' || repeat(to_hex(%s),64),'hex')" "$SPKI_PFX" "$1"; }
+pcid() { psql_run -c "select public.pc_id_from_spki($(kx "$1"))"; }
 
 # 1. Four concurrent consumes of one approved code: exactly one 'ok'.
 psql_run >/dev/null <<SQL
 insert into auth.users values ('00000000-0000-0000-0000-00000000ace1', 'race1@example.test');
-select public.pc_login_start('30000000-0000-0000-0000-00000000ace1', decode(repeat('30',91),'hex'),
-  'Race', $(h race-dev), $(h RACE-USER), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
+select public.pc_login_start('$(pcid a0)', $(kx a0),
+  'Race', $(h race-dev), $(h RACE-USER), $(kx a0), uuid_send(gen_random_uuid()), now());
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace1', approved_at = now()
  where device_code_hash = $(h race-dev);
 SQL
@@ -19,7 +25,7 @@ for i in 1 2 3 4; do
   psql_run >"$race_dir/c$i" <<SQL &
 begin;
 set local role service_role;
-select status from public.pc_login_consume($(h race-dev), sha256(uuid_send(gen_random_uuid())), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_login_consume($(h race-dev), sha256(uuid_send(gen_random_uuid())), $(kx a0), uuid_send(gen_random_uuid()), now());
 select pg_sleep(0.5) \g /dev/null
 commit;
 SQL
@@ -37,19 +43,19 @@ race_passed=$((race_passed + 1))
 # 2. 25 concurrent consumes for one fresh account: exactly 20 PCs bound.
 psql_run >/dev/null <<SQL
 insert into auth.users values ('00000000-0000-0000-0000-00000000ace2', 'race2@example.test');
-select public.pc_login_start(('30000000-0000-0000-0000-0000000f' || lpad(g::text,4,'0'))::uuid,
-  decode(repeat('30',91),'hex'), 'R' || g, sha256(convert_to('lim-d' || g,'UTF8')),
-  sha256(convert_to('LIM-U' || g,'UTF8')), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now())
+select public.pc_login_start(public.pc_id_from_spki($(kg '176 + g')),
+  $(kg '176 + g'), 'R' || g, sha256(convert_to('lim-d' || g,'UTF8')),
+  sha256(convert_to('LIM-U' || g,'UTF8')), $(kg '176 + g'), uuid_send(gen_random_uuid()), now())
   from generate_series(1,25) g;
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace2', approved_at = now()
- where pc_id::text like '30000000-0000-0000-0000-0000000f%';
+ where device_code_hash in (select sha256(convert_to('lim-d' || g,'UTF8')) from generate_series(1,25) g);
 SQL
 for g in $(seq 1 25); do
   psql_run >"$race_dir/l$g" <<SQL &
 begin;
 set local role service_role;
 select pg_sleep(0.2) \g /dev/null
-select status from public.pc_login_consume($(h "lim-d$g"), sha256(uuid_send(gen_random_uuid())), decode(repeat('30',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_login_consume($(h "lim-d$g"), sha256(uuid_send(gen_random_uuid())), $(kg $((176 + g))), uuid_send(gen_random_uuid()), now());
 select pg_sleep(0.3) \g /dev/null
 commit;
 SQL
@@ -62,28 +68,29 @@ rows="$(psql_run -c "select count(*) from public.my_pcs where user_id = '0000000
   || { echo "FAIL race_pc_limit ok=$ok limit=$lim rows=$rows" >&2; exit 1; }
 race_passed=$((race_passed + 1))
 
-# 3. Two different approved codes of one new pc_id, two consumes each, in
-#    parallel: exactly one 'ok', the rest 'code.invalid', no exception
-#    (no unhandled unique_violation on my_pcs / pc_keys).
+# 3. Two different approved codes of one new pc_id (same key, E4-2), two
+#    consumes each, in parallel: exactly one 'ok', the rest 'code.invalid',
+#    no exception (no unhandled unique_violation on my_pcs / pc_keys).
+PC3="$(pcid a3)"
 psql_run >/dev/null <<SQL
 insert into auth.users values ('00000000-0000-0000-0000-00000000ace3', 'race3@example.test'),
   ('00000000-0000-0000-0000-00000000ace4', 'race4@example.test');
-select public.pc_login_start('30000000-0000-0000-0000-00000000ace3', decode(repeat('34',91),'hex'),
-  'Twin', $(h twin-a), $(h TWIN-A), decode(repeat('34',91),'hex'), uuid_send(gen_random_uuid()), now());
-select public.pc_login_start('30000000-0000-0000-0000-00000000ace3', decode(repeat('35',91),'hex'),
-  'Twin', $(h twin-b), $(h TWIN-B), decode(repeat('35',91),'hex'), uuid_send(gen_random_uuid()), now());
+select public.pc_login_start('$PC3', $(kx a3),
+  'Twin', $(h twin-a), $(h TWIN-A), $(kx a3), uuid_send(gen_random_uuid()), now());
+select public.pc_login_start('$PC3', $(kx a3),
+  'Twin', $(h twin-b), $(h TWIN-B), $(kx a3), uuid_send(gen_random_uuid()), now());
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace3', approved_at = now()
  where device_code_hash = $(h twin-a);
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace4', approved_at = now()
  where device_code_hash = $(h twin-b);
 SQL
-for s in a1:twin-a:34 a2:twin-a:34 b1:twin-b:35 b2:twin-b:35; do
+for s in a1:twin-a:a3 a2:twin-a:a3 b1:twin-b:a3 b2:twin-b:a3; do
   IFS=: read -r tag dev key <<<"$s"
   psql_run >"$race_dir/t$tag" 2>&1 <<SQL &
 begin;
 set local role service_role;
 select pg_sleep(0.2) \g /dev/null
-select status from public.pc_login_consume($(h "$dev"), sha256(uuid_send(gen_random_uuid())), decode(repeat('$key',91),'hex'), uuid_send(gen_random_uuid()), now());
+select status from public.pc_login_consume($(h "$dev"), sha256(uuid_send(gen_random_uuid())), $(kx "$key"), uuid_send(gen_random_uuid()), now());
 select pg_sleep(0.3) \g /dev/null
 commit;
 SQL
@@ -94,19 +101,20 @@ ok="$(cat "$race_dir"/t* | grep -c '^ok$' || true)"
 rej="$(cat "$race_dir"/t* | grep -cE '^(code\.invalid|slow_down|pending)$' || true)"
 other="$(cat "$race_dir"/t* | grep -vcE '^(ok|code\.invalid|slow_down|pending)$' || true)"
 err="$(cat "$race_dir"/t* | grep -c 'ERROR' || true)"
-rows="$(psql_run -c "select count(*) from public.my_pcs where pc_id = '30000000-0000-0000-0000-00000000ace3'")"
+rows="$(psql_run -c "select count(*) from public.my_pcs where pc_id = '$PC3'")"
 [ "$ok" = 1 ] && [ "$rej" = 3 ] && [ "$other" = 0 ] && [ "$err" = 0 ] && [ "$rows" = 1 ] \
   || { echo "FAIL race_two_codes_one_pc ok=$ok rejected=$rej other=$other errors=$err rows=$rows" >&2; cat "$race_dir"/t* >&2; exit 1; }
 race_passed=$((race_passed + 1))
 
 # 4. One nonce used by 4 parallel starts: exactly one 'ok', no exception.
+PC4="$(pcid a5)"
 for i in 1 2 3 4; do
   psql_run >"$race_dir/n$i" 2>&1 <<SQL &
 begin;
 set local role service_role;
 select pg_sleep(0.2) \g /dev/null
-select public.pc_login_start('30000000-0000-0000-0000-00000000ace5', decode(repeat('30',91),'hex'),
-  'Nonce', $(h "nonce-d$i"), $(h "NONCE-U$i"), decode(repeat('30',91),'hex'),
+select public.pc_login_start('$PC4', $(kx a5),
+  'Nonce', $(h "nonce-d$i"), $(h "NONCE-U$i"), $(kx a5),
   '\x00112233445566778899aabbccddeeff', now());
 select pg_sleep(0.3) \g /dev/null
 commit;
@@ -128,22 +136,25 @@ psql_run >/dev/null <<SQL
 insert into auth.users values ('00000000-0000-0000-0000-00000000ace6', 'race6@example.test'),
   ('00000000-0000-0000-0000-00000000ace7', 'race7@example.test');
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
-  select ('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid,
+  select public.pc_id_from_spki($(kg '208 + g')),
          '00000000-0000-0000-0000-00000000ace6', 'Rel' || g, 'windows' from generate_series(1,16) g;
 insert into public.pc_keys (pc_id, public_key_spki)
-  select ('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid, decode(repeat('36',91),'hex')
+  select public.pc_id_from_spki($(kg '208 + g')), $(kg '208 + g')
     from generate_series(1,16) g;
-select public.pc_login_start(('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid,
-  decode(repeat('37',91),'hex'), 'Rel' || g, sha256(convert_to('rel-d' || g,'UTF8')),
-  sha256(convert_to('REL-U' || g,'UTF8')), decode(repeat('36',91),'hex'), uuid_send(gen_random_uuid()), now())
+-- E4-2: the rebind keeps the PC key (no rotation).
+select public.pc_login_start(public.pc_id_from_spki($(kg '208 + g')),
+  $(kg '208 + g'), 'Rel' || g, sha256(convert_to('rel-d' || g,'UTF8')),
+  sha256(convert_to('REL-U' || g,'UTF8')), $(kg '208 + g'), uuid_send(gen_random_uuid()), now())
   from generate_series(1,16) g;
 update public.pc_login_codes set approved_by = '00000000-0000-0000-0000-00000000ace7', approved_at = now()
- where pc_id::text like '30000000-0000-0000-0000-0000000d%';
+ where device_code_hash in (select sha256(convert_to('rel-d' || g,'UTF8')) from generate_series(1,16) g);
 -- Refresh tokens of the old binding (E3-6): must be revoked whoever wins.
 insert into public.pc_refresh_tokens (pc_id, family_id, token_hash)
-  select ('30000000-0000-0000-0000-0000000d' || lpad(g::text,4,'0'))::uuid, gen_random_uuid(),
+  select public.pc_id_from_spki($(kg '208 + g')), gen_random_uuid(),
          sha256(convert_to('rel-old' || g,'UTF8')) from generate_series(1,16) g;
 SQL
+PC5=()
+for g in $(seq 1 16); do PC5[$g]="$(pcid "$(printf '%x' $((208 + g)))")"; done
 
 # Deterministic barrier (test-only, restored below). A session with
 # nexus.barrier = on, right after it takes the real pc_lock, waits on shared
@@ -215,7 +226,7 @@ set application_name = 'race_w';
 begin;
 set local nexus.barrier = '$2';
 set local role service_role;
-select 'consume:' || status from public.pc_login_consume($(h "rel-d$1"), $(h "rel-new$1"), decode(repeat('37',91),'hex'), uuid_send(gen_random_uuid()), now());
+select 'consume:' || status from public.pc_login_consume($(h "rel-d$1"), $(h "rel-new$1"), $(kg $((208 + $1))), uuid_send(gen_random_uuid()), now());
 commit;
 SQL
 }
@@ -226,7 +237,7 @@ begin;
 set local nexus.barrier = '$2';
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000ace6","role":"authenticated"}', true) \g /dev/null
-select 'release:' || public.pc_release('30000000-0000-0000-0000-0000000d$(printf '%04d' "$1")');
+select 'release:' || public.pc_release('${PC5[$1]}');
 commit;
 SQL
 }
@@ -250,7 +261,7 @@ wait
 err="$(cat "$race_dir"/rc* "$race_dir"/rr* | grep -c 'ERROR' || true)"
 bad=0
 for g in $(seq 1 16); do
-  pc="30000000-0000-0000-0000-0000000d$(printf '%04d' "$g")"
+  pc="${PC5[$g]}"
   c="$(cat "$race_dir/rc$g")"; r="$(cat "$race_dir/rr$g")"
   owner="$(psql_run -c "select coalesce((select user_id::text from public.my_pcs where pc_id = '$pc'), 'none')")"
   # live refresh tokens of this PC: the new one only (consume won) or none.

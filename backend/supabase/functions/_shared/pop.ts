@@ -47,6 +47,26 @@ export async function importP256Spki(spki: Uint8Array): Promise<CryptoKey | null
   }
 }
 
+// pcId derived from the permanent PC key (docs/API.md «Идентификатор ПК»,
+// shared/fixtures/pc-id/derive.v1.json): lower-case UUID of
+// u = SHA-256("nexus-pc-id-v1\n" || SPKI)[0..16], u[6] = (u[6] & 0x0F) | 0x80,
+// u[8] = (u[8] & 0x3F) | 0x80. null unless spki has the exact 91-byte
+// uncompressed P-256 shape (curve membership is checked by importP256Spki).
+const PC_ID_TAG = new TextEncoder().encode("nexus-pc-id-v1\n");
+export async function pcIdFromSpki(spki: Uint8Array): Promise<string | null> {
+  if (spki.length !== SPKI_P256_LEN) return null;
+  for (let i = 0; i < SPKI_P256_PREFIX.length; i++) if (spki[i] !== SPKI_P256_PREFIX[i]) return null;
+  if (spki[SPKI_P256_PREFIX.length] !== 0x04) return null;
+  const buf = new Uint8Array(PC_ID_TAG.length + spki.length);
+  buf.set(PC_ID_TAG);
+  buf.set(spki, PC_ID_TAG.length);
+  const u = new Uint8Array(await crypto.subtle.digest("SHA-256", buf)).subarray(0, 16);
+  u[6] = (u[6] & 0x0f) | 0x80;
+  u[8] = (u[8] & 0x3f) | 0x80;
+  const h = Array.from(u, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 // ECDSA P-256 / SHA-256, signature IEEE P1363 r||s of exactly 64 bytes.
 export async function verifyP1363(spki: Uint8Array, sig: Uint8Array, message: string): Promise<boolean> {
   if (sig.length !== 64) return false;

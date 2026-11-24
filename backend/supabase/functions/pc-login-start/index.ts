@@ -4,7 +4,7 @@
 
 import { bytea, fromBytea, ready, serveOnDeno, tsArg, type Deps } from "../_shared/db.ts";
 import { badRequest, endpoint, jsonResponse, readJsonObject, sqlStatus } from "../_shared/http.ts";
-import { b64uDecodeStrict, importP256Spki, signedFields, startString, verifyP1363 } from "../_shared/pop.ts";
+import { b64uDecodeStrict, importP256Spki, pcIdFromSpki, signedFields, startString, verifyP1363 } from "../_shared/pop.ts";
 import { hmac, newDeviceCode, newUserCode } from "../_shared/codes.ts";
 import { BUCKETS, clientIp, hit, ipKey } from "../_shared/ratelimit.ts";
 
@@ -26,6 +26,8 @@ export function createHandler(deps: Deps): (req: Request) => Promise<Response> {
     const { nonce, sig } = signedFields(pcId, nonceB64u, ts, b.sig as string);
     const spki = b64uDecodeStrict(spkiB64u);
     if (!spki || !(await importP256Spki(spki)) || !nameOk(name)) throw badRequest();
+    // E4-2: pcId must be derived from spki; same answer as a bad signature, no DB call.
+    if ((await pcIdFromSpki(spki)) !== pcId) return sqlStatus("pc.key_required", ["pc.key_required"]);
 
     // Per-IP limit before any signature work; the global start fuse only
     // after a valid signature, so unsigned floods cannot exhaust it (E7-2).

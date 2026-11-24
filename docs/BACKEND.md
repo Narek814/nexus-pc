@@ -141,7 +141,16 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 - ПК хранит refresh защищённо: DPAPI (область пользователя службы) и ACL на файл.
 - `cleanup()` по расписанию pg_cron (то же, что выше).
 
-Тесты: `tests/sql/50_pc_login.sql` (103 проверки) и `tests/race_tests.sh` (вызывается из `run_sql_tests.sh`; параллельные сессии `psql`: 4 одновременных consume одного кода → ровно один `ok`; 25 одновременных consume для одного аккаунта → ровно 20 ПК; два одобренных кода одного нового `pc_id`, по два consume на каждый → ровно один `ok`, ни одного исключения; один nonce в 4 параллельных start → ровно один `ok`; `pc_release` владельцем параллельно с consume одобренного кода перепривязки, 16 ПК → без deadlock и ошибок, на каждый ПК выигрывает ровно одно из двух, итоговое состояние соответствует победителю, refresh старой привязки отозваны).
+Тесты: `tests/sql/50_pc_login.sql` (105 проверок) и `tests/race_tests.sh` (вызывается из `run_sql_tests.sh`; параллельные сессии `psql`: 4 одновременных consume одного кода → ровно один `ok`; 25 одновременных consume для одного аккаунта → ровно 20 ПК; два одобренных кода одного нового `pc_id`, по два consume на каждый → ровно один `ok`, ни одного исключения; один nonce в 4 параллельных start → ровно один `ok`; `pc_release` владельцем параллельно с consume одобренного кода перепривязки, 16 ПК → без deadlock и ошибок, на каждый ПК выигрывает ровно одно из двух, итоговое состояние соответствует победителю, refresh старой привязки отозваны).
+
+### Сверка `pcId` с ключом ПК (E4-2, миграция `20261124000010_pc_id_derive.sql`)
+
+`pcId` выводится из постоянного ключа ПК (`docs/API.md`, «Идентификатор ПК»; тест-векторы — `shared/fixtures/pc-id/derive.v1.json`). Ключ не ротируется: потеря ключа = новый ПК с новым `pcId` (решение владельца, `docs/COMMERCIAL_PLAN.md`, раздел 0).
+
+- `public.pc_id_from_spki(bytea) → uuid` — `immutable`, `set search_path = ''`, только `sha256()` из ядра PostgreSQL, без расширений. Для SPKI не ровно 91 байт с префиксом P-256 и `0x04` (сжатая точка, лишние байты, другой алгоритм, `null`) возвращает `null`. Выполнять может только `service_role`.
+- `pc_login_start` заменена (`create or replace`, сигнатура, права и ответы прежние). Сразу после `pc_nonce_use`: если `p_pc_id` не равен `pc_id_from_spki(p_spki)` → `pc.key_required` — при первой привязке, при перепривязке и после `pc_release`. Если для `pc_id` в `pc_keys` уже есть ключ, `p_spki` обязан ему равняться (перепривязка с другим ключом → `pc.key_required`, даже если подписано старым ключом). Отказы не учитываются в лимите `pc_login_start` и не создают строк.
+- Edge `pc-login-start`: та же проверка (`pcIdFromSpki` в `_shared/pop.ts`) сразу после разбора тела, до любого обращения к БД (до лимита по IP); ответ — `403 pc.key_required`, как при неверной подписи.
+- Тесты: `tests/sql/55_pc_id_derive.sql` (13 проверок; все векторы фикстуры читаются из файла, путь передаёт `run_sql_tests.sh` через `-v pcid_fixture`), в `50_pc_login.sql` — перепривязка тем же ключом, отказ при смене ключа, повторная привязка после `pc_release` тем же ключом и отказ чужому ключу; TS — векторы фикстуры и отказ при чужом `pcId` без rpc. Тестовые ключи SQL — `префикс P-256 ‖ 0x04 ‖ 64 одинаковых байта`, `pcId` вычисляется через `pc_id_from_spki`; диапазоны байтов разведены по файлам, т. к. файлы делят одну БД.
 
 ## Refresh-токены ПК (миграция `20261123000006_pc_refresh.sql`, E3-6)
 
@@ -329,7 +338,7 @@ bash backend/tests/run_sql_tests.sh
 bash backend/tests/run_ts_tests.sh
 ```
 
-Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (75 тестов, из них 7 в `audit_e3_7c.test.ts`): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
+Нужны Node 22 (`node --test`, `.ts` без сборки) и Python 3 с `cryptography` (ставится во временный venv вне репозитория; путь к интерпретатору — `PYTHON`). Сначала `verify_tokens.py --fixtures` сверяет все кейсы `shared/protocol/fixtures/entitlements.v1.json` с ожидаемыми `ok`/`reason`, затем `tests/ts/*.test.ts` (80 тестов, из них 7 в `audit_e3_7c.test.ts`): `entitlement.test.ts` подписывает токены и отдаёт 12 из них на Python-проверку, тесты Edge — см. «Edge Functions».
 
 ## Переменные окружения
 

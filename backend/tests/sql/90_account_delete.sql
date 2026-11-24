@@ -12,7 +12,11 @@ grant insert on _results to authenticated, anon, service_role;
 create function pg_temp.h(t text) returns bytea language sql immutable
   as $$ select sha256(convert_to(t, 'UTF8')) $$;
 create function pg_temp.k(n int) returns bytea language sql immutable
-  as $$ select decode(repeat(to_hex(48 + n), 91), 'hex') $$;
+  as $$ select decode('3059301306072a8648ce3d020106082a8648ce3d03010703420004'
+          || repeat(to_hex(48 + n), 64), 'hex') $$;
+-- pcId derived from key n (E4-2, docs/API.md «Идентификатор ПК»).
+create function pg_temp.pc(n int) returns uuid language sql immutable security definer
+  as $$ select public.pc_id_from_spki(pg_temp.k(n)) $$;
 create function pg_temp.nn() returns bytea language sql volatile
   as $$ select uuid_send(gen_random_uuid()) $$;
 -- Full sign-in of a PC by a user (as in 60_pc_refresh.sql), refresh r0.
@@ -40,8 +44,8 @@ end $$;
 -- PC ids ever bound by a user in this test (rows of those PCs are the user's).
 create function pg_temp.pcs(u uuid) returns uuid[] language sql immutable as $$
   select case when u = '00000000-0000-0000-0000-0000000009a1'
-    then array['00000000-0000-4000-8000-0000000009a1', '00000000-0000-4000-8000-0000000009a2']::uuid[]
-    else array['00000000-0000-4000-8000-0000000009b1']::uuid[] end
+    then array[pg_temp.pc(61), pg_temp.pc(62)]::uuid[]
+    else array[pg_temp.pc(63)]::uuid[] end
 $$;
 create function pg_temp.user_rows(u uuid) returns bigint language sql stable as $$
   select (select count(*) from public.profiles where id = u)
@@ -67,11 +71,11 @@ create function pg_temp.b_snapshot() returns text language sql stable as $$
     (select string_agg(m::text, ',' order by m.pc_id) from public.my_pcs m
       where user_id = '00000000-0000-0000-0000-0000000009b1'),
     (select string_agg(k::text, ',' order by k.pc_id) from public.pc_keys k
-      where pc_id = '00000000-0000-4000-8000-0000000009b1'),
+      where pc_id = pg_temp.pc(63)),
     (select string_agg(t::text, ',' order by t.id) from public.pc_refresh_tokens t
-      where pc_id = '00000000-0000-4000-8000-0000000009b1'),
+      where pc_id = pg_temp.pc(63)),
     (select string_agg(l::text, ',' order by l.id) from public.pc_login_codes l
-      where pc_id in ('00000000-0000-4000-8000-0000000009b1', '00000000-0000-4000-8000-0000000009b2')),
+      where pc_id in (pg_temp.pc(63), pg_temp.pc(65))),
     (select string_agg(r::text, ',' order by r.bucket, r.window_start) from public.rate_limits r
       where key = '00000000-0000-0000-0000-0000000009b1'),
     (select string_agg(e::text, ',' order by e.event_id) from public.payment_events e)))
@@ -96,22 +100,22 @@ end $$;
 -- a third PC and an approve rate-limit row; B has one PC, a subscription and
 -- a pending code. payment_events has a row (kept).
 do $$ declare s text; begin
-  s := pg_temp.bind('00000000-0000-4000-8000-0000000009a1', pg_temp.k(1),
+  s := pg_temp.bind(pg_temp.pc(61), pg_temp.k(61),
     '00000000-0000-0000-0000-0000000009a1', 'a1', 'ra1');
   if s <> 'ok' then raise exception 'FAIL setup a1 %', s; end if;
-  s := pg_temp.bind('00000000-0000-4000-8000-0000000009a2', pg_temp.k(2),
+  s := pg_temp.bind(pg_temp.pc(62), pg_temp.k(62),
     '00000000-0000-0000-0000-0000000009a1', 'a2', 'ra2');
   if s <> 'ok' then raise exception 'FAIL setup a2 %', s; end if;
-  s := pg_temp.bind('00000000-0000-4000-8000-0000000009b1', pg_temp.k(3),
+  s := pg_temp.bind(pg_temp.pc(63), pg_temp.k(63),
     '00000000-0000-0000-0000-0000000009b1', 'b1', 'rb1');
   if s <> 'ok' then raise exception 'FAIL setup b1 %', s; end if;
   -- Code for a third PC described by A only.
   set local role service_role;
-  s := public.pc_login_start('00000000-0000-4000-8000-0000000009a3', pg_temp.k(4), 'PC a3',
-    pg_temp.h('d-a3'), pg_temp.h('U-a3'), pg_temp.k(4), pg_temp.nn(), now());
+  s := public.pc_login_start(pg_temp.pc(64), pg_temp.k(64), 'PC a3',
+    pg_temp.h('d-a3'), pg_temp.h('U-a3'), pg_temp.k(64), pg_temp.nn(), now());
   -- Pending code of B's second PC described by B.
-  s := public.pc_login_start('00000000-0000-4000-8000-0000000009b2', pg_temp.k(5), 'PC b2',
-    pg_temp.h('d-b2'), pg_temp.h('U-b2'), pg_temp.k(5), pg_temp.nn(), now());
+  s := public.pc_login_start(pg_temp.pc(65), pg_temp.k(65), 'PC b2',
+    pg_temp.h('d-b2'), pg_temp.h('U-b2'), pg_temp.k(65), pg_temp.nn(), now());
   perform set_config('request.jwt.claims',
     json_build_object('sub', '00000000-0000-0000-0000-0000000009a1', 'role', 'authenticated')::text, true);
   set local role authenticated;
@@ -199,7 +203,7 @@ do $$ begin
     raise exception 'FAIL purge_subscriptions';
   end if;
   insert into _results values ('purge_subscriptions');
-  if (select count(*) from public.pc_login_codes where pc_id = '00000000-0000-4000-8000-0000000009a3') <> 0 then
+  if (select count(*) from public.pc_login_codes where pc_id = pg_temp.pc(64)) <> 0 then
     raise exception 'FAIL purge_described_code';
   end if;
   insert into _results values ('purge_described_code');
@@ -227,16 +231,16 @@ end $$;
 do $$ declare s text; e text; begin
   set local role service_role;
   select status into s from public.pc_rotate_refresh(pg_temp.h('ra1'), pg_temp.h('ra1-n'),
-    '00000000-0000-4000-8000-0000000009a1', pg_temp.k(1), pg_temp.nn(), now());
+    pg_temp.pc(61), pg_temp.k(61), pg_temp.nn(), now());
   if s <> 'revoked' then raise exception 'FAIL former_pc_revoked a1 %', s; end if;
   select status into s from public.pc_rotate_refresh(pg_temp.h('ra2'), pg_temp.h('ra2-n'),
-    '00000000-0000-4000-8000-0000000009a2', pg_temp.k(2), pg_temp.nn(), now());
+    pg_temp.pc(62), pg_temp.k(62), pg_temp.nn(), now());
   if s <> 'revoked' then raise exception 'FAIL former_pc_revoked a2 %', s; end if;
-  select state into e from public.entitlement_for_pc('00000000-0000-4000-8000-0000000009a1');
+  select state into e from public.entitlement_for_pc(pg_temp.pc(61));
   if e <> 'unlinked' then raise exception 'FAIL former_pc_unlinked %', e; end if;
   -- B still rotates fine.
   select status into s from public.pc_rotate_refresh(pg_temp.h('rb1'), pg_temp.h('rb1-n'),
-    '00000000-0000-4000-8000-0000000009b1', pg_temp.k(3), pg_temp.nn(), now());
+    pg_temp.pc(63), pg_temp.k(63), pg_temp.nn(), now());
   if s <> 'ok' then raise exception 'FAIL b_rotates %', s; end if;
   reset role;
   insert into _results values ('former_pcs_revoked');
@@ -303,12 +307,12 @@ end $$;
 -- and not yet consumed -> 'code.invalid'.
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000009c1', 'dc@example.test');
 do $$ declare s text; begin
-  s := pg_temp.bind('00000000-0000-4000-8000-0000000009c1', pg_temp.k(6),
+  s := pg_temp.bind(pg_temp.pc(66), pg_temp.k(66),
     '00000000-0000-0000-0000-0000000009c1', 'c1', 'rc1');
   if s <> 'ok' then raise exception 'FAIL setup c1 %', s; end if;
   set local role service_role;
-  s := public.pc_login_start('00000000-0000-4000-8000-0000000009c2', pg_temp.k(7), 'PC c2',
-    pg_temp.h('d-c2'), pg_temp.h('U-c2'), pg_temp.k(7), pg_temp.nn(), now());
+  s := public.pc_login_start(pg_temp.pc(67), pg_temp.k(67), 'PC c2',
+    pg_temp.h('d-c2'), pg_temp.h('U-c2'), pg_temp.k(67), pg_temp.nn(), now());
   if s <> 'ok' then raise exception 'FAIL setup c2 start %', s; end if;
   perform set_config('request.jwt.claims',
     json_build_object('sub', '00000000-0000-0000-0000-0000000009c1', 'role', 'authenticated')::text, true);
@@ -322,21 +326,21 @@ end $$;
 
 do $$ declare s text; begin
   delete from auth.users where id = '00000000-0000-0000-0000-0000000009c1';
-  if exists (select 1 from public.my_pcs where pc_id = '00000000-0000-4000-8000-0000000009c1') then
+  if exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(66)) then
     raise exception 'FAIL cascade_my_pcs';
   end if;
   set local role service_role;
   select status into s from public.pc_rotate_refresh(pg_temp.h('rc1'), pg_temp.h('rc1-n'),
-    '00000000-0000-4000-8000-0000000009c1', pg_temp.k(6), pg_temp.nn(), now());
+    pg_temp.pc(66), pg_temp.k(66), pg_temp.nn(), now());
   reset role;
   if s is distinct from 'revoked' then raise exception 'FAIL cascade_rotate_revoked %', s; end if;
   insert into _results values ('cascade_rotate_revoked');
   set local role service_role;
-  select c.status into s from public.pc_login_consume(pg_temp.h('d-c2'), pg_temp.h('rc2'), pg_temp.k(7),
+  select c.status into s from public.pc_login_consume(pg_temp.h('d-c2'), pg_temp.h('rc2'), pg_temp.k(67),
     pg_temp.nn(), now()) c;
   reset role;
   if s is distinct from 'code.invalid' then raise exception 'FAIL cascade_consume_invalid %', s; end if;
-  if exists (select 1 from public.my_pcs where pc_id = '00000000-0000-4000-8000-0000000009c2') then
+  if exists (select 1 from public.my_pcs where pc_id = pg_temp.pc(67)) then
     raise exception 'FAIL cascade_consume_no_bind';
   end if;
   insert into _results values ('cascade_consume_invalid');
