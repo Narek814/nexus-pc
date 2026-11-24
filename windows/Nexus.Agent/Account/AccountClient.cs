@@ -288,16 +288,16 @@ internal sealed partial class AccountClient : IDisposable
                         return new RefreshResult(RefreshOutcome.RateLimited, Math.Clamp(reply.RetryAfter ?? 60, 1, 86_400));
                     case Transient or "request.stale" or "nonce.replay":
                         break;
-                    case "bad.request":
-                        // Our request (or an unknown 4xx code) was not accepted: this says nothing about the token.
-                        Record("account.token", false, "bad.request");
-                        return new RefreshResult(RefreshOutcome.Rejected);
-                    default:
-                        // auth.required, pc.not_found, revoked, reuse.detected, pc.key_required (and any other known
-                        // refusal): the token is no longer valid; erase and wait for a new sign-in.
+                    case "auth.required" or "pc.not_found" or "revoked" or "reuse.detected" or "pc.key_required":
+                        // Only these say the token is no longer valid: erase and wait for a new sign-in.
                         Wipe();
                         Record("account.token", false, reply.Error);
                         return new RefreshResult(RefreshOutcome.Revoked);
+                    default:
+                        // bad.request (unknown codes are mapped to it) and known codes pc-token never sends: this says
+                        // nothing about the token, so nothing is erased and there is no retry in this attempt.
+                        Record("account.token", false, reply.Error);
+                        return new RefreshResult(RefreshOutcome.Rejected);
                 }
                 if (attempt >= _retryPauses.Count || _time.GetUtcNow() + _retryPauses[attempt] - first >= IdempotentWindow)
                 {

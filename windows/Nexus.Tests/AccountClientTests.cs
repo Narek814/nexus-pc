@@ -457,6 +457,27 @@ public sealed class AccountClientTests : IDisposable
         Assert.DoesNotContain(_log.Lines, l => l.Contains("some.future_code", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("slow_down", 400)]
+    [InlineData("pending", 400)]
+    [InlineData("pcs.limit", 403)]
+    [InlineData("code.invalid", 400)]
+    [InlineData("reauth.required", 401)]
+    [InlineData("reauth.required", 403)]
+    public async Task Known_code_not_expected_from_pc_token_keeps_the_token_and_the_plan(string error, int status)
+    {
+        var (client, fake) = await SignedInAsync();
+        var old = _store.Load();
+        fake.TokenError = error;
+        fake.TokenStatus = (HttpStatusCode)status;
+        Assert.Equal(RefreshOutcome.Rejected, (await client.RefreshAsync(CancellationToken.None)).Outcome);
+        Assert.Equal(old, _store.Load());
+        Assert.Equal(EntitlementState.Active, _tracker.Current.State);
+        Assert.True(_tracker.Current.Has(PlanPolicy.RgbSync));
+        Assert.Equal(1, fake.Requests.Count(r => r.Function == "pc-token"));
+        Assert.Contains(_audit, a => a.StartsWith("account.token False ", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Unknown_5xx_error_is_logged_only_as_internal()
     {
