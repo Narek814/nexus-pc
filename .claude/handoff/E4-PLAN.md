@@ -138,3 +138,15 @@ security-auditor (дополнение к разделу 5): нет пути с�
 ### CI на aef3cec — красный (E4-3 не принят окончательно), чинить вместе с E4-3a
 1. .NET tests (windows-latest): 2 падения — PcIdTests.Agent_KeyLost_WarnsInAudit и Agent_OldInstall_MigratesLogsOnceAndKeepsPairedDevices: DataDirectoryUntrustedException (тест сам создаёт каталог nexus-pcid-* в %TEMP% с наследуемым ACL). Исправление: создавать каталог тем же способом, что AgentTestHost (защищённый DACL).
 2. iOS (macos-latest), шаг «Start a real Nexus.Agent»: агент падает PlatformNotSupportedException — на macOS нет CNG, AgentHost требует AgentHostOptions.DeviceKey. Живые тесты NexusKit не запускаются. Нужен источник ключа для не-Windows (только dev/CI) — ЖДЁТ РЕШЕНИЯ ВЛАДЕЛЬЦА.
+
+### Решение владельца 2026-11-24 по ключу для macOS (дополнение к E4-3a) — СОГЛАСОВАНО
+Разрешён отдельный постоянный файловый ключ только для разработки и CI на не-Windows (живые тесты iOS с настоящим агентом). Условия:
+1. Ключ постоянный между запусками, в отдельном файле.
+2. Включается только явным флагом разработки/CI.
+3. В Release-сборках Windows механизм полностью недоступен.
+4. Никакого автоматического fallback с CNG на файловый ключ.
+5. Файл ключа защищён правами доступа, исключён из Git, логов и публикуемых артефактов.
+6. Тесты: файловый ключ невозможен без явного флага и в Release-конфигурации Windows.
+7. Windows — только CNG: TPM при наличии, иначе программный CNG (Software KSP).
+По двум упавшим Windows-тестам: создавать тестовые папки данных тем же механизмом защищённых ACL, что в остальных тестах агента; проверки безопасности агента не ослаблять.
+Порядок: E4-3a → полный dotnet test → Windows CI → iOS live tests (macOS) → проверка Release на отсутствие файлового fallback → QA. До принятия QA к E4-4 не переходить. Merge — только с отдельного разрешения.
