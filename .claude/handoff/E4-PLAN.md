@@ -106,4 +106,31 @@ QA — на E4-2…E4-5. security-auditor — после E4-2, E4-3, E4-4 (по 
 Открытые решения: degraded или fail-closed; разрешены ли автоматизации в degraded.
 audit.log: пишет только SYSTEM, каталог с защищённым DACL и проверкой при старте; от администратора не защищён (норма для модели угроз). Рекомендация: дублировать события безопасности в Windows Event Log.
 security-auditor (дополнение к разделу 5): нет пути старого pcId/Guid.Empty/временного ключа в hello, AuthTranscript, QR, токен, сертификат; ошибки ключа без лишних данных; в degraded порт не слушается, key.retry только admin-пайп и с лимитом, нет цикла рестартов до TPM lockout, файлы не меняются, автоматизации без платных прав, Setup задаёт SCM recovery; в fail-closed нет бесконечного цикла рестартов.
-Полный блок «ЗАДАНИЕ E4-3a» — в отчёте архитектора (переписать дословно в этот файл при запуске).
+Блок задания:
+
+```
+ЗАДАНИЕ E4-3a: Режим «ключ ПК недоступен» (degraded, fail-closed для сети) + исправления тестов ключа
+Исполнитель: windows-developer
+Файлы: windows/Nexus.Agent/Hosting/AgentHost.cs, windows/Nexus.Agent/Admin/AdminService.cs, windows/Nexus.Agent/Admin/AdminPipeServer.cs (и протокол пайпа трея, если команда добавляется там), windows/Nexus.Agent/Security/DeviceKeyStore.cs, windows/Nexus.Tray/** (отображение статуса и кнопка «Повторить»; строки EN/RU), windows/Nexus.Tests/PcIdTests.cs, windows/Nexus.Tests/AgentTestHost.cs, новые тесты в windows/Nexus.Tests/DeviceKeyDegradedTests.cs; docs/SECURITY или раздел безопасности в ARCHITECTURE.md (абзац о режиме).
+Сделать:
+1. AgentHost.Build: открыть ключ через фабрику (AgentHostOptions.DeviceKeyFactory для тестов) с 3 попытками и паузами 2/5/10 с (в тестах паузы инжектируются). При неудаче: audit "device.keyUnavailable" ok:false error=<тип исключения и HRESULT, без текста с путями и данными>, запись в Windows Event Log (существующий WriteEventLog), затем режим Degraded.
+2. В Degraded НЕ выполнять: AgentConfig.LoadOrCreate(…, derivedPcId), AgentCertificate.LoadOrCreate, создание AgentIdentity, EntitlementTracker и EntitlementLoop, kestrel.Listen и Map(/v1/ws). config.json, entitlement.json и сертификат не читать для идентификации, не изменять и не удалять.
+3. В Degraded запустить: TraySessionServer, AdminPipeServer, MetricsLoop, OpenRgbHost и RgbService, AutomationService, если её код не зависит от Identity, Entitlements и сети. Лицензируемые действия автоматизаций в Degraded по правилам «нет токена» (бесплатный план), явно, без null-разыменований.
+4. AdminService в Degraded: статус {state:"keyUnavailable", error:<код>, attempts, lastAttemptUtc}, без поля pcId и без QR (pairing-команды возвращают ошибку keyUnavailable). AgentIdentity и pcId в этом режиме нигде не существуют: не делать PcId nullable, а разделить регистрацию сервисов.
+5. Команда admin-пайпа "key.retry" (только admin-пайп, не session-пайп): audit "device.keyRetry", затем штатная остановка с ненулевым кодом, перезапуск по SCM recovery. Лимит: не чаще 1 раза в 60 с, иначе ошибка rateLimited. Проверить, что установщик задаёт recovery «перезапуск»; если нет, сообщить в отчёте, Setup не менять.
+6. Трей: показать «Ключ защиты ПК недоступен — подключение телефонов отключено» (EN/RU) и кнопку «Повторить» (через admin-путь, как другие админ-действия).
+7. FileDeviceKey: хранить ключ в отдельном каталоге каждого теста (Path.Combine(Path.GetTempPath(), "nexus-test-keys-" + Guid) или рядом с тестовым dataDirectory, но не внутри него), создавать с FileMode.CreateNew (не перезаписывать при гонке). Каждый тест и AgentTestHost удаляют свой ключ в Dispose; AgentTestHost при перезапуске агента в том же тесте использует тот же путь.
+8. DeviceKeyStoreWindowsTests: для MachineKey нужны права администратора. Сделать проверку IsElevated (как DataDirectoryWindowsTests.cs:52); без прав выходить с явным сообщением через ITestOutputHelper (в xunit 2.9.3 нет динамического Skip). Добавить internal-перегрузку OpenOrCreate(name, machineKey:false) только для тестов (user-key в Software KSP), чтобы P256, подпись P1363, неэкспортируемость и стабильность проверялись и без прав. Производственный путь всегда machineKey:true.
+Не трогать: формат config.json, деривацию pcId (PcIdDerivation, фикстуры), протокол v1 и схему, логику KeyReplaced/MigratedFromLegacy, ACL каталога данных, Nexus.Setup.
+Критерии приёмки:
+- Фабрика ключа бросает исключение → служба стартует, порт не слушается (TCP connect отклонён), трей и admin-пайп отвечают статусом keyUnavailable без pcId.
+- config.json, entitlement.json и сертификат побайтно не изменены; новый сертификат не создан.
+- В audit.log есть device.keyUnavailable; Event Log пишется (Windows).
+- Ключ появился (фабрика начинает работать) → после перезапуска обычный режим, pcId совпадает с derive(SPKI), отметки KeyReplaced нет, если ключ тот же.
+- key.retry: второй вызов за 60 с → rateLimited; с session-пайпа отклоняется.
+- Нет кода, где pcId берётся из config в обход ключа (grep "config.PcId" только после успешного открытия ключа).
+- Тестовые ключи после прогона не остаются в %TEMP%; параллельные тесты не делят файл ключа.
+Тесты: DeviceKeyDegradedTests (порт закрыт, статус, неизменность файлов, retry-лимит, восстановление); FileDeviceKey-изоляция; DeviceKeyStoreWindowsTests (user-key без прав, MachineKey при правах). Полный dotnet test windows и Windows CI.
+Зависит от: E4-3 (aef3cec)
+```
+Текст для документации, если выбран fail-closed (ARCHITECTURE.md раздел D, docs/SECURITY*): «Без действующего постоянного ключа NexusPC-Device-v1 агент не запускается: временные ключи, старый pcId и обходы не используются. Причина пишется в журнал событий Windows. Восстановление — перезапуск службы; при потере ключа все телефоны нужно сопрячь заново.»
