@@ -456,6 +456,15 @@ public sealed partial class DataDirectoryFileSystem : IDataFileSystem
             AdministratorsSid, null, null, acl);
     }
 
+    /// <summary>entitlement.json: protected DACL with SYSTEM only, as EntitlementFileStore creates it.</summary>
+    private static RawSecurityDescriptor SystemOnlyFileDescriptor()
+    {
+        var acl = new RawAcl(GenericAcl.AclRevision, 1);
+        acl.InsertAce(0, new CommonAce(AceFlags.None, AceQualifier.AccessAllowed, unchecked((int)DataDirectoryPolicy.FullControl), SystemSid, false, null));
+        return new RawSecurityDescriptor(ControlFlags.DiscretionaryAclPresent | ControlFlags.DiscretionaryAclProtected | ControlFlags.SelfRelative,
+            AdministratorsSid, null, null, acl);
+    }
+
     private static byte[] Binary(RawSecurityDescriptor descriptor)
     {
         var bytes = new byte[descriptor.BinaryLength];
@@ -488,6 +497,10 @@ public sealed partial class DataDirectoryFileSystem : IDataFileSystem
                     break;
                 case DataSecurity.InheritedFromRoot inherited:
                     descriptor = InheritedDescriptor(inherited.IsDirectory);
+                    information = OwnerSecurityInformation | DaclSecurityInformation;
+                    break;
+                case DataSecurity.SystemOnlyFile:
+                    descriptor = SystemOnlyFileDescriptor();
                     information = OwnerSecurityInformation | DaclSecurityInformation;
                     break;
                 case DataSecurity.Original original:

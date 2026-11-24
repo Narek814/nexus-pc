@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "description": "pcId = lowercase UUID (format D) of u = SHA-256(ASCII \"nexus-pc-id-v1\\n\" || SPKI DER)[0..16], u[6] = (u[6] & 0x0F) | 0x80, u[8] = (u[8] & 0x3F) | 0x80. SPKI must be exactly the 91-byte DER of a P-256 uncompressed point; anything else is rejected. privateScalarHex is test-only, for reproducing the keys.",
+  "valid": [
+    {
+      "name": "p256-1",
+      "privateScalarHex": "1",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+      "pcId": "903b8c0d-826a-8ebe-b010-aafd94ff61ef"
+    },
+    {
+      "name": "p256-2",
+      "privateScalarHex": "2",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXgHd1UQ247QQCk9msafdDDbun2t5jzpgimeBLedInhz0Q",
+      "pcId": "4064a79a-3fe1-8178-8f52-f1ecb59eb578"
+    },
+    {
+      "name": "p256-3",
+      "privateScalarHex": "3",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXsvk0aYzCkTI9--VHUvxZebGtyHvramF-0FmG8bn_WyHNGQMSZj_fjdLBs4aZKLs2CqwNjhPuD2aebEnon1QMg",
+      "pcId": "ee769a7d-0247-8ade-a1b7-d5b47454c218"
+    },
+    {
+      "name": "p256-4",
+      "privateScalarHex": "c0ffee",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE02AzL62byDr6_0p0DeilFr8bj7P942D_HQOXnB-UPuLopmAH_SdrAnEmXG2wksSgxeuMRf3ENlAsiglfXVdF8g",
+      "pcId": "9cd4f633-265c-8c84-b35b-b92a07b06c08"
+    },
+    {
+      "name": "p256-5",
+      "privateScalarHex": "ac4bd6ea03496909121e20aa73a2545023e594774acf74a2849ff63ce974d34",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6AYJncIvWtzYWkKw68_ZY4vhzoSN5FmtVB1pO4hI88XJq0wS02T8j_eOxTSUpBDCgbi-iES37ISAmIHt8y5tVw",
+      "pcId": "3f3b1152-7015-8171-a6ca-8484bb615afc"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "compressed-point",
+      "spkiB64u": "MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgADaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+      "expect": "reject"
+    },
+    {
+      "name": "trailing-bytes",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9QA",
+      "expect": "reject"
+    },
+    {
+      "name": "truncated",
+      "spkiB64u": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R",
+      "expect": "reject"
+    },
+    {
+      "name": "p384",
+      "spkiB64u": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEqofKIr6LBTeOscce8yCtdG4dO2KLp5uYWfdB4IJUKjhVAvJdv1UpbDpUXjhydgq3NhfeSpYmLG9dnpi_kpLcKfj0Hb0omhR86doxE7XwuMAKYLHOHX6BnXpDHXyQ6g5f",
+      "expect": "reject"
+    },
+    {
+      "name": "ed25519",
+      "spkiB64u": "MCowBQYDK2VwAyEAO2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik",
+      "expect": "reject"
+    },
+    {
+      "name": "raw-point-not-spki",
+      "spkiB64u": "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "expect": "reject"
+    }
+  ]
+}

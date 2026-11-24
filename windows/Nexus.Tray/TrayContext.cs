@@ -21,6 +21,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _inputWatch = new() { Interval = 1000 };
     private readonly System.Windows.Forms.Timer _lightingWatch = new() { Interval = 15000 };
     private bool _lightingConflictShown;
+    private readonly ToolStripMenuItem _keyRetry;
+    private bool _keyUnavailable;
     private Icon _currentIcon;
     private Form? _openForm;
 
@@ -72,7 +74,11 @@ internal sealed class TrayContext : ApplicationContext
         var logPath = Path.Combine(dataDir, "tray.log");
         var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(logPath, message));
         _agent = agent;
-        agent.ConnectedChanged += (_, connected) => _ui.Post(_ => UpdateStatus(connected), null);
+        agent.ConnectedChanged += (_, connected) => _ui.Post(async _ =>
+        {
+            UpdateStatus(connected);
+            await CheckLightingAsync(); // also reads the PC key state at once
+        }, null);
         agent.StatusChanged += (_, status) => _ui.Post(_ =>
         {
             if (!agent.IsConnected)
@@ -85,6 +91,10 @@ internal sealed class TrayContext : ApplicationContext
         var menu = new ContextMenuStrip();
         Theme.StyleMenu(menu);
         menu.Items.Add(_status);
+        // E4-3a: shown only while the agent reports that the PC key is unavailable. Restarts the service through the
+        // elevated admin command (Windows asks for administrator rights), like the other admin actions.
+        _keyRetry = new ToolStripMenuItem(TrayText.KeyRetry, null, (_, _) => RunAdminCommand(agentPath, "key retry")) { Visible = false };
+        menu.Items.Add(_keyRetry);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
         menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
@@ -126,8 +136,13 @@ internal sealed class TrayContext : ApplicationContext
 
     private void UpdateStatus(bool connected)
     {
-        _status.Text = connected ? "Служба подключена" : "Нет связи со службой";
-        _icon.Text = connected ? "Nexus PC — готов" : "Nexus PC — нет связи со службой";
+        if (!connected)
+        {
+            _keyUnavailable = false;
+            _keyRetry.Visible = false;
+        }
+        _status.Text = _keyUnavailable ? TrayText.KeyUnavailable : connected ? "Служба подключена" : "Нет связи со службой";
+        _icon.Text = _keyUnavailable ? TrayText.KeyUnavailableTip : connected ? "Nexus PC — готов" : "Nexus PC — нет связи со службой";
         var old = _currentIcon;
         _currentIcon = Theme.CreateIcon(connected);
         _icon.Icon = _currentIcon;
@@ -187,9 +202,15 @@ internal sealed class TrayContext : ApplicationContext
             Notify("OpenRGB не установлен вместе с Nexus PC. Запустите NexusPC-Setup.exe ещё раз.");
             return;
         }
+        RunAdminCommand(agentPath, "openrgb");
+    }
+
+    /// <summary>An admin command of the installed agent, elevated (Windows asks); fixed arguments only.</summary>
+    private static void RunAdminCommand(string agentPath, string arguments)
+    {
         try
         {
-            using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(agentPath, "openrgb")
+            using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(agentPath, arguments)
             {
                 UseShellExecute = true,
                 Verb = "runas",
@@ -223,6 +244,17 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
         var status = await _agent.CallAsync(Nexus.Core.Session.SessionOps.Status).ConfigureAwait(true);
+        var keyUnavailable = status.Ok && status.Result?["state"]?.GetValue<string>() == "keyUnavailable";
+        if (keyUnavailable != _keyUnavailable)
+        {
+            _keyUnavailable = keyUnavailable;
+            _keyRetry.Visible = keyUnavailable;
+            UpdateStatus(_agent.IsConnected);
+            if (keyUnavailable)
+            {
+                Notify(TrayText.KeyUnavailable);
+            }
+        }
         var conflict = status.Ok && status.Result?["openRgb"]?.GetValue<string>() == "conflict";
         if (conflict && !_lightingConflictShown)
         {

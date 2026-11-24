@@ -1,0 +1,4 @@
+# Local secrets never go into the repository.
+.env
+supabase/.temp/
+supabase/.branches/

@@ -11,9 +11,26 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.1.0</Version>
   </PropertyGroup>
+  <!--
+    Development/CI file key (E4-3a/E4-3b, owner decision): compiled only when the build host is not Windows AND the
+    RuntimeIdentifier is not win-* (macOS CI, Linux tests). No Windows build has the code: neither the installer
+    (-r win-x64) nor Debug or RID-less builds made on Windows. A build that has it still refuses it on Windows at
+    run time, and it is used only with NEXUS_DEV_FILE_KEY set. Nexus.Tests.csproj uses the same condition.
+  -->
+  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$(RuntimeIdentifier.StartsWith('win'))">
+    <DefineConstants>$(DefineConstants);NEXUS_DEV_FILE_KEY</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
+  </ItemGroup>
+  <!--
+    Account server (E4-4): set by the release build once the domain and the Supabase project exist
+    (-p:NexusAccountServerUrl=https://... -p:NexusAccountAnonKey=...). Empty = the account client is off.
+  -->
+  <ItemGroup Condition="'$(NexusAccountServerUrl)' != '' And '$(NexusAccountAnonKey)' != ''">
+    <AssemblyMetadata Include="NexusAccountServerUrl" Value="$(NexusAccountServerUrl)" />
+    <AssemblyMetadata Include="NexusAccountAnonKey" Value="$(NexusAccountAnonKey)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />

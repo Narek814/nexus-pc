@@ -1,0 +1,7 @@
+# Minimal local Supabase CLI config for Nexus PC.
+# No keys, no SMTP passwords. Cloud region (EU, Frankfurt) is chosen by the owner
+# in the Supabase dashboard; it is not configured here.
+project_id = "nexus-pc-local"
+
+[db]
+major_version = 16

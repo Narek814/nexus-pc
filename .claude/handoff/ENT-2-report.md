@@ -1,0 +1,113 @@
+## ENT-2: проверка entitlement в агенте — отчёт
+
+Пункты 1–5 сделаны. На Linux всё проходит. Решить нужно одно, первым пунктом ниже: включать ли проверку плана, пока ключей в сборке нет.
+
+**НУЖНО РЕШЕНИЕ (главное).** В Release таблица ключей пустая, как требует задание, поэтому любой токен отклоняется как `unknownKid`. Если при этом проверять план, у всех пользователей сразу пропадут работающие функции: профили, `rgb.apply`, автоматизации, `metrics.history` 1h/24h. Это запрет §2.1.
+- Поэтому проверка плана сейчас работает, только если закреплён хотя бы один ключ (`EntitlementTrust.IsConfigured`). Без ключей поведение агента прежнее: `account.refresh` отвечает `command.notImplemented`, маркера и полей плана нет.
+- Через настройки или флаг это не включается: только ключами в сборке. В тестах ключи передаются через параметры хоста.
+- Владелец должен подтвердить такой вариант или выбрать «отказывать в Pro уже сейчас».
+
+### Что сделано
+- **Проверка токена** (`Nexus.Core/Entitlements/EntitlementVerifier.cs`):
+  - порядок проверок ровно по API.md, длина ≤4096 проверяется первой, `kid` сравнивается Ordinal;
+  - ES256 в формате P1363 встроенными средствами .NET, новых пакетов нет;
+  - строгий JSON: ручной обход ридером (дубликаты ключей, целые литералы, `-0`) и `JsonDocument` с `AllowDuplicateProperties=false`;
+  - схема проверяется кодом;
+  - сроки ограничены: 24 ч, 7 дней, `iat ≤ now+300`.
+- **Ключи и issuer** (`EntitlementTrust.cs`):
+  - `PinnedEntitlementKeys`: ключей нет, список отозванных `kid` пустой;
+  - `Issuer = "nexus-issuer-unset"` — заглушка, рабочее значение не выбрано.
+- **Состояние прав** (`EntitlementTracker.cs`):
+  - хранится max(iat), lastSeen (сохраняется раз в 10 минут), бюджет аптайма службы;
+  - эффективное время = max(часы, lastSeen, iat + аптайм);
+  - часы отведены назад больше чем на 5 минут → флаг сохраняется сразу, льгота считается истёкшей до токена с более новым `iat`;
+  - токен со старым `iat` отклоняется с причиной `stale`; отклонённый токен состояние не меняет;
+  - `MarkRevoked()` → состояние `revoked` сразу, без льготы, до токена с более новым `iat`;
+  - при загрузке сохранённый токен проверяется заново;
+  - токен попадает в состояние только через внутренний `Accept()`, внешнего пути загрузки нет.
+- **Файл состояния** `entitlement.json` (`Nexus.Agent/Storage/EntitlementFileStore.cs`):
+  - на Windows у файла свой защищённый DACL, доступ только SYSTEM (в тестах ещё тестовая учётка);
+  - при старте проверяются владелец, флаг protected и записи DACL; не прошёл проверку → файл удаляется, считается «нет токена», в audit пишется `entitlement.untrustedFile`;
+  - DPAPI не используется: секретов в файле нет. Refresh-токен этапа E4 — уже с DPAPI LocalMachine.
+- **Матрица Free/Pro** (`PlanPolicy.cs`):
+  - Pro: `profiles.*`, `rgb.apply`, `rgb.profiles.*`, `automations.*` кроме `list`, `metrics.history` 1h/24h;
+  - остальное Free;
+  - `screen.video`, `clipboard.*`, `history.list` оставлены во Free.
+- **Лимит файлов:** `plan.limit` и счётчик байт за сутки (UTC) на диске сделаны (`files.upload.chunk`, `files.read`). Сам лимит `FreeFileBytesPerDay = null`, то есть без ограничения до решения владельца.
+- **Диспетчер:**
+  - проверка плана идёт после всех шагов валидатора, поэтому устройство без разрешения получает `auth.permissionDenied`;
+  - `plan.required` отдаётся с `details {feature, state}`;
+  - в `hello` маркер `entitlements.v1`, а поля плана (`plan`, `features`, `entitlementState`, `validUntil`) — только после входа, без `email`, `accountId`, `sub`;
+  - `account.refresh` отвечает текущим локальным состоянием; лимит 1 раз в минуту на ПК, один вызов одновременно, иначе `rate.limited` с `retryAfter`;
+  - связанная подсветка после `profiles.run` применяется только при `rgb.sync`;
+  - в `Responses.Error` добавлен необязательный `details`.
+- **Автоматизации:** триггер пропускает правило без нужной функции плана (`automations` плюс `profiles` или `rgb.sync` по действиям) и пишет это в историю. Правила не удаляются.
+
+### Изменённые файлы
+- Новые:
+  - `/home/user/nexus-pc/windows/Nexus.Core/Entitlements/{EntitlementTrust,EntitlementVerifier,EntitlementTracker,PlanPolicy,EntitlementFilePolicy}.cs`
+  - `/home/user/nexus-pc/windows/Nexus.Agent/Storage/EntitlementFileStore.cs`
+  - `/home/user/nexus-pc/windows/Nexus.Agent/Server/EntitlementLoop.cs`
+- Изменённые: `/home/user/nexus-pc/windows/Nexus.Agent/Hosting/AgentHost.cs`, `Server/AgentServices.cs`, `Server/CommandDispatcher.cs`, `Server/Responses.cs`, `Server/AutomationService.cs`, `/home/user/nexus-pc/windows/Nexus.Tests/AgentTestHost.cs`
+- `shared/**` не менялся. Фикстура F1 в `entitlements.v1.json` не добавлена: структурно правильный токен длиной ровно 4097 невозможен (сегмент payload выходит длиной ≡1 mod 4). F1 проверяется в C#-тесте вместе с границей: подписанный токен ровно 4096 символов принимается, 4097 → `format`. Если F1 нужна в shared, её добавляют отдельным шагом.
+
+### Тесты
+- Новые:
+  - `EntitlementVerifierTests`: все 53 фикстуры, каждая отказывает на своём шаге; F1; граница 4096; регистр `kid`; E6 (в Release нет `kid` с `test-` и тестового ключа, issuer не тестовый, любой токен → `unknownKid`); матрица команд; формат идентификаторов функций.
+  - `EntitlementTrackerTests` (E5): часы назад и вперёд, часы стоят при идущем аптайме, старый токен, отклонённый токен не меняет состояние, revoked и перезапуск, повторная проверка при загрузке, периодическое сохранение, счётчик файлов.
+  - `EntitlementIntegrationTests` (E7, настоящий агент по TLS): `hello` до и после входа; Pro-команда без токена → `plan.required`, с токеном → выполняется, в льготе → выполняется, после льготы → `plan.required` со state `expired`; `permissionDenied` раньше плана; Free без токена работает; `account.refresh` и `rate.limited`; токен прав не принимается в `auth.*`; автоматизация пропускается без Pro; файл состояния переживает перезапуск; файл с чужим доступом удаляется (на Windows — проверка ACL, на Linux — режим файла).
+- Существующие тесты не менялись. Тест «`account.refresh` notImplemented» остаётся верным для сборки без ключей.
+
+### Результаты
+- `dotnet build Nexus.slnx -c Release -warnaserror --no-incremental`: успешно, 0 предупреждений.
+- `dotnet test -c Release`: 1101 из 1101 пройдено, 0 упало (Linux).
+- `python3 -I tools/check_fixtures.py`: 128/128, 25/25, 53/53.
+
+### Что проверится только на Windows (CI `windows-latest`)
+- Создание `entitlement.json` с SYSTEM-only DACL и его проверка (`IsTrustedWindows`).
+- Тест с добавленной записью Administrators → файл удаляется. Нужно подтвердить, что общая проверка папки данных при старте не считает такой файл нарушением.
+- CA1416 на Windows.
+- Шаги установщика не менялись.
+
+### Открытые вопросы
+1. НУЖНО РЕШЕНИЕ: включать ли проверку плана при пустой таблице ключей (см. начало).
+2. Утвердить идентификаторы функций: `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`, `files` (последний — для `plan.limit`). `features` в ответах — только функции из токена, у Free без токена список пустой, как в фикстурах.
+3. Значение лимита файлов для Free (сейчас без ограничения) и единица счёта (сейчас байты за сутки UTC).
+4. `screen.video`, `clipboard.*`, `history.list` остались во Free — подтвердить.
+5. Рабочее значение `iss`.
+6. Команда `datadir repair` может выставить файлу права SYSTEM+Admins; после этого агент удалит файл и будет считать «нет токена» (до E4 это безопасно).
+
+### Текст правок для docs/API.md
+- В строке `account.refresh` каталога: «Пока агент отвечает `command.notImplemented` (ENT-2)» заменить на «Агент отвечает текущим локальным состоянием (сервера ещё нет, E4); не чаще 1 раза в минуту на ПК и по одному, иначе `rate.limited` с `retryAfter`. В сборке без закреплённых ключей — `command.notImplemented`».
+- В «Планы»: «Проверку токена в агенте добавит ENT-2; сейчас агент план не проверяет» заменить на «ENT-2: агент проверяет план, только если в сборке закреплены ключи сервера; до выпуска ключей поведение прежнее (нет маркера, нет полей плана, нет `plan.*`). `features[]` — функции из действующего токена (`active`/`grace`); для Free без токена список пуст. Идентификаторы: `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`; `plan.limit` — `feature: "files"`».
+- В «Токен прав» после «Порядок проверки» добавить: «После всех шагов агент принимает токен только с `iat` ≥ максимального принятого (иначе `stale`); после отзыва или перевода часов назад — только с более новым `iat`».
+
+### Текст правок для SECURITY.md («Аккаунты и права»)
+- Заголовок: «(план, в коде пока нет)» заменить на «(ENT-2: проверка токена и состояние — в коде; получение токена — E4)».
+- Пункт «Часы» дополнить: «Агент хранит max(iat), последнее время (сохраняется раз в 10 минут) и аптайм службы с момента принятия токена; время для сроков = max(часы, последнее время, iat + аптайм). Часы отведены назад больше чем на 5 минут — льгота истекла до нового токена; отметка сохраняется сразу».
+- Пункт «Хранение» дополнить: «Состояние прав — `entitlement.json`, собственный защищённый DACL только для SYSTEM; при старте проверяются владелец и записи доступа; чужой файл удаляется и считается «нет токена» (запись в audit). Секретов в нём нет, DPAPI — для refresh-токена E4».
+- Добавить: «Пока в агенте не закреплены ключи сервера, проверка плана не включается: агент не может принять ни одного токена и иначе отключил бы Pro-функции у всех».
+
+## ПЕРЕДАЧА В QA
+- **Ветка и состояние:** `claude/nexus-pc-commercial-5stkn9`, изменения не закоммичены (список файлов выше).
+- **Проверить:**
+  - `cd windows && dotnet build Nexus.slnx -c Release -warnaserror --no-incremental`;
+  - `dotnet test Nexus.slnx -c Release` (ожидается 1101/1101 на Linux);
+  - `python3 -I tools/check_fixtures.py`;
+  - в CI `windows-latest`: `EntitlementIntegrationTests.State_survives_a_restart_and_the_file_is_private` и `Untrusted_state_file_is_deleted_and_counts_as_no_token` (ACL), что общая проверка папки данных не блокирует старт, CA1416.
+- **На что смотреть:** порядок «разрешение → план»; поля плана только после входа; при пустой таблице ключей поведение не изменилось (`AgentIntegrationTests.Account_refresh_needs_login_is_not_advertised_and_is_not_implemented_yet`); E6 запускать в конфигурации Release.
+- **Известные ограничения:** F1 только в C#-тесте, не в shared; лимит файлов не задан; решения по пунктам 1–6 выше ждут владельца.
+
+## ENT-2b: исправления по аудиту безопасности
+
+1. automations.run проверяет план через AutomationService.MissingPlanFeature (automations, profiles, rgb.sync) → plan.required {feature, state}; только при Enforced. upsert сохраняет правило. НУЖНО РЕШЕНИЕ: поля-предупреждения в ответе automations.upsert в протоколе нет, не добавлено.
+2. DataDirectoryPolicy.RepairSecurityFor: entitlement.json → DataSecurity.SystemOnlyFile (владелец Administrators, защищённый DACL только SYSTEM). Повторная проверка нарушений не находит. Имя файла — одна константа.
+3. EntitlementTrust.IsConfigured: true только при issuer ≠ "nexus-issuer-unset" и хотя бы одном неотозванном ES256 ключе с корректным SPKI P-256. В Release — false.
+
+Изменены: CommandDispatcher.cs, EntitlementFileStore.cs, EntitlementTrust.cs, DataDirectoryPolicy.cs, DataDirectoryRepair.cs, Nexus.Windows/DataDirectoryFileSystem.cs, тесты DataDirectoryTests, DataDirectoryWindowsTests, EntitlementIntegrationTests, EntitlementVerifierTests.
+Результаты (Linux): build -warnaserror 0/0; тесты 1112/1112; check_fixtures 128/25/53.
+
+### ПЕРЕДАЧА В QA (ENT-2b)
+- Сборка -warnaserror; dotnet test -c Release (1112/1112); python3 -I tools/check_fixtures.py.
+- Только Windows CI: DataDirectoryWindowsTests.Repair_leaves_entitlement_json_with_a_protected_system_only_dacl_and_the_folder_trusted; полный сценарий repair → агент не удаляет файл.
+- Смотреть: порядок в automations.run (владелец → разрешения → план → подтверждение); при Enforced == false поведение прежнее; restore-acl возвращает исходный DACL entitlement.json.

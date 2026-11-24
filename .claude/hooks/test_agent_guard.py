@@ -40,7 +40,7 @@ class GuardTests(unittest.TestCase):
 
     def tearDown(self):
         # Release any lock held by test agents.
-        for a in ["ios-developer", "windows-developer", "ui-ux-designer", "release-manager", "android-developer"]:
+        for a in ["ios-developer", "windows-developer", "ui-ux-designer", "release-manager", "android-developer", "backend-developer", "web-developer"]:
             run(self.root, "Edit", {}, agent=a, release=True)
         self.tmp.cleanup()
 
@@ -106,6 +106,15 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(self.write("android-developer", "android/app/build.gradle.kts"), "deny")
         os.makedirs(self.p("android"))
         self.assertEqual(self.write("android-developer", "android/app/build.gradle.kts"), "allow")
+
+    def test_backend_and_web_zones(self):
+        self.assertEqual(self.write("backend-developer", "backend/supabase/migrations/1.sql"), "allow")
+        self.assertEqual(self.write("backend-developer", "site/index.html"), "deny")
+        self.assertEqual(self.write("backend-developer", "windows/Nexus.Core/A.cs"), "deny")
+        run(self.root, "Edit", {}, agent="backend-developer", release=True)
+        self.assertEqual(self.write("web-developer", "site/index.html"), "allow")
+        self.assertEqual(self.write("web-developer", "backend/x.sql"), "deny")
+        self.assertEqual(self.write("web-developer", "ios/A.swift"), "deny")
 
     def test_protected_files(self):
         for a in ["ios-developer", "release-manager", "windows-developer"]:

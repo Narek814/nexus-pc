@@ -41,9 +41,9 @@ internal sealed class FakePowerController : IPowerController
 /// <summary>A real agent (Kestrel + TLS + WebSocket) on 127.0.0.1 with a temporary data directory.</summary>
 internal sealed class AgentTestHost : IAsyncDisposable
 {
-    private readonly WebApplication _app;
+    private readonly Microsoft.Extensions.Hosting.IHost _app;
 
-    private AgentTestHost(WebApplication app, string dataDirectory, IPowerController? power, string sessionPipe)
+    private AgentTestHost(Microsoft.Extensions.Hosting.IHost app, string dataDirectory, IPowerController? power, string sessionPipe)
     {
         SessionPipe = sessionPipe;
         _app = app;
@@ -66,7 +66,9 @@ internal sealed class AgentTestHost : IAsyncDisposable
         string? dataDirectory = null, IPowerController? power = null, bool fakePower = true,
         string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null,
         IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, int? openRgbPort = null,
-        Nexus.Core.Security.IConnectionOwnerSource? openRgbOwners = null)
+        Nexus.Core.Security.IConnectionOwnerSource? openRgbOwners = null,
+        Nexus.Core.Entitlements.EntitlementTrust? entitlementTrust = null, Nexus.Core.Entitlements.IEntitlementClock? entitlementClock = null,
+        Nexus.Agent.Account.AccountServerConfig? accountServer = null, HttpMessageHandler? accountHandler = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         TrustTestAccount();
@@ -89,6 +91,17 @@ internal sealed class AgentTestHost : IAsyncDisposable
             OpenRgbExecutable = null, // the real OpenRGB is never started by tests
             OpenRgbPort = openRgbPort ?? 1, // port 1: nothing listens, OpenRGB "not running" unless a test provides one
             OpenRgbOwners = openRgbOwners,
+            EntitlementTrust = entitlementTrust,
+            EntitlementClock = entitlementClock,
+            // E4-4: only when a test brings its fake account server; the refresh sealer is a test one on every OS.
+            AccountServer = accountServer,
+            AccountHttpHandler = accountHandler is null ? null : () => accountHandler,
+            RefreshProtector = accountServer is null ? null : new XorProtector(),
+            AccountRetryPauses = [],
+            // The machine CNG key is never touched by tests: a key file next to the data directory (same path on every
+            // restart in a test) keeps pcId stable; DeleteDirectory removes it.
+            DeviceKeyFactory = () => FileDeviceKey.OpenOrCreate(dataDirectory),
+            DeviceKeyPauses = [],
         });
         await app.StartAsync();
         return new AgentTestHost(app, dataDirectory, power, sessionPipe);
@@ -98,7 +111,7 @@ internal sealed class AgentTestHost : IAsyncDisposable
     /// The test agents run as the test account, not SYSTEM, and write their data folders themselves: their
     /// start-up check also trusts this account. Test code only (production keeps the three-subject set).
     /// </summary>
-    private static void TrustTestAccount()
+    internal static void TrustTestAccount()
     {
         if (!OperatingSystem.IsWindows() || Nexus.Agent.Storage.AgentPaths.TestTrustedSids is not null)
         {
@@ -166,15 +179,36 @@ internal sealed class AgentTestHost : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();
-        await _app.DisposeAsync();
+        await DisposeHostAsync(_app);
     }
 
+    internal static async ValueTask DisposeHostAsync(Microsoft.Extensions.Hosting.IHost host)
+    {
+        if (host is IAsyncDisposable asyncHost)
+        {
+            await asyncHost.DisposeAsync();
+        }
+        else
+        {
+            host.Dispose();
+        }
+    }
+
+    /// <summary>A test data folder created the way the agent creates its own (protected DACL on Windows).</summary>
+    public static void CreateDataDirectory(string path)
+    {
+        TrustTestAccount();
+        Nexus.Agent.Storage.AgentPaths.EnsureSecureDirectory(path);
+    }
+
+    /// <summary>Removes a test data folder and the test PC key kept next to it.</summary>
     public static void DeleteDirectory(string path)
     {
         if (Directory.Exists(path))
         {
             Directory.Delete(path, recursive: true);
         }
+        FileDeviceKey.Delete(path);
     }
 }
 

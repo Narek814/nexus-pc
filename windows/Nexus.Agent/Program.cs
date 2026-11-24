@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Nexus.Agent.Admin;
 using Nexus.Agent.Hosting;
 using Nexus.Agent.Storage;
@@ -27,6 +29,8 @@ internal static partial class Program
                                             give such an automation to a paired device; the fingerprint
                                             must match the one "devices" shows for it
           Nexus.Agent status                show agent status
+          Nexus.Agent key retry             when the PC protection key was unavailable: restart the service to
+                                            try again (at most once a minute)
           Nexus.Agent openrgb               open the OpenRGB window installed with Nexus PC (device set-up);
                                             lighting from the phone keeps working while it is open
           Nexus.Agent datadir check         check the data folder (owner, access, links); changes nothing
@@ -66,9 +70,19 @@ internal static partial class Program
 
         if (args.Length == 0)
         {
-            var app = AgentHost.Build(args, new AgentHostOptions { DataDirectory = AgentPaths.DefaultDataDirectory() });
+            using var app = AgentHost.Build(args, new AgentHostOptions { DataDirectory = AgentPaths.DefaultDataDirectory() });
+            var runState = app.Services.GetRequiredService<AgentRunState>();
+            // "key.retry" stops the host on purpose: a non-zero exit code, so the service manager's recovery
+            // ("restart") starts the agent again. Set before the service reports that it stopped.
+            app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() =>
+                {
+                    if (runState.ExitCode != 0)
+                    {
+                        Environment.ExitCode = runState.ExitCode;
+                    }
+                });
             await app.RunAsync().ConfigureAwait(false);
-            return 0;
+            return runState.ExitCode;
         }
 
         try
@@ -97,6 +111,8 @@ internal static partial class Program
                         ["fingerprint"] = args[4],
                     }).ConfigureAwait(false),
                 "status" => await PrintAsync(new JsonObject { ["op"] = "status" }).ConfigureAwait(false),
+                "key" when args.Length == 2 && args[1] == "retry" =>
+                    await PrintAsync(new JsonObject { ["op"] = "key.retry" }).ConfigureAwait(false),
                 "openrgb" when args.Length == 1 => await OpenRgbWindowAsync().ConfigureAwait(false),
                 "datadir" => DataDirectory(args[1..]),
                 _ => PrintUsage(),

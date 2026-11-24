@@ -137,6 +137,32 @@ public sealed class DataDirectoryWindowsTests(ITestOutputHelper output) : IDispo
 
     [Fact]
     [SupportedOSPlatform("windows")] // checked at run time by Ready(); lambdas below use Windows-only types
+    public void Repair_leaves_entitlement_json_with_a_protected_system_only_dacl_and_the_folder_trusted()
+    {
+        if (!Ready() || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var root = NewRoot();
+        var file = Path.Combine(root, DataDirectoryPolicy.EntitlementFileName);
+        File.WriteAllText(file, "{}");
+        Grant(file, WellKnownSidType.BuiltinUsersSid, directory: false);
+        var fs = new DataDirectoryFileSystem();
+        Assert.Equal(DataDirectoryRepair.ExitOk, new DataDirectoryRepair(fs, new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), TimeProvider.System, new FakeRepairEnvironment()).Repair(root, []));
+        _cleanup.Add(Assert.Single(Directory.GetDirectories(Path.GetDirectoryName(root)!, "NexusPC.backup-*")));
+
+        var sd = Descriptor(file);
+        Assert.True((sd.ControlFlags & ControlFlags.DiscretionaryAclProtected) != 0);
+        var ace = Assert.IsType<CommonAce>(Assert.Single(sd.DiscretionaryAcl!));
+        Assert.Equal(DataDirectoryPolicy.LocalSystem, ace.SecurityIdentifier.Value);
+        var aces = sd.DiscretionaryAcl!.Cast<CommonAce>().Select(a => new DataAce(a.SecurityIdentifier.Value, true, (uint)a.AccessMask, (int)a.AceFlags)).ToList();
+        Assert.True(Nexus.Core.Entitlements.EntitlementFilePolicy.IsTrusted(sd.Owner?.Value, true, true, aces,
+            new HashSet<string> { DataDirectoryPolicy.LocalSystem }, DataDirectoryPolicy.TrustedSids));
+        Assert.True(DataDirectoryScanner.Scan(fs, root, DataDirectoryPolicy.TrustedSids).Trusted);
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")] // checked at run time by Ready(); lambdas below use Windows-only types
     public void Other_owner_or_extra_access_entry_is_reported()
     {
         if (!Ready() || !OperatingSystem.IsWindows())

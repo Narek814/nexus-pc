@@ -36,7 +36,7 @@ internal sealed partial class AutomationService : BackgroundService
     public static readonly TimeSpan PcStartedDelay = TimeSpan.FromSeconds(15);
     public static readonly TimeSpan SignInDebounce = TimeSpan.FromMinutes(10);
 
-    private readonly AgentServices _services;
+    private readonly LocalServices _services;
     private readonly ILogger<AutomationService> _logger;
     private readonly string _path;
     private readonly AutomationEngine _engine;
@@ -55,7 +55,7 @@ internal sealed partial class AutomationService : BackgroundService
     private DateTimeOffset _lastEvaluated;
     private CancellationToken _stopping;
 
-    public AutomationService(AgentServices services, string dataDirectory, TimeZoneInfo timeZone, ILogger<AutomationService> logger)
+    public AutomationService(LocalServices services, string dataDirectory, TimeZoneInfo timeZone, ILogger<AutomationService> logger)
     {
         _services = services;
         _logger = logger;
@@ -533,6 +533,17 @@ internal sealed partial class AutomationService : BackgroundService
     /// </summary>
     private void StartTriggered(AutomationDefinition rule, string reason)
     {
+        if (MissingPlanFeature(rule) is { } feature)
+        {
+            // ENT-2: after Pro ends the rule stays, but triggers skip it (COMMERCIAL_PLAN section 0).
+            lock (_lock)
+            {
+                _lastRun[rule.Id] = (_services.Time.GetUtcNow(), false, "пропущена: нужен Nexus PC Pro");
+            }
+            _services.History.Record("automation", $"Автоматизация «{rule.Name}»: пропущена", false,
+                $"{reason}: для этой автоматизации нужен Nexus PC Pro ({feature})");
+            return;
+        }
         if (HasConfirmedOwner(rule))
         {
             // The revocation is checked under _lock together with the start (TryStart).
@@ -554,6 +565,17 @@ internal sealed partial class AutomationService : BackgroundService
         }
         _services.History.Record("automation", $"Автоматизация «{rule.Name}»: пропущена", false,
             $"{reason}: устройство, создавшее автоматизацию, больше не сопряжено с этим ПК");
+    }
+
+    /// <summary>First plan feature the rule needs and the PC does not have now; null if it may run (or plans are not enforced).</summary>
+    internal string? MissingPlanFeature(AutomationDefinition rule)
+    {
+        // Without the PC key (degraded) this is always the Free plan, never "not enforced".
+        if (_services.EnforcedPlan is not { } status)
+        {
+            return null;
+        }
+        return Nexus.Core.Entitlements.PlanPolicy.RequiredFor(rule).FirstOrDefault(f => !status.Has(f));
     }
 
     /// <returns>Null if there is no such rule of <paramref name="caller"/>; otherwise whether it was running.</returns>

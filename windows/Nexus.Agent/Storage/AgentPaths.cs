@@ -23,6 +23,8 @@ internal static class AgentPaths
 
     public const string EventLogSource = "Nexus.Agent";
     public const int UntrustedDataEventId = 1001;
+    /// <summary>E4-3a: the PC key could not be opened; phones cannot connect until it can.</summary>
+    public const int KeyUnavailableEventId = 1002;
 
     /// <summary>
     /// Creates the data directory readable only by SYSTEM and Administrators (Windows) or the
@@ -152,7 +154,7 @@ internal static class AgentPaths
     }
 
     [SupportedOSPlatform("windows")]
-    private static void WriteEventLog(string report)
+    internal static void WriteEventLog(string report, int eventId = UntrustedDataEventId)
     {
         try
         {
@@ -160,7 +162,7 @@ internal static class AgentPaths
             {
                 EventLog.CreateEventSource(EventLogSource, "Application");
             }
-            EventLog.WriteEntry(EventLogSource, report.Length <= 30_000 ? report : report[..30_000], EventLogEntryType.Error, UntrustedDataEventId);
+            EventLog.WriteEntry(EventLogSource, report.Length <= 30_000 ? report : report[..30_000], EventLogEntryType.Error, eventId);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Security.SecurityException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or ArgumentException)
         {

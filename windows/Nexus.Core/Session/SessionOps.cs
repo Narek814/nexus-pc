@@ -22,6 +22,10 @@ public static class SessionOps
     public const string PairCancel = "pair.cancel";
     public const string DevicesList = "devices.list";
     public const string DevicesRevoke = "devices.revoke";
+    // Account sign-in of this PC (E4-4): code shown in the tray, status, local unlink.
+    public const string LoginStart = "login.start";
+    public const string LoginStatus = "login.status";
+    public const string Unlink = "unlink";
 
     /// <summary>
     /// What a Tray may ask the agent. Only operations that open pairing for the signed-in person or
@@ -30,5 +34,6 @@ public static class SessionOps
     public static readonly IReadOnlySet<string> AllowedFromTray = new HashSet<string>(StringComparer.Ordinal)
     {
         Status, PairStart, PairWait, PairDecide, PairCancel, DevicesList, DevicesRevoke,
+        LoginStart, LoginStatus, Unlink,
     };
 }

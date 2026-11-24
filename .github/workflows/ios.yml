@@ -33,6 +33,7 @@ jobs:
         run: |
           dotnet build windows/Nexus.Agent -c Release -o "$RUNNER_TEMP/agent"
           export NEXUS_DATA_DIR="$RUNNER_TEMP/nexus-data"
+          export NEXUS_DEV_FILE_KEY="$RUNNER_TEMP/nexus-dev-key/device.key"
           nohup "$RUNNER_TEMP/agent/Nexus.Agent" > "$RUNNER_TEMP/agent.log" 2>&1 &
           for i in $(seq 1 60); do nc -z 127.0.0.1 47800 && break; sleep 1; done
           nc -z 127.0.0.1 47800

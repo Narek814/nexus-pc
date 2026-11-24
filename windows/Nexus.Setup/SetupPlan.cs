@@ -220,6 +220,17 @@ internal static partial class SetupPlan
     public static Command ScFailure(string system32) =>
         new(Sys(system32, "sc.exe"), ["failure", ServiceName, "reset=", "86400", "actions=", "restart/5000/restart/5000/restart/60000"]);
 
+    /// <summary>
+    /// E4-3b: apply the failure actions also when the service stops with an error exit code, not only on a crash
+    /// (e.g. the agent stopping after the device key stayed unavailable). Idempotent; always right after
+    /// <see cref="ScFailure"/>.
+    /// </summary>
+    public static Command ScFailureFlag(string system32) =>
+        new(Sys(system32, "sc.exe"), ["failureflag", ServiceName, "1"]);
+
+    /// <summary>Service recovery, run on every install and update (both commands are idempotent), in this order.</summary>
+    public static IReadOnlyList<Command> ServiceRecovery(string system32) => [ScFailure(system32), ScFailureFlag(system32)];
+
     /// <summary>Exit 0 when a rule with this name exists, 1 when none matches.</summary>
     public static Command FirewallShow(string system32) =>
         new(Sys(system32, "netsh.exe"), ["advfirewall", "firewall", "show", "rule", $"name={FirewallRuleName}"]);

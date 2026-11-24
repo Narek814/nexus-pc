@@ -7,6 +7,10 @@
     <!-- Our own entry point (TestHelperProgram): a helper mode for the cross-session lock test run as SYSTEM. -->
     <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
+  <!-- E4-3b: same condition as Nexus.Agent.csproj; DevFileDeviceKey tests exist only where the agent compiles it. -->
+  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) And !$(RuntimeIdentifier.StartsWith('win'))">
+    <DefineConstants>$(DefineConstants);NEXUS_DEV_FILE_KEY</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -22,6 +26,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\shared\protocol\fixtures\**\*.json" Link="shared\fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\shared\fixtures\pc-id\*.json" Link="shared\pc-id\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\shared\schemas\*.json" Link="shared\schemas\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

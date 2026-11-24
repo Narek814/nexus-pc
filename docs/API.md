@@ -27,6 +27,8 @@
 3. Обе стороны показывают **код проверки** из 6 цифр: `SHA-256("nexuspc-sas-v1\n" ‖ publicKey ‖ fp)`, первые 4 байта big-endian mod 1 000 000. Человек сверяет коды и подтверждает на ПК.
 4. Ответ: `{ deviceId, pcId, permissions }`. По умолчанию: `power`, `apps`, `monitoring`.
 
+**Идентификатор ПК (`pcId`, E4).** `pcId` выводится из постоянного ключа ПК P-256 (тот же ключ подписывает запросы к серверу прав): `u = SHA-256(ASCII "nexus-pc-id-v1\n" ‖ SPKI DER)[0..16]`, `u[6] = (u[6] & 0x0F) | 0x80`, `u[8] = (u[8] & 0x3F) | 0x80`; `pcId` — UUID из `u` в нижнем регистре, формат D. SPKI — ровно DER ключа P-256 с несжатой точкой (91 байт); сжатая точка, лишние байты, другой алгоритм — отказ. Тест-векторы — `shared/fixtures/pc-id/derive.v1.json`. Формат `nexuspc://pair` и QR не меняется: в `pc=` передаётся этот `pcId`. Совместимости со старым (случайным) `pcId` нет: после обновления агента спаренные iPhone сопрягаются заново.
+
 Ограничения: одна сессия за раз; 5 неверных кодов закрывают сессию; если окно администратора закрыто или телефон отключился, ожидающий запрос отменяется.
 
 ## Вход (каждое соединение)
@@ -73,7 +75,7 @@
 | Команда | Разрешение | Риск | Payload |
 |---------|-----------|------|---------|
 | `system.hello` | — (без авторизации) | read | `{}` → `{ protocol, pcId, pcName, agentVersion, authenticated, capabilities[] }`; после входа — ещё необязательные поля плана (см. «Планы») |
-| `account.refresh` | — (только после входа) | read | `{}` → `{ plan, features[], entitlementState, validUntil? }` (см. «Планы»). Пока агент отвечает `command.notImplemented` (ENT-2) |
+| `account.refresh` | — (только после входа) | read | `{}` → `{ plan, features[], entitlementState, validUntil? }` (см. «Планы»). Агент отвечает текущим локальным состоянием (сервера ещё нет, E4); не чаще 1 раза в минуту на ПК и по одному, иначе `rate.limited` с `retryAfter`. В сборке без закреплённых ключей — `command.notImplemented` |
 | `pair.request` | — (без авторизации) | normal | `{ code: 8 цифр, deviceName, publicKey }` |
 | `auth.begin` | — (без авторизации) | read | `{ deviceId }` |
 | `auth.prove` | — (без авторизации) | read | `{ signature }` |
@@ -188,7 +190,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 ## Планы (Free/Pro, ENT-1)
 
-Решения — `docs/COMMERCIAL_PLAN.md`, раздел 0; безопасность — `SECURITY.md`, «Аккаунты и права». Проверку токена в агенте добавит ENT-2; сейчас агент план не проверяет.
+Решения — `docs/COMMERCIAL_PLAN.md`, раздел 0; безопасность — `SECURITY.md`, «Аккаунты и права». ENT-2: агент проверяет план, только если в сборке закреплены ключи сервера; до выпуска ключей поведение прежнее (нет маркера, нет полей плана, нет `plan.*`). `features[]` — функции из действующего токена (`active`/`grace`); для Free без токена список пуст. Идентификаторы: `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`; `plan.limit` — `feature: "files"`. Действия правил `profile` и `rgb` требуют `profiles` и `rgb.sync`, в том числе при `automations.run` (иначе `plan.required`).
 
 - Расширение аддитивное: `v: 1`; существующие команды, коды, порядок проверок 1–8, `auth.*` и сопряжение не меняются. Ни одна схема `auth.*` / `pair.*` не содержит полей аккаунта.
 - Маркер `entitlements.v1` в `capabilities` значит, что агент понимает поля плана, `account.refresh` и `plan.*`. Может отдаваться и до входа: сообщает только о версии агента.
@@ -226,9 +228,56 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 **Порядок проверки** (ENT-2; первая неудача — отказ, причина — `reason` фикстур): `format` → `revokedKid` → `unknownKid` → `algorithm` → `signature` → `json` → `schema` → `issuer` → `pcId` → `lifetime` → `grace` → `notYetValid` → `expired` (`now > graceUntil`).
 
+После всех шагов агент принимает токен только с `iat` ≥ максимального принятого (иначе `stale`); после отзыва или перевода часов назад — только с более новым `iat`.
+
 Сроки длиннее допустимых не принимаются, даже если подпись верна. Состояние: `now ≤ exp` — `active`; `exp < now ≤ graceUntil` — `grace`; позже — `expired`; отзыв, сообщённый сервером на связи, — сразу `revoked`, без льготы. При переводе часов назад льгота считается истёкшей до связи с сервером.
 
 **Ключи.** В агенте по `kid` закреплены рабочий и два запасных открытых ключа; список отозванных `kid` выходит вместе с обновлением агента.
+
+## Сервер прав (HTTPS, служба ПК и приложение)
+
+Это не команды WebSocket: протокол v1, конверт, `capabilities`, `auth.*` и `pair.*` не меняются. Служба ПК и приложение обращаются к серверу аккаунтов (Supabase Edge Functions) по HTTPS. Телефон токены прав и refresh не получает и не передаёт. Устройство сервера — `docs/BACKEND.md`.
+
+**Общие правила**
+- `POST /functions/v1/<имя>`, `Content-Type: application/json`, тело — объект JSON в UTF-8, не больше 8 КБ. Неизвестное или отсутствующее поле, неверный тип, дубликат ключа — `bad.request`; другой метод — `405 bad.request`; тело больше 8 КБ — `413 bad.request`.
+- Успех — `200` и объект ниже. Ошибка — `{"error":"<код>"}`; у `rate.limited` и `slow_down` ещё `"retryAfter": <секунды>` и заголовок `Retry-After`. Клиент ориентируется на `error`, HTTP-статус вторичен. `pending` — `202`.
+- `b64u` — base64url без `=`. Время — секунды Unix.
+- **Подпись ПК** — ECDSA P-256 + SHA-256, формат P1363 `r‖s` (64 байта, поле `sig` в b64u), над ASCII-строкой. Сервер собирает строку сам из полей запроса и проверяет подпись **до** обращения к базе:
+  ```
+  nexus-pc-login-v1|start|{pcId}|{spkiNewB64u}|{sha256hex(name)}|{nonceB64u}|{ts}
+  nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
+  nexus-pc-login-v1|refresh|{pcId}|{sha256hex(refreshToken)}|{nonceB64u}|{ts}
+  ```
+  `pcId` — UUID в нижнем регистре; `nonce` — 16..32 случайных байт, новые на каждый запрос (и на повтор); `ts` — в пределах ±300 с от времени сервера; `sha256hex` — нижний hex; `spkiNew` — SPKI DER ключа P-256 (несжатая точка). Подпись другим ключом, сжатая точка, лишние байты — отказ.
+- Запросы приложения — с `Authorization: Bearer <JWT Supabase>`; без JWT или с недействительным — `401 auth.required`.
+
+### Служба ПК
+
+**`pc-login-start`** — запросить код входа. Тело `{pcId, spki, name, nonce, ts, sig}`; `name` — 1..64 символа без Cc/Cf/Zl/Zp. `spki` всегда равен постоянному ключу ПК, а `pcId` обязан совпадать с выводом из `spki` (см. «Сопряжение»); иначе — `pc.key_required`. Подпись — этим ключом: при первой привязке он регистрируется, у уже привязанного ПК он должен совпасть с сохранённым (это и есть «старый ключ»; другой ключ даёт другой `pcId`). После `pc-unlink` (освобождение ПК) следующий start того же `pcId` — снова первая привязка.
+Ответ `{deviceCode, userCode, expiresIn: 300, interval: 5}`: `userCode` — 8 символов из алфавита в 31 символ `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (без 0, O, 1, I, L), показывается пользователю; `deviceCode` — секрет ПК, b64u, ≥ 128 бит.
+Ошибки: `bad.request`, `pc.key_required`, `request.stale`, `nonce.replay`, `rate.limited`.
+
+**`pc-login-poll`** — опрос после показа кода. Тело `{pcId, deviceCode, nonce, ts, sig}`, подпись новым ключом из start.
+Ответ `{refreshToken, entitlement, entitlementState}`: `refreshToken` — b64u, 256 бит, 90 дней скользящий, служба хранит под DPAPI с ACL; `entitlement` — токен прав (см. «Токен прав»); `entitlementState` — `active` или `revoked`.
+Ошибки: `pending` (ждать `interval`), `slow_down` (+`retryAfter`), `code.invalid` (код истёк, аннулирован или использован — заново start), `pcs.limit`, `pc.key_required`, `request.stale`, `nonce.replay`, `rate.limited`, `bad.request`.
+
+**`pc-token`** — ротация refresh и новый токен прав (так служба выполняет `account.refresh`). Тело `{pcId, refreshToken, nonce, ts, sig}`, подпись ключом ПК.
+Ответ `{refreshToken, entitlement, entitlementState}`; новый refresh заменяет старый. Повтор после потерянного ответа — тот же старый `refreshToken` с новыми `nonce`/`ts`/`sig` не позже 60 с: сервер вернёт тот же новый refresh.
+Ошибки: `revoked` (без причины: отозван, истёк, неизвестен, ПК отвязан, подпись не тем ключом), `reuse.detected` (клон: семья отозвана; событие в журнал безопасности), `rate.limited`, `request.stale`, `nonce.replay`, `bad.request`. Служба: на `rate.limited`, `request.stale`, `nonce.replay` — повтор позже с новым nonce; на любой другой отказ — стирает refresh, переходит на Free и ждёт нового входа.
+
+`entitlementState: "revoked"` — Pro отозван (возврат/отзыв): сервер выдаёт токен `plan:"free"`, агент сразу переходит в `revoked`, без льготы. Внутреннее состояние `unlinked` наружу не выходит (клиент получает `revoked`). `user_id`, email ПК не получает; `sub` в токене непрозрачен.
+
+### Приложение (вошедший пользователь)
+
+**`pc-login-describe`** — шаг 1. Тело `{userCode}` (регистр, пробелы и дефисы нормализует сервер). Ответ `{displayName, requestedAt}` (`requestedAt` — RFC 3339); `pcId` и ключей в ответе нет. Ошибки: `code.invalid` (неизвестный, просроченный, чужой, уже одобренный — неразличимы), `rate.limited`, `auth.required`, `bad.request`.
+
+**`pc-login-approve`** — шаг 2, после того как пользователь сверил имя ПК. Тело `{userCode}`. Ответ `{}`. Ошибки: `code.invalid` (в том числе без describe этим же пользователем), `rate.limited`, `auth.required`, `bad.request`. describe и approve делят лимит: 10 за 10 мин на аккаунт плюс лимит по IP.
+
+**`pc-unlink`** — отпустить ПК: отзывает его refresh и живые коды; следующий вход ПК — первая привязка. Тело `{pcId}`. Ответ `{}`. Ошибки: `pc.not_found` (и для чужого ПК), `rate.limited`, `auth.required`, `bad.request`.
+
+**`delete-account`** (приложение/сайт). `Authorization: Bearer <JWT пользователя>`, тело `{}`. Удаляет аккаунт: все ПК пользователя отвязываются (их refresh отозваны, `pc-token` отвечает `revoked`), удаляются профиль и подписки, затем пользователь удаляется из Auth. Сопряжения ПК с телефонами не затрагиваются. Перед вызовом клиент заново входит паролем или кодом из письма: в `amr` проверенного JWT должен быть элемент с method `password` или `otp` не старше 300 с (не позже чем через 60 с), а `iat` и `last_sign_in_at` — не старше 300 с. Ответ `{}`. Ошибки: `bad.request` (тело не `{}`), `auth.required` (нет или недействительный JWT, anon), `reauth.required` (401: вход старше 5 минут — запросить пароль снова), `rate.limited` (`retryAfter`; 3 в час на пользователя плюс лимит IP), `internal` (сервер делает 3 попытки удаления в Auth за ~1 с; если не вышло, попытка не засчитывается в лимит 3/ч; повтор безопасен).
+
+**Коды сервера прав:** `bad.request`, `auth.required`, `reauth.required`, `code.invalid`, `pending`, `slow_down`, `rate.limited`, `pcs.limit`, `pc.key_required`, `request.stale`, `nonce.replay`, `revoked`, `reuse.detected`, `pc.not_found`, `internal` (500, без подробностей). Это пространство отдельно от кодов WebSocket.
 
 ## Мониторинг (P4a)
 
