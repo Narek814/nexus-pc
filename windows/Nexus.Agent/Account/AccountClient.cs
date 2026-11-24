@@ -22,6 +22,11 @@ internal enum RefreshOutcome
     RateLimited,
     /// <summary>Refused for good: the local refresh token was erased and the plan is Free.</summary>
     Revoked,
+    /// <summary>
+    /// The server did not accept this request (bad.request, or an unknown 4xx code mapped to it): nothing is erased,
+    /// the token and the plan stay, no retry in the same attempt; the next scheduled refresh tries again.
+    /// </summary>
+    Rejected,
 }
 
 internal readonly record struct RefreshResult(RefreshOutcome Outcome, int RetryAfter = 0);
@@ -280,8 +285,13 @@ internal sealed partial class AccountClient : IDisposable
                         return new RefreshResult(RefreshOutcome.RateLimited, Math.Clamp(reply.RetryAfter ?? 60, 1, 86_400));
                     case Transient or "request.stale" or "nonce.replay":
                         break;
+                    case "bad.request":
+                        // Our request (or an unknown 4xx code) was not accepted: this says nothing about the token.
+                        Record("account.token", false, "bad.request");
+                        return new RefreshResult(RefreshOutcome.Rejected);
                     default:
-                        // revoked, reuse.detected, pc.key_required, bad.request: erase and wait for a new sign-in.
+                        // auth.required, pc.not_found, revoked, reuse.detected, pc.key_required (and any other known
+                        // refusal): the token is no longer valid; erase and wait for a new sign-in.
                         Wipe();
                         Record("account.token", false, reply.Error);
                         return new RefreshResult(RefreshOutcome.Revoked);
