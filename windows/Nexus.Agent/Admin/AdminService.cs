@@ -62,9 +62,13 @@ internal sealed class AdminService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(state);
         var op = request["op"]?.GetValue<string>();
-        if (_agent is null && op is not null && op.StartsWith("pair.", StringComparison.Ordinal))
+        if (_agent is null && op is not null && (op.StartsWith("pair.", StringComparison.Ordinal) || IsAccountOp(op)))
         {
-            return Error(KeyUnavailable); // no pcId, no certificate: nothing to pair with
+            return Error(KeyUnavailable); // no pcId, no certificate, no PC key to sign with: nothing to pair or sign in
+        }
+        if (IsAccountOp(op) && _agent!.Account is null)
+        {
+            return Error(Account.AccountClient.Disabled); // no account server in this build (or plans not enforced)
         }
         try
         {
@@ -81,6 +85,9 @@ internal sealed class AdminService
                 "devices.permissions" => await DevicesPermissionsAsync(request, cancellationToken).ConfigureAwait(false),
                 "automations.owners" => AutomationsOwners(),
                 "automations.assign" => await AutomationsAssignAsync(request, cancellationToken).ConfigureAwait(false),
+                Nexus.Core.Session.SessionOps.LoginStart => Reply(await Agent.Account!.StartLoginAsync(cancellationToken).ConfigureAwait(false)),
+                Nexus.Core.Session.SessionOps.LoginStatus => Reply(await Agent.Account!.LoginStatusAsync(cancellationToken).ConfigureAwait(false)),
+                Nexus.Core.Session.SessionOps.Unlink => Reply(await Agent.Account!.UnlinkAsync(cancellationToken).ConfigureAwait(false)),
                 "openrgb.pause" => OpenRgbPause(true),
                 "openrgb.resume" => OpenRgbPause(false),
                 _ => Error("unknown operation"),
@@ -314,6 +321,12 @@ internal sealed class AdminService
         var error = await automations.AssignOwnerAsync(automationId, deviceId, request["fingerprint"]?.GetValue<string>(), cancellationToken).ConfigureAwait(false);
         return error is null ? Ok(new JsonObject { ["automationId"] = automationId, ["deviceId"] = deviceId.ToString("D") }) : Error(error);
     }
+
+    private static bool IsAccountOp(string? op) =>
+        op is Nexus.Core.Session.SessionOps.LoginStart or Nexus.Core.Session.SessionOps.LoginStatus or Nexus.Core.Session.SessionOps.Unlink;
+
+    private static JsonObject Reply(Account.AccountReply reply) =>
+        reply.Ok ? Ok(reply.Data ?? []) : Error(reply.Error ?? "internal");
 
     private static Guid ParseDeviceId(JsonObject request) =>
         Guid.ParseExact(request["deviceId"]?.GetValue<string>() ?? string.Empty, "D");

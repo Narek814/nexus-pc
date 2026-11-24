@@ -65,6 +65,8 @@ internal sealed class AgentServices : LocalServices
     public CommandDispatcher Dispatcher { get; }
     /// <summary>Plan state (ENT-2); set by AgentHost right after construction.</summary>
     public Nexus.Core.Entitlements.EntitlementTracker Entitlements { get; set; } = null!;
+    /// <summary>Account server client (E4-4); null = no server configured in this build (login and refresh off).</summary>
+    public Nexus.Agent.Account.AccountClient? Account { get; set; }
 
     public override Nexus.Core.Entitlements.EntitlementStatus? EnforcedPlan =>
         Entitlements is { Enforced: true } entitlements ? entitlements.Current : null;

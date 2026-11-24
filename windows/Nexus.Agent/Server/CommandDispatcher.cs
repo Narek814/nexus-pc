@@ -107,7 +107,7 @@ internal sealed class CommandDispatcher(AgentServices services)
         {
             if (command.Spec.Type == "account.refresh")
             {
-                return AccountRefresh(id);
+                return await AccountRefreshAsync(id, cancellationToken).ConfigureAwait(false);
             }
             if (PlanCheck(id, command) is { } refused)
             {
@@ -223,10 +223,12 @@ internal sealed class CommandDispatcher(AgentServices services)
     private readonly AccountRefreshLimiter _refreshLimiter = new(services.Time);
 
     /// <summary>
-    /// account.refresh: there is no server yet (E4), so it answers the current local state. One call a minute per PC
-    /// (shared by all devices) and one at a time; otherwise rate.limited with retryAfter.
+    /// account.refresh: the service asks pc-token (E4-4) when the PC is signed in to an account; the new token goes
+    /// through EntitlementTracker. Without a server, without a sign-in or without connection it answers the current
+    /// local state. One call a minute per PC (shared by all devices) and one at a time; otherwise rate.limited with
+    /// retryAfter (also when the server itself asks to wait).
     /// </summary>
-    private HandlerResult AccountRefresh(Guid id)
+    private async Task<HandlerResult> AccountRefreshAsync(Guid id, CancellationToken cancellationToken)
     {
         if (!_refreshLimiter.TryEnter(out var retryAfter))
         {
@@ -234,6 +236,11 @@ internal sealed class CommandDispatcher(AgentServices services)
         }
         try
         {
+            if (services.Account is { } account
+                && await account.RefreshAsync(cancellationToken).ConfigureAwait(false) is { Outcome: Nexus.Agent.Account.RefreshOutcome.RateLimited } limited)
+            {
+                return Fail(id, ErrorCodes.RateLimited, "Too many plan refreshes, try again later.", new JsonObject { ["retryAfter"] = limited.RetryAfter });
+            }
             return Ok(id, PlanFields(services.Entitlements.Current));
         }
         finally

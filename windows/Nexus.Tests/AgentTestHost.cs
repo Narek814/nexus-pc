@@ -67,7 +67,8 @@ internal sealed class AgentTestHost : IAsyncDisposable
         string? adminPipe = null, TimeSpan? pairingLifetime = null, TimeSpan? handshakeTimeout = null, string? trayPath = null,
         IReadOnlyList<IPAddress>? bindAddresses = null, Nexus.Monitoring.IMetricsSource? metrics = null, int? openRgbPort = null,
         Nexus.Core.Security.IConnectionOwnerSource? openRgbOwners = null,
-        Nexus.Core.Entitlements.EntitlementTrust? entitlementTrust = null, Nexus.Core.Entitlements.IEntitlementClock? entitlementClock = null)
+        Nexus.Core.Entitlements.EntitlementTrust? entitlementTrust = null, Nexus.Core.Entitlements.IEntitlementClock? entitlementClock = null,
+        Nexus.Agent.Account.AccountServerConfig? accountServer = null, HttpMessageHandler? accountHandler = null)
     {
         dataDirectory ??= Path.Combine(Path.GetTempPath(), "nexus-test-" + Guid.NewGuid().ToString("N"));
         TrustTestAccount();
@@ -92,6 +93,11 @@ internal sealed class AgentTestHost : IAsyncDisposable
             OpenRgbOwners = openRgbOwners,
             EntitlementTrust = entitlementTrust,
             EntitlementClock = entitlementClock,
+            // E4-4: only when a test brings its fake account server; the refresh sealer is a test one on every OS.
+            AccountServer = accountServer,
+            AccountHttpHandler = accountHandler is null ? null : () => accountHandler,
+            RefreshProtector = accountServer is null ? null : new XorProtector(),
+            AccountRetryPauses = [],
             // The machine CNG key is never touched by tests: a key file next to the data directory (same path on every
             // restart in a test) keeps pcId stable; DeleteDirectory removes it.
             DeviceKeyFactory = () => FileDeviceKey.OpenOrCreate(dataDirectory),

@@ -57,6 +57,13 @@ internal sealed record AgentHostOptions
     /// Tests inject a file-backed key or a factory that fails.
     /// </summary>
     internal Func<IDeviceKey>? DeviceKeyFactory { get; init; }
+    /// <summary>Account server (E4-4); null = the values built into the agent (none yet: the account client is off).</summary>
+    internal Account.AccountServerConfig? AccountServer { get; init; }
+    /// <summary>HTTP handler for the account server (tests: the fake server); null = a default SocketsHttpHandler.</summary>
+    internal Func<HttpMessageHandler>? AccountHttpHandler { get; init; }
+    /// <summary>Refresh token sealing; null = DPAPI LocalMachine on Windows (elsewhere the account client is off).</summary>
+    internal Account.IRefreshProtector? RefreshProtector { get; init; }
+    internal IReadOnlyList<TimeSpan>? AccountRetryPauses { get; init; }
     /// <summary>Pauses between key attempts; null = 2, 5, 10 s (tests pass zeros).</summary>
     internal IReadOnlyList<TimeSpan>? DeviceKeyPauses { get; init; }
     /// <summary>Where "key unavailable" is reported besides audit.log; null = the Windows event log (console elsewhere).</summary>
@@ -217,6 +224,7 @@ internal static class AgentHost
 
         var app = builder.Build();
         WireLocalServices(app.Services, options, services);
+        services.Account = CreateAccountClient(app.Services, options, services, deviceKey);
         app.Lifetime.ApplicationStarted.Register(() => identity.Endpoints = BoundEndpoints(app));
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         app.Map(WebSocketPath, async context =>
@@ -260,6 +268,31 @@ internal static class AgentHost
         services.Automations = provider.GetRequiredService<AutomationService>();
         services.OpenRgb = provider.GetRequiredService<OpenRgbHost>();
         services.Rgb = new RgbService(options.DataDirectory, options.OpenRgbPort, services.OpenRgb.Guard);
+    }
+
+    /// <summary>
+    /// Only with a configured server, pinned entitlement keys (tokens can be verified) and a refresh sealer;
+    /// otherwise null and the tray's login operations answer "disabled". Never in key-unavailable mode.
+    /// </summary>
+    private static Account.AccountClient? CreateAccountClient(IServiceProvider provider, AgentHostOptions options, AgentServices services, IDeviceKey deviceKey)
+    {
+        var server = options.AccountServer ?? Account.AccountServerConfig.FromBuild();
+        var protector = options.RefreshProtector ?? (OperatingSystem.IsWindows() ? new Account.DpapiLocalMachineProtector() : null);
+        if (server is null || protector is null || !services.Entitlements.Enforced)
+        {
+            return null;
+        }
+        var handler = options.AccountHttpHandler?.Invoke() ?? new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        };
+        var client = new Account.AccountClient(server, handler, deviceKey, services.Identity.PcId, services.Identity.PcName,
+            services.Entitlements, new Account.RefreshTokenStore(options.DataDirectory, protector), options.Time,
+            provider.GetRequiredService<ILoggerFactory>().CreateLogger("Nexus.Agent.Account"), options.AccountRetryPauses,
+            (action, ok, error) => services.Audit.Record(null, action, ok, error, null));
+        provider.GetRequiredService<IHostApplicationLifetime>().ApplicationStopped.Register(client.Dispose);
+        return client;
     }
 
     private static List<IPEndPoint> BoundEndpoints(WebApplication app)

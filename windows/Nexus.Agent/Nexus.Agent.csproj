@@ -24,6 +24,14 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
   </ItemGroup>
+  <!--
+    Account server (E4-4): set by the release build once the domain and the Supabase project exist
+    (-p:NexusAccountServerUrl=https://... -p:NexusAccountAnonKey=...). Empty = the account client is off.
+  -->
+  <ItemGroup Condition="'$(NexusAccountServerUrl)' != '' And '$(NexusAccountAnonKey)' != ''">
+    <AssemblyMetadata Include="NexusAccountServerUrl" Value="$(NexusAccountServerUrl)" />
+    <AssemblyMetadata Include="NexusAccountAnonKey" Value="$(NexusAccountAnonKey)" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Nexus.Core\Nexus.Core.csproj" />
     <ProjectReference Include="..\Nexus.Windows\Nexus.Windows.csproj" />
