@@ -106,3 +106,12 @@ E5 завершён: E5-0 (21dfec8, QA ПРИНЯТО, аудит без зам�
 7. Проверка обновлений в трее — открывать {DOWNLOAD_URL}; двойной щелчок по значку — «Устройства и разрешения»; исходники GPL — на сайте рядом со страницей загрузки.
 8. Повторный вход Apple при удалении аккаунта — принимать (свежесть 300 с).
 Не проверено архитектором: отдаёт ли RLS my_pcs поле pc_id в iOS; строгость декодера NexusKit (тест в E6-SCREENS).
+
+## Задания по протоколу/backend (code-architect, 2026-11-25) — ждут утверждения владельца
+Новый порядок: W-ACC → QA → security-auditor → W-TRAY → QA → W-PROTO → QA → BE-1 → QA → E6-DS → … → E6-ACC-1 → QA → SEC-REBIND (анализ) → BE-2 → QA → E6-ACC-2 → …
+- W-PROTO (windows-developer): unavailableCodes в metrics.snapshot (11 кодов: sensorDriverMissing, sensorReadFailed, sensorMissing, warmingUp, osQueryFailed, gpuDriverMissing, gpuLibraryRejected, gpuLibraryLoadFailed, gpuInitFailed, gpuListFailed, platformUnsupported), reasonCode в rgb.status (openrgbNotResponding, conflict); PlanPolicy: feature screen.video (Pro), screen.frame Free; docs/API.md, фикстуры.
+- BE-1 (backend-developer): pcs.limit в pc_login_approve (новая миграция, та же блокировка, свой ПК не считается, code.invalid без различий); screen.video в правах Pro.
+- SEC-REBIND (security-auditor): вердикт по rebind в describe.
+- BE-2 (backend-developer): rebind в describe — только после вердикта.
+Полный текст блоков — в отчёте архитектора (запросить повторно при необходимости).
+Риски: старый iOS + Free получит plan.required на screen.video и не перейдёт на JPEG (ScreenView.swift:388) → не включать ключи ENT-2 до iOS с fallback; BE-1 развернуть до агента с W-PROTO.
