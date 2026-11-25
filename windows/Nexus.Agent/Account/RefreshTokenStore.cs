@@ -104,11 +104,12 @@ internal sealed class SystemOnlyFileAccess : IProtectedFileAccess
 /// and rewritten SYSTEM-only; anything else is deleted unread and reported through <c>onUntrusted</c> ("not signed in").
 /// A file larger than any real account.dat is treated the same way (deleted unread, reported). Access denied on open
 /// or on the check means someone else changed the owner or DACL (the service is SYSTEM): not deleted, reported through
-/// <c>onAccessDenied</c>; the data folder repair restores the access. Other I/O errors are temporary: null, nothing else.
+/// <c>onAccessDenied</c>; the data folder repair restores the access. <c>onAccessible</c> runs after a load that opened
+/// the file (or found none), so the caller can report a later denial again. Other I/O errors are temporary: null, nothing else.
 /// The token itself is never logged.
 /// </summary>
 internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector protector, IProtectedFileAccess? access = null,
-    Action? onUntrusted = null, Action? onAccessDenied = null)
+    Action? onUntrusted = null, Action? onAccessDenied = null, Action? onAccessible = null)
 {
     public const string FileName = DataDirectoryPolicy.AccountFileName;
     /// <summary>A real account.dat is well under 1 KB; anything above this is a replacement or damage.</summary>
@@ -149,6 +150,7 @@ internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector 
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
+            onAccessible?.Invoke(); // no file is not an access problem: a later denial is reported again
             return null;
         }
         catch (UnauthorizedAccessException)
@@ -162,6 +164,7 @@ internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector 
         {
             return null; // in use or a disk error: the next load tries again
         }
+        onAccessible?.Invoke(); // opened and checked: the access problem (if any) is over
 
         if (verdict == ProtectedFileVerdict.Untrusted)
         {

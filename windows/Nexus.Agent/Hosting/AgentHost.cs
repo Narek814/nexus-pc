@@ -287,12 +287,15 @@ internal static class AgentHost
             AllowAutoRedirect = false,
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         };
+        // Once per service process; a load that opens the file again re-arms it for a new problem (W-ACC).
+        var accessDenied = new Account.OnceUntilReset(
+            () => services.Audit.Record(null, "account.file", ok: false, "account.accessDenied", null));
         var client = new Account.AccountClient(server, handler, deviceKey, services.Identity.PcId, services.Identity.PcName,
             services.Entitlements, new Account.RefreshTokenStore(options.DataDirectory, protector,
                 // Foreign access on account.dat: deleted unread; audited without path or content (E4-6).
                 onUntrusted: () => services.Audit.Record(null, "account.file", ok: false, "account.untrustedFile", null),
                 // SYSTEM refused on account.dat: kept, audited; the data folder repair restores the access (E5-0).
-                onAccessDenied: () => services.Audit.Record(null, "account.file", ok: false, "account.accessDenied", null)), options.Time,
+                onAccessDenied: accessDenied.Run, onAccessible: accessDenied.Reset), options.Time,
             provider.GetRequiredService<ILoggerFactory>().CreateLogger("Nexus.Agent.Account"), options.AccountRetryPauses,
             (action, ok, error) => services.Audit.Record(null, action, ok, error, null));
         provider.GetRequiredService<IHostApplicationLifetime>().ApplicationStopped.Register(client.Dispose);

@@ -22,9 +22,9 @@ internal static class ElevatedAccountProcess
     public static async Task<int?> RunAsync(string op)
     {
         var self = Environment.ProcessPath;
-        if (self is null)
+        if (self is null || !File.Exists(self))
         {
-            return ElevatedAccountCommand.ExitCodeOfError("failed");
+            return ElevatedAccountCommand.ExitCodeOfError(ElevatedAccountCommand.ElevationError);
         }
         var start = new ProcessStartInfo(self, ElevatedAccountCommand.ArgumentFor(op))
         {
@@ -37,7 +37,7 @@ internal static class ElevatedAccountProcess
             using var process = Process.Start(start);
             if (process is null)
             {
-                return ElevatedAccountCommand.ExitCodeOfError("failed");
+                return ElevatedAccountCommand.ExitCodeOfError(ElevatedAccountCommand.ElevationError);
             }
             await process.WaitForExitAsync().ConfigureAwait(true);
             return process.ExitCode;
@@ -49,10 +49,9 @@ internal static class ElevatedAccountProcess
         catch (Win32Exception ex)
         {
             // Only the Win32 code: never the arguments or anything from the account answer.
-            var log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusPC", "tray.log");
-            TrayLog.Write(log, "Administrator step could not start: Win32 error "
+            TrayLog.Write(TrayLog.DefaultPath, "Administrator step could not start: Win32 error "
                 + ex.NativeErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            return ElevatedAccountCommand.ExitCodeOfError("failed");
+            return ElevatedAccountCommand.ExitCodeOfError(ElevatedAccountCommand.ElevationError);
         }
     }
 

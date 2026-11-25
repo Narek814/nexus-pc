@@ -44,7 +44,7 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            TrayLog.Write(Path.Combine(dataDir, "tray.log"), "File sharing is off: " + ex.Message);
+            TrayLog.Write(TrayLog.DefaultPath, "File sharing is off: " + ex.Message);
         }
         _sharedFolder = files?.FolderPath;
 
@@ -72,8 +72,7 @@ internal sealed class TrayContext : ApplicationContext
 
         var agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Agent", "Nexus.Agent.exe"));
         _status = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
-        var logPath = Path.Combine(dataDir, "tray.log");
-        var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(logPath, message));
+        var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(TrayLog.DefaultPath, message));
         _agent = agent;
         // E4-5: the sign-in attempt lives in the service's memory; the tray keeps only "started at T" (no codes).
         _account = new AccountController(agent, new Nexus.Core.Account.LoginMarkerFile(Path.Combine(dataDir, "login-pending.json")));
@@ -289,6 +288,10 @@ internal sealed class TrayContext : ApplicationContext
 internal static class TrayLog
 {
     private static readonly Lock Gate = new();
+
+    /// <summary>The one place of the tray log path: %LOCALAPPDATA%\NexusPC\tray.log.</summary>
+    public static string DefaultPath { get; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusPC", "tray.log");
 
     public static void Write(string path, string message)
     {

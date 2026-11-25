@@ -519,6 +519,58 @@ public sealed class AccountFileAndAdminTests : IDisposable
         Assert.Equal("failed", ElevatedAccountCommand.ErrorOf(ElevatedAccountCommand.ExitCodeOf(null)));
     }
 
+    [Fact]
+    public void Access_denied_is_audited_once_until_a_load_opens_the_file_again()
+    {
+        WriteOldFile();
+        var access = new ThrowingAccess(ProtectedFileVerdict.Trusted) { OnInspect = new UnauthorizedAccessException() };
+        var audits = 0;
+        var once = new OnceUntilReset(() => audits++);
+        var store = new RefreshTokenStore(_dir, new XorProtector(), access, onAccessDenied: once.Run, onAccessible: once.Reset);
+        Assert.Null(store.Load());
+        Assert.Null(store.Load());
+        Assert.Null(store.Load());
+        Assert.Equal(1, audits);
+
+        access.OnInspect = new IOException("in use"); // a temporary error neither audits nor re-arms
+        Assert.Null(store.Load());
+        access.OnInspect = new UnauthorizedAccessException();
+        Assert.Null(store.Load());
+        Assert.Equal(1, audits);
+
+        access.OnInspect = null; // access restored: the load succeeds and re-arms the audit
+        Assert.Equal(Token, store.Load());
+        access.OnInspect = new UnauthorizedAccessException();
+        Assert.Null(store.Load());
+        Assert.Null(store.Load());
+        Assert.Equal(2, audits);
+    }
+
+    [Theory]
+    [InlineData(null, AccountProblem.AdminDeclined)]
+    [InlineData("failed", AccountProblem.Failed)]
+    [InlineData("elevation", AccountProblem.ElevationFailed)]
+    public void Elevated_exit_code_maps_to_its_problem(string? error, AccountProblem expected)
+    {
+        var model = new AccountLoginModel(new MemoryMarker());
+        model.BeginStart();
+        int? exit = error is null ? null : ElevatedAccountCommand.ExitCodeOfError(error);
+        Assert.False(model.OnElevatedExit(SessionOps.LoginStart, exit));
+        Assert.Equal(expected, model.Problem);
+        Assert.Equal(AccountPhase.SignedOut, model.Phase);
+    }
+
+    [Fact]
+    public void Elevation_exit_code_is_distinct_and_keeps_the_old_codes()
+    {
+        var elevation = ElevatedAccountCommand.ExitCodeOfError(ElevatedAccountCommand.ElevationError);
+        Assert.Equal("elevation", ElevatedAccountCommand.ErrorOf(elevation));
+        Assert.NotEqual(ElevatedAccountCommand.ExitCodeOfError("failed"), elevation);
+        Assert.Equal(10, ElevatedAccountCommand.ExitCodeOfError("failed"));
+        Assert.Equal(17, ElevatedAccountCommand.ExitCodeOfError("transient")); // existing codes unchanged
+        Assert.Equal(AccountProblem.ElevationFailed, AccountLoginModel.Map("elevation"));
+    }
+
     private sealed class MemoryMarker : ILoginMarker
     {
         public DateTimeOffset? Value { get; set; }

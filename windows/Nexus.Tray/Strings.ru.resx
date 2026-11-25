@@ -99,6 +99,9 @@
   <data name="ProblemAdminDeclined" xml:space="preserve">
     <value>Отменено: для входа и отвязки нужны права администратора. Нажмите кнопку ещё раз и разрешите запрос Windows.</value>
   </data>
+  <data name="ProblemElevationFailed" xml:space="preserve">
+    <value>Не удалось запустить шаг с правами администратора.</value>
+  </data>
   <data name="AccountAdminNote" xml:space="preserve">
     <value>Windows запросит разрешение администратора.</value>
   </data>

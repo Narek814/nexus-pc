@@ -53,6 +53,42 @@ public sealed class AccountLoginModelTests : IDisposable
 
     private static RpcResult NoService() => RpcResult.Failure("session.unavailable", "no service");
 
+    /// <summary>The controller's timer as a fake: each tick asks login.status only when the model allows it.</summary>
+    private static int TickPolls(AccountLoginModel model, int ticks)
+    {
+        var calls = 0;
+        for (var i = 0; i < ticks; i++)
+        {
+            if (model.ShouldPollNow)
+            {
+                calls++;
+            }
+        }
+        return calls;
+    }
+
+    [Fact]
+    public void LoginStatusIsPolledOnlyWhileTheAccountWindowIsOpen()
+    {
+        var model = NewModel();
+        model.BeginStart();
+        model.OnStartReply(Pending());
+        Assert.True(model.ShouldPoll);
+        Assert.False(model.WindowOpen);
+        Assert.Equal(0, TickPolls(model, 10)); // a code is pending but the window is closed: no requests
+
+        model.OnWindowOpened();
+        Assert.Equal(3, TickPolls(model, 3));
+
+        model.OnWindowClosed();
+        Assert.Equal(0, TickPolls(model, 10));
+
+        model.OnWindowOpened(); // reopened: polling resumes (the controller also asks once at once)
+        Assert.True(model.ShouldPollNow);
+        model.OnStatusReply(Status("none", linked: true));
+        Assert.Equal(0, TickPolls(model, 5)); // nothing pending: no poll even with the window open
+    }
+
     [Fact]
     public void StartShowsCodeInGroupsOfFourWithCountdownAndWritesMarkerWithoutCodes()
     {

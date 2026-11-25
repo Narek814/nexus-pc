@@ -25,7 +25,7 @@ internal sealed class AccountController : IDisposable
         Model = new AccountLoginModel(marker);
         _poll.Tick += async (_, _) =>
         {
-            if (_queued == 0) // a periodic poll is skipped while something is still running; it comes again in 5 s
+            if (_queued == 0 && Model.ShouldPollNow) // a periodic poll is skipped while something is still running; it comes again in 5 s
             {
                 await CheckAsync(atStartup: false).ConfigureAwait(true);
             }
@@ -243,7 +243,8 @@ internal sealed class AccountForm : Form
         };
         _account.Changed += OnChanged;
         Render();
-        Shown += async (_, _) => await _account.CheckAsync(atStartup: false).ConfigureAwait(true);
+        Shown += async (_, _) => await _account.WindowOpenedAsync().ConfigureAwait(true);
+        FormClosed += (_, _) => _account.WindowClosed();
         _countdown.Start();
     }
 
