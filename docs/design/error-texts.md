@@ -113,7 +113,7 @@
 | (неизвестный) | `error.generic.body` | Try again. If it repeats, see Help → Diagnostics. | Повторите. Если не помогает — откройте «Помощь → Диагностика». | Card |
 | (обрыв связи) | `status.offline` + `offline.body` | (`foundations.md`) | (`foundations.md`) | Offline |
 
-`admin.required`: в `docs/API.md` такого кода **нет** (ни у агента, ни у сервера прав). Текст не заводится; если код появится (E5-0, канал трея), он относится к Windows (`windows.md`, E5-4). См. `ios-screens.md`, «Нужно от протокола».
+`admin.required`: код канала трея (E4-6), на iPhone не приходит. Текст — только в трее: `ProblemAdminRequired` (`windows.md`, 3.3). См. `ios-screens.md`, «Нужно от протокола».
 
 ## 4. Коды сервера аккаунтов (HTTPS)
 
