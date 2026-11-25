@@ -22,6 +22,12 @@ public static class ElevatedAccountCommand
         "failed", SessionOps.AdminRequired, "session.unavailable", "disabled", "keyUnavailable", "rate.limited", "pcs.limit", "transient",
     ];
 
+    /// <summary>ERROR_CANCELLED: the person declined the administrator prompt.</summary>
+    public const int UacCancelled = 1223;
+
+    /// <summary>True only for a declined administrator prompt ("Cancelled"); any other Win32 error is "failed".</summary>
+    public static bool IsUacDeclined(int nativeError) => nativeError == UacCancelled;
+
     /// <summary>The one argument for <paramref name="op"/> (login.start or unlink); anything else is refused.</summary>
     public static string ArgumentFor(string op) => op switch
     {

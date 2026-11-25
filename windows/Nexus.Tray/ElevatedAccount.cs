@@ -42,9 +42,17 @@ internal static class ElevatedAccountProcess
             await process.WaitForExitAsync().ConfigureAwait(true);
             return process.ExitCode;
         }
-        catch (Win32Exception)
+        catch (Win32Exception ex) when (ElevatedAccountCommand.IsUacDeclined(ex.NativeErrorCode))
         {
-            return null; // the person declined the administrator prompt (ERROR_CANCELLED) or it could not be shown
+            return null; // the person declined the administrator prompt
+        }
+        catch (Win32Exception ex)
+        {
+            // Only the Win32 code: never the arguments or anything from the account answer.
+            var log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusPC", "tray.log");
+            TrayLog.Write(log, "Administrator step could not start: Win32 error "
+                + ex.NativeErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return ElevatedAccountCommand.ExitCodeOfError("failed");
         }
     }
 

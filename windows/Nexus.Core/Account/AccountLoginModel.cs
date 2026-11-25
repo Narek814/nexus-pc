@@ -212,7 +212,7 @@ public sealed class AccountLoginModel(ILoginMarker marker, TimeProvider? time = 
 
     /// <summary>
     /// The elevated Nexus.Tray.exe for <paramref name="op"/> (login.start or unlink) ended. <paramref name="exitCode"/>
-    /// null: the administrator prompt was declined (or could not be shown). Returns true when the tray should ask
+    /// null: the administrator prompt was declined (other start errors arrive as "failed"). Returns true when the tray should ask
     /// login.status next (the code, the plan and "linked" come from there). A started sign-in writes the marker here,
     /// in the normal tray's settings, so a later tray start can resume it; the marker holds only the time.
     /// </summary>

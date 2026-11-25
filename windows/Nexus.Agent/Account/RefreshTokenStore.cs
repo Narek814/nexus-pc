@@ -102,12 +102,17 @@ internal sealed class SystemOnlyFileAccess : IProtectedFileAccess
 /// either the old or the new token, never half of one. On load the owner and DACL are checked through the open handle
 /// before a byte is read: SYSTEM-only is read; the old inherited SYSTEM+Administrators access (before E4-6) is read once
 /// and rewritten SYSTEM-only; anything else is deleted unread and reported through <c>onUntrusted</c> ("not signed in").
+/// A file larger than any real account.dat is treated the same way (deleted unread, reported). Access denied on open
+/// or on the check means someone else changed the owner or DACL (the service is SYSTEM): not deleted, reported through
+/// <c>onAccessDenied</c>; the data folder repair restores the access. Other I/O errors are temporary: null, nothing else.
 /// The token itself is never logged.
 /// </summary>
-internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector protector, IProtectedFileAccess? access = null, Action? onUntrusted = null)
+internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector protector, IProtectedFileAccess? access = null,
+    Action? onUntrusted = null, Action? onAccessDenied = null)
 {
     public const string FileName = DataDirectoryPolicy.AccountFileName;
-    private const int MaxBytes = 8 * 1024;
+    /// <summary>A real account.dat is well under 1 KB; anything above this is a replacement or damage.</summary>
+    internal const int MaxBytes = 8 * 1024;
     private readonly IProtectedFileAccess _access = access ?? SystemOnlyFileAccess.Instance;
 
     public string FilePath { get; } = Path.Combine(dataDirectory, FileName);
@@ -123,28 +128,39 @@ internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector 
         try
         {
             using var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            verdict = _access.Inspect(stream);
-            if (verdict == ProtectedFileVerdict.Untrusted)
+            if (stream.Length > MaxBytes)
             {
+                verdict = ProtectedFileVerdict.Untrusted; // whatever its access: not read, deleted, reported
                 sealedBytes = [];
             }
             else
             {
-                if (stream.Length > MaxBytes)
+                verdict = _access.Inspect(stream);
+                if (verdict == ProtectedFileVerdict.Untrusted)
                 {
-                    return null;
+                    sealedBytes = [];
                 }
-                sealedBytes = new byte[stream.Length];
-                stream.ReadExactly(sealedBytes);
+                else
+                {
+                    sealedBytes = new byte[stream.Length];
+                    stream.ReadExactly(sealedBytes);
+                }
             }
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             return null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (UnauthorizedAccessException)
         {
+            // SYSTEM is refused: the owner or DACL was changed by someone else. Kept (it cannot be deleted without
+            // access anyway, and trying must not hide the problem); reported without path or content.
+            onAccessDenied?.Invoke();
             return null;
+        }
+        catch (Exception ex) when (ex is IOException or NotSupportedException)
+        {
+            return null; // in use or a disk error: the next load tries again
         }
 
         if (verdict == ProtectedFileVerdict.Untrusted)

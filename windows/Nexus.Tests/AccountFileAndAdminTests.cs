@@ -228,6 +228,120 @@ public sealed class AccountFileAndAdminTests : IDisposable
         Assert.Equal(1, untrusted);
     }
 
+    /// <summary>E5-0: CreateNew or Inspect can be made to throw.</summary>
+    private sealed class ThrowingAccess(ProtectedFileVerdict verdict) : IProtectedFileAccess
+    {
+        public Exception? OnCreate { get; set; }
+
+        public Exception? OnInspect { get; set; }
+
+        public int CreateAttempts { get; private set; }
+
+        public FileStream CreateNew(string path)
+        {
+            CreateAttempts++;
+            if (OnCreate is not null)
+            {
+                throw OnCreate;
+            }
+            return ProtectedFile.CreateNew(path);
+        }
+
+        public ProtectedFileVerdict Inspect(FileStream opened) => OnInspect is not null ? throw OnInspect : verdict;
+    }
+
+    [Fact]
+    public void Oversized_trusted_file_is_deleted_unread_and_audited()
+    {
+        var path = Path.Combine(_dir, RefreshTokenStore.FileName);
+        File.WriteAllBytes(path, new byte[RefreshTokenStore.MaxBytes + 1]);
+        var access = new FakeAccess(ProtectedFileVerdict.Trusted);
+        var protector = new CountingProtector();
+        var untrusted = 0;
+        var denied = 0;
+        var store = new RefreshTokenStore(_dir, protector, access, () => untrusted++, () => denied++);
+        Assert.Null(store.Load());
+        Assert.Equal(0, protector.Opened);
+        Assert.False(File.Exists(path));
+        Assert.Equal(1, untrusted);
+        Assert.Equal(0, denied);
+        Assert.Empty(access.Created);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Legacy_rewrite_failure_keeps_the_token(bool unauthorized)
+    {
+        WriteOldFile();
+        var before = File.ReadAllBytes(Path.Combine(_dir, RefreshTokenStore.FileName));
+        var access = new ThrowingAccess(ProtectedFileVerdict.Legacy)
+        {
+            OnCreate = unauthorized ? new UnauthorizedAccessException() : new IOException("disk"),
+        };
+        var untrusted = 0;
+        var denied = 0;
+        var store = new RefreshTokenStore(_dir, new XorProtector(), access, () => untrusted++, () => denied++);
+        Assert.Equal(Token, store.Load());
+        Assert.True(File.Exists(store.FilePath));
+        Assert.Equal(before, File.ReadAllBytes(store.FilePath));
+        Assert.Equal(1, access.CreateAttempts);
+        Assert.Equal(Token, store.Load()); // migration is tried again
+        Assert.Equal(2, access.CreateAttempts);
+        Assert.Equal(0, untrusted);
+        Assert.Equal(0, denied);
+    }
+
+    [Fact]
+    public void Access_denied_on_open_is_audited_and_not_deleted()
+    {
+        WriteOldFile();
+        var access = new ThrowingAccess(ProtectedFileVerdict.Trusted) { OnInspect = new UnauthorizedAccessException() };
+        var protector = new CountingProtector();
+        var untrusted = 0;
+        var denied = 0;
+        var store = new RefreshTokenStore(_dir, protector, access, () => untrusted++, () => denied++);
+        Assert.Null(store.Load());
+        Assert.True(File.Exists(store.FilePath));
+        Assert.Equal(0, protector.Opened);
+        Assert.Equal(1, denied);
+        Assert.Equal(0, untrusted);
+
+        // Other I/O errors are temporary: no report, file kept.
+        access.OnInspect = new IOException("in use");
+        Assert.Null(store.Load());
+        Assert.True(File.Exists(store.FilePath));
+        Assert.Equal(1, denied);
+        Assert.Equal(0, untrusted);
+    }
+
+    [Theory]
+    [InlineData(1223, true)]
+    [InlineData(2, false)]
+    [InlineData(5, false)]
+    [InlineData(740, false)]
+    [InlineData(1155, false)]
+    public void Only_error_cancelled_is_a_declined_prompt(int nativeError, bool declined)
+    {
+        Assert.Equal(declined, ElevatedAccountCommand.IsUacDeclined(nativeError));
+    }
+
+    [Fact]
+    public void Failed_elevated_start_is_an_error_not_cancelled()
+    {
+        var model = new AccountLoginModel(new MemoryMarker());
+        model.BeginStart();
+        Assert.False(model.OnElevatedExit(SessionOps.LoginStart, null));
+        Assert.Equal(AccountProblem.AdminDeclined, model.Problem);
+
+        var failed = new AccountLoginModel(new MemoryMarker());
+        failed.BeginStart();
+        Assert.False(failed.OnElevatedExit(SessionOps.LoginStart, ElevatedAccountCommand.ExitCodeOfError("failed")));
+        Assert.NotEqual(AccountProblem.AdminDeclined, failed.Problem);
+        Assert.NotEqual(AccountProblem.None, failed.Problem);
+        Assert.Equal(AccountPhase.SignedOut, failed.Phase);
+    }
+
     [Fact]
     public void Missing_file_and_io_problems_are_not_signed_in()
     {
