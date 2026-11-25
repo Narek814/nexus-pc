@@ -35,6 +35,10 @@ public enum AccountProblem
     KeyUnavailable,
     Expired,
     Failed,
+    /// <summary>The service refused: sign-in and unlink need a Windows administrator ("admin.required").</summary>
+    AdminRequired,
+    /// <summary>The person declined the Windows administrator prompt (UAC).</summary>
+    AdminDeclined,
 }
 
 /// <summary>Notice shown once by the tray (balloon) after a login.status answer.</summary>
@@ -206,6 +210,42 @@ public sealed class AccountLoginModel(ILoginMarker marker, TimeProvider? time = 
         Problem = AccountProblem.None;
     }
 
+    /// <summary>
+    /// The elevated Nexus.Tray.exe for <paramref name="op"/> (login.start or unlink) ended. <paramref name="exitCode"/>
+    /// null: the administrator prompt was declined (or could not be shown). Returns true when the tray should ask
+    /// login.status next (the code, the plan and "linked" come from there). A started sign-in writes the marker here,
+    /// in the normal tray's settings, so a later tray start can resume it; the marker holds only the time.
+    /// </summary>
+    public bool OnElevatedExit(string op, int? exitCode)
+    {
+        ArgumentNullException.ThrowIfNull(op);
+        if (exitCode is null)
+        {
+            ClearCode();
+            Phase = Linked ? AccountPhase.SignedIn : AccountPhase.SignedOut;
+            Problem = AccountProblem.AdminDeclined;
+            return false;
+        }
+        if (exitCode != ElevatedAccountCommand.ExitOk)
+        {
+            Fail(RpcResult.Failure(ElevatedAccountCommand.ErrorOf(exitCode.Value), string.Empty));
+            return false;
+        }
+        Problem = AccountProblem.None;
+        if (op == SessionOps.Unlink)
+        {
+            ClearCode();
+            marker.Clear();
+            Linked = false;
+            Phase = AccountPhase.SignedOut;
+        }
+        else
+        {
+            marker.Write(_time.GetUtcNow());
+        }
+        return true;
+    }
+
     /// <summary>The person cancelled: stop showing the code and polling; the marker is erased.</summary>
     public void Cancel()
     {
@@ -239,6 +279,7 @@ public sealed class AccountLoginModel(ILoginMarker marker, TimeProvider? time = 
         "keyUnavailable" => AccountProblem.KeyUnavailable,
         "code.invalid" or "expired" => AccountProblem.Expired,
         "session.unavailable" or "session.timeout" => AccountProblem.ServiceUnavailable,
+        SessionOps.AdminRequired => AccountProblem.AdminRequired,
         _ => AccountProblem.Failed,
     };
 

@@ -179,6 +179,22 @@ public sealed class TrayIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Tray_session_pipe_refuses_login_start_and_unlink_but_answers_login_status()
+    {
+        // E4-6 (S2): whoever the tray user is, sign-in and unlink need the admin pipe.
+        foreach (var op in new[] { SessionOps.LoginStart, SessionOps.Unlink })
+        {
+            var refused = await _tray.CallAgentAsync(op);
+            Assert.False(refused.Ok);
+            Assert.Equal(SessionOps.AdminRequired, refused.ErrorCode);
+        }
+        // login.status still runs for everyone (here: no account server configured, so "disabled").
+        var status = await _tray.CallAgentAsync(SessionOps.LoginStatus);
+        Assert.NotEqual(SessionOps.AdminRequired, status.ErrorCode);
+        Assert.NotEqual(ErrorCodes.PermissionDenied, status.ErrorCode);
+    }
+
+    [Fact]
     public async Task Closing_the_tray_cancels_pairing_it_opened()
     {
         var started = await _tray.CallAgentAsync(SessionOps.PairStart);

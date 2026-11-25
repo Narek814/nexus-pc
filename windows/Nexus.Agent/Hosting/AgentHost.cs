@@ -288,7 +288,9 @@ internal static class AgentHost
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         };
         var client = new Account.AccountClient(server, handler, deviceKey, services.Identity.PcId, services.Identity.PcName,
-            services.Entitlements, new Account.RefreshTokenStore(options.DataDirectory, protector), options.Time,
+            services.Entitlements, new Account.RefreshTokenStore(options.DataDirectory, protector,
+                // Foreign access on account.dat: deleted unread; audited without path or content (E4-6).
+                onUntrusted: () => services.Audit.Record(null, "account.file", ok: false, "account.untrustedFile", null)), options.Time,
             provider.GetRequiredService<ILoggerFactory>().CreateLogger("Nexus.Agent.Account"), options.AccountRetryPauses,
             (action, ok, error) => services.Audit.Record(null, action, ok, error, null));
         provider.GetRequiredService<IHostApplicationLifetime>().ApplicationStopped.Register(client.Dispose);

@@ -4,6 +4,8 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Nexus.Agent.Storage;
+using Nexus.Core.Storage;
 
 namespace Nexus.Agent.Account;
 
@@ -74,30 +76,105 @@ internal sealed partial class DpapiLocalMachineProtector : IRefreshProtector
     private static partial IntPtr LocalFree(IntPtr memory);
 }
 
-/// <summary>
-/// account.dat in the service data folder (inherits the folder's SYSTEM/Administrators-only access): the refresh
-/// token sealed by <see cref="IRefreshProtector"/>. Replaced atomically (temp file, then rename in the same folder),
-/// so a crash leaves either the old or the new token, never half of one. The token itself is never logged.
-/// </summary>
-internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector protector)
+/// <summary>Creation and access check of account.dat; production is <see cref="SystemOnlyFileAccess"/>, tests inject a fake.</summary>
+internal interface IProtectedFileAccess
 {
-    public const string FileName = "account.dat";
+    /// <summary>FileMode.CreateNew, already with the SYSTEM-only access (Windows) or 0600 (elsewhere).</summary>
+    FileStream CreateNew(string path);
+
+    /// <summary>Owner and DACL of the open file; any error reading them is <see cref="ProtectedFileVerdict.Untrusted"/>.</summary>
+    ProtectedFileVerdict Inspect(FileStream opened);
+}
+
+internal sealed class SystemOnlyFileAccess : IProtectedFileAccess
+{
+    public static readonly SystemOnlyFileAccess Instance = new();
+
+    public FileStream CreateNew(string path) => ProtectedFile.CreateNew(path);
+
+    public ProtectedFileVerdict Inspect(FileStream opened) => ProtectedFile.Classify(opened, acceptLegacy: true);
+}
+
+/// <summary>
+/// account.dat in the service data folder: the refresh token sealed by <see cref="IRefreshProtector"/>, with its own
+/// protected DACL for SYSTEM only (E4-6). The temp file is created already protected (CreateNew), written, flushed,
+/// then renamed over account.dat in the same folder (the rename keeps the temp file's descriptor), so a crash leaves
+/// either the old or the new token, never half of one. On load the owner and DACL are checked through the open handle
+/// before a byte is read: SYSTEM-only is read; the old inherited SYSTEM+Administrators access (before E4-6) is read once
+/// and rewritten SYSTEM-only; anything else is deleted unread and reported through <c>onUntrusted</c> ("not signed in").
+/// The token itself is never logged.
+/// </summary>
+internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector protector, IProtectedFileAccess? access = null, Action? onUntrusted = null)
+{
+    public const string FileName = DataDirectoryPolicy.AccountFileName;
     private const int MaxBytes = 8 * 1024;
+    private readonly IProtectedFileAccess _access = access ?? SystemOnlyFileAccess.Instance;
 
     public string FilePath { get; } = Path.Combine(dataDirectory, FileName);
 
-    /// <summary>The stored token, or null (none, unreadable or sealed by another machine: treated as "not signed in").</summary>
+    private string TempPath => Path.Combine(Path.GetDirectoryName(FilePath)!, DataDirectoryPolicy.AccountTempFileName);
+
+    /// <summary>The stored token, or null (none, unreadable, untrusted or sealed by another machine: "not signed in").</summary>
     public string? Load()
     {
-        File.Delete(FilePath + ".tmp");
+        DeleteQuietly(TempPath); // left from a crash between create and rename
+        byte[] sealedBytes;
+        ProtectedFileVerdict verdict;
         try
         {
-            var info = new FileInfo(FilePath);
-            if (!info.Exists || info.Length > MaxBytes)
+            using var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            verdict = _access.Inspect(stream);
+            if (verdict == ProtectedFileVerdict.Untrusted)
             {
-                return null;
+                sealedBytes = [];
             }
-            var plain = protector.Unprotect(File.ReadAllBytes(FilePath));
+            else
+            {
+                if (stream.Length > MaxBytes)
+                {
+                    return null;
+                }
+                sealedBytes = new byte[stream.Length];
+                stream.ReadExactly(sealedBytes);
+            }
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return null;
+        }
+
+        if (verdict == ProtectedFileVerdict.Untrusted)
+        {
+            // Someone else wrote or re-permissioned it: not read, deleted; the caller audits without path or content.
+            DeleteQuietly(FilePath);
+            onUntrusted?.Invoke();
+            return null;
+        }
+
+        var token = Unseal(sealedBytes);
+        if (token is not null && verdict == ProtectedFileVerdict.Legacy)
+        {
+            try
+            {
+                Save(token); // migrate the old inherited access to SYSTEM-only; the sign-in stays
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                // the next load tries again; the token read is still valid
+            }
+        }
+        return token;
+    }
+
+    private string? Unseal(byte[] sealedBytes)
+    {
+        try
+        {
+            var plain = protector.Unprotect(sealedBytes);
             try
             {
                 return JsonNode.Parse(plain) is JsonObject { } o && o["v"]?.GetValue<int>() == 1
@@ -110,10 +187,22 @@ internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector 
                 Array.Clear(plain);
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException
-            or FormatException or System.Security.Cryptography.CryptographicException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException
+            or System.Security.Cryptography.CryptographicException)
         {
             return null;
+        }
+    }
+
+    private static void DeleteQuietly(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // never stops the service; Save deletes it again before CreateNew
         }
     }
 
@@ -130,24 +219,20 @@ internal sealed class RefreshTokenStore(string dataDirectory, IRefreshProtector 
         {
             Array.Clear(plain);
         }
-        var temp = FilePath + ".tmp";
+        var temp = TempPath;
         File.Delete(temp);
-        using (var stream = OperatingSystem.IsWindows()
-            ? new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)
-            : new FileStream(temp, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew, Access = FileAccess.Write, UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
-            }))
+        using (var stream = _access.CreateNew(temp))
         {
             stream.Write(sealedBytes);
             stream.Flush(flushToDisk: true);
         }
+        // Same folder: MoveFileEx(REPLACE_EXISTING) is atomic and the new file keeps the temp file's own descriptor.
         File.Move(temp, FilePath, overwrite: true);
     }
 
     public void Delete()
     {
-        File.Delete(FilePath + ".tmp");
+        File.Delete(TempPath);
         File.Delete(FilePath);
     }
 }

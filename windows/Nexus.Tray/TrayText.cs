@@ -38,6 +38,7 @@ internal static partial class TrayText
     public static string PlanPro => Get(nameof(PlanPro));
     public static string AccountUnlink => Get(nameof(AccountUnlink));
     public static string AccountUnlinkConfirm => Get(nameof(AccountUnlinkConfirm));
+    public static string AccountAdminNote => Get(nameof(AccountAdminNote));
     public static string NoticeResuming => Get(nameof(NoticeResuming));
     public static string NoticeSignedIn => Get(nameof(NoticeSignedIn));
     public static string NoticeRetry => Get(nameof(NoticeRetry));

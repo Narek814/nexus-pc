@@ -204,6 +204,7 @@ public sealed class AccountClientTests : IDisposable
 
     public AccountClientTests()
     {
+        AgentTestHost.TrustTestAccount(); // account.dat is SYSTEM-only (E4-6); in tests the test account too
         Directory.CreateDirectory(_dir);
         _clock = new FakeEntitlementClock(_time.Now.ToUnixTimeSeconds());
         _key = new TestKey(_ecdsa);
@@ -687,9 +688,12 @@ public sealed class AccountAgentTests
             pcId = host.PcId;
             var account = host.Services.Account;
             Assert.NotNull(account);
-            Assert.Contains("login.start", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            // E4-6 (S2): login.status for everyone on the session pipe; login.start and unlink only via the admin pipe.
             Assert.Contains("login.status", Nexus.Core.Session.SessionOps.AllowedFromTray);
-            Assert.Contains("unlink", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            Assert.DoesNotContain("login.start", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            Assert.DoesNotContain("unlink", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            Assert.Equal("admin.required", Nexus.Core.Session.SessionOps.SessionRefusal("login.start"));
+            Assert.Equal("admin.required", Nexus.Core.Session.SessionOps.SessionRefusal("unlink"));
             fake.PendingPolls = 0;
             var admin = new AdminService(host.Services);
             var start = await admin.HandleAsync(new JsonObject { ["op"] = "login.start" }, new AdminConnectionState(), CancellationToken.None);

@@ -93,6 +93,15 @@
   <data name="ProblemFailed" xml:space="preserve">
     <value>Не удалось войти. Попробуйте снова.</value>
   </data>
+  <data name="ProblemAdminRequired" xml:space="preserve">
+    <value>Войти или отвязать этот ПК может только администратор Windows.</value>
+  </data>
+  <data name="ProblemAdminDeclined" xml:space="preserve">
+    <value>Отменено: для входа и отвязки нужны права администратора. Нажмите кнопку ещё раз и разрешите запрос Windows.</value>
+  </data>
+  <data name="AccountAdminNote" xml:space="preserve">
+    <value>Windows запросит разрешение администратора.</value>
+  </data>
   <data name="NoticeResuming" xml:space="preserve">
     <value>Вход не завершён — завершаем.</value>
   </data>

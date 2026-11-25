@@ -3,7 +3,19 @@ namespace Nexus.Tray;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static int Main(string[] args)
+    {
+        // E4-6: the elevated helper for "Sign in" / "Unlink" (started by the tray through UAC). It only sends one
+        // request on the admin pipe and exits with a code: no tray icon, no window, never launches anything.
+        if (Nexus.Core.Account.ElevatedAccountCommand.Parse(args) is { } accountOp)
+        {
+            return ElevatedAccountProcess.RunElevated(accountOp);
+        }
+        RunTray();
+        return 0;
+    }
+
+    private static void RunTray()
     {
         // One tray per Windows session.
         using var single = new Mutex(initiallyOwned: true, @"Local\NexusPC.Tray", out var isFirst);

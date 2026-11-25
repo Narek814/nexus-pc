@@ -93,6 +93,15 @@
   <data name="ProblemFailed" xml:space="preserve">
     <value>Sign-in failed. Try again.</value>
   </data>
+  <data name="ProblemAdminRequired" xml:space="preserve">
+    <value>Only a Windows administrator can sign this PC in or unlink it.</value>
+  </data>
+  <data name="ProblemAdminDeclined" xml:space="preserve">
+    <value>Cancelled: signing in and unlinking need administrator rights. Press the button again and allow the Windows prompt.</value>
+  </data>
+  <data name="AccountAdminNote" xml:space="preserve">
+    <value>Windows will ask for administrator permission.</value>
+  </data>
   <data name="NoticeResuming" xml:space="preserve">
     <value>Sign-in was not finished — finishing it now.</value>
   </data>

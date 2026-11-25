@@ -34,6 +34,35 @@ public static class SessionOps
     public static readonly IReadOnlySet<string> AllowedFromTray = new HashSet<string>(StringComparer.Ordinal)
     {
         Status, PairStart, PairWait, PairDecide, PairCancel, DevicesList, DevicesRevoke,
-        LoginStart, LoginStatus, Unlink,
+        LoginStatus,
     };
+
+    /// <summary>
+    /// E4-6 (S2): linking this PC to an account and unlinking it are for Windows administrators only. They are
+    /// accepted only on the admin pipe, and there only from a client whose own token is an elevated administrator
+    /// (or SYSTEM); the session pipe answers <see cref="AdminRequired"/>.
+    /// </summary>
+    public static readonly IReadOnlySet<string> AdministratorOnly = new HashSet<string>(StringComparer.Ordinal)
+    {
+        LoginStart, Unlink,
+    };
+
+    /// <summary>Error code for an <see cref="AdministratorOnly"/> operation from a client that is not an elevated administrator.</summary>
+    public const string AdminRequired = "admin.required";
+
+    /// <summary>How the session pipe answers <paramref name="op"/> before running it: null to run, otherwise the error code.</summary>
+    public static string? SessionRefusal(string op) =>
+        AllowedFromTray.Contains(op) ? null
+        : AdministratorOnly.Contains(op) ? AdminRequired
+        : Protocol.ErrorCodes.PermissionDenied;
+
+    /// <summary>
+    /// The admin pipe's gate: an <see cref="AdministratorOnly"/> operation runs only when the client's token was found
+    /// to be an elevated administrator or SYSTEM. <paramref name="clientIsAdministrator"/> is asked only for those.
+    /// </summary>
+    public static string? AdminPipeRefusal(string? op, Func<bool> clientIsAdministrator)
+    {
+        ArgumentNullException.ThrowIfNull(clientIsAdministrator);
+        return op is not null && AdministratorOnly.Contains(op) && !clientIsAdministrator() ? AdminRequired : null;
+    }
 }

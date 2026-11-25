@@ -136,12 +136,24 @@ public static class DataDirectoryPolicy
     public static bool IsEntitlementFile(string relativePath, DataObjectKind kind) =>
         kind == DataObjectKind.File && string.Equals(relativePath, EntitlementFileName, PathComparison);
 
-    /// <summary>Access repair puts on one object: the root protected, entitlement.json SYSTEM only, everything else inherited.</summary>
+    /// <summary>The sealed refresh token (top level of the data folder); the same name as Nexus.Agent's RefreshTokenStore.</summary>
+    public const string AccountFileName = "account.dat";
+
+    /// <summary>The temp file RefreshTokenStore writes before the atomic replace.</summary>
+    public const string AccountTempFileName = AccountFileName + ".tmp";
+
+    /// <summary>Files with their own protected SYSTEM-only DACL: entitlement.json, account.dat and its temp file.</summary>
+    public static bool IsSystemOnlyFile(string relativePath, DataObjectKind kind) =>
+        IsEntitlementFile(relativePath, kind)
+        || (kind == DataObjectKind.File && (string.Equals(relativePath, AccountFileName, PathComparison)
+            || string.Equals(relativePath, AccountTempFileName, PathComparison)));
+
+    /// <summary>Access repair puts on one object: the root protected, entitlement.json and account.dat SYSTEM only, everything else inherited.</summary>
     public static DataSecurity RepairSecurityFor(string relativePath, DataObjectKind kind)
     {
         ArgumentNullException.ThrowIfNull(relativePath);
         return relativePath.Length == 0 ? new DataSecurity.ProtectedRoot()
-            : IsEntitlementFile(relativePath, kind) ? new DataSecurity.SystemOnlyFile()
+            : IsSystemOnlyFile(relativePath, kind) ? new DataSecurity.SystemOnlyFile()
             : new DataSecurity.InheritedFromRoot(kind == DataObjectKind.Directory);
     }
 

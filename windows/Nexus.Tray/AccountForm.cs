@@ -5,8 +5,9 @@ namespace Nexus.Tray;
 
 /// <summary>
 /// Sign-in of this PC to an account (E4-5), on the UI thread. Logic is in <see cref="AccountLoginModel"/>; this class
-/// only calls login.start / login.status / unlink and polls while a code is shown (also with the window closed, while
-/// the tray runs; no extra background process). The userCode is never written to the log.
+/// only polls login.status while a code is shown (also with the window closed, while the tray runs; no extra background
+/// process). login.start and unlink run in an elevated helper started through UAC (E4-6, <see cref="ElevatedAccountProcess"/>).
+/// The userCode is never written to the log or put on a command line.
 /// </summary>
 internal sealed class AccountController : IDisposable
 {
@@ -86,28 +87,35 @@ internal sealed class AccountController : IDisposable
             Model.BeginStart(); // shows "Getting a code…" at once, even while an earlier call is still running
             Changed?.Invoke(this, EventArgs.Empty);
         }
-        return Enqueue(async () =>
-        {
-            var reply = await _agent.CallAsync(SessionOps.LoginStart, timeout: TimeSpan.FromSeconds(30)).ConfigureAwait(true);
-            if (_disposed)
-            {
-                return;
-            }
-            Model.OnStartReply(reply);
-            Update();
-        });
+        return Enqueue(() => RunElevatedAsync(SessionOps.LoginStart));
     }
 
-    public Task UnlinkAsync() => Enqueue(async () =>
+    public Task UnlinkAsync() => Enqueue(() => RunElevatedAsync(SessionOps.Unlink));
+
+    /// <summary>
+    /// E4-6: login.start and unlink are for administrators only, so they run in an elevated Nexus.Tray.exe (UAC)
+    /// that talks to the admin pipe; this tray then reads the outcome (and the code) with login.status.
+    /// </summary>
+    private async Task RunElevatedAsync(string op)
     {
-        var reply = await _agent.CallAsync(SessionOps.Unlink, timeout: TimeSpan.FromSeconds(30)).ConfigureAwait(true);
+        var exitCode = await ElevatedAccountProcess.RunAsync(op).ConfigureAwait(true);
         if (_disposed)
         {
             return;
         }
-        Model.OnUnlinkReply(reply);
+        if (!Model.OnElevatedExit(op, exitCode))
+        {
+            Update();
+            return;
+        }
+        var reply = await _agent.CallAsync(SessionOps.LoginStatus, timeout: TimeSpan.FromSeconds(30)).ConfigureAwait(true);
+        if (_disposed)
+        {
+            return;
+        }
+        Show(Model.OnStatusReply(reply));
         Update();
-    });
+    }
 
     public void Cancel()
     {
@@ -267,7 +275,8 @@ internal sealed class AccountForm : Form
                 break;
             case AccountPhase.SignedIn:
                 _text.Text = TrayText.AccountLinked;
-                _detail.Text = TrayText.AccountPlan.Replace("{0}", TrayText.Plan(model.Plan), StringComparison.Ordinal);
+                _detail.Text = TrayText.AccountPlan.Replace("{0}", TrayText.Plan(model.Plan), StringComparison.Ordinal)
+                    + Environment.NewLine + TrayText.AccountAdminNote;
                 _primary.Text = TrayText.AccountUnlink;
                 break;
             case AccountPhase.Unavailable:
@@ -276,6 +285,7 @@ internal sealed class AccountForm : Form
                 break;
             default:
                 _text.Text = TrayText.AccountSignedOut;
+                _detail.Text = TrayText.AccountAdminNote;
                 _primary.Text = TrayText.AccountSignIn;
                 break;
         }
