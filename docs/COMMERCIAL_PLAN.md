@@ -59,7 +59,7 @@
   - Free с лимитом, Pro без лимита: `files.*` (`plan.limit`);
   - Pro: `profiles.*`, `rgb.apply` и `rgb.profiles.*`, `automations.*` кроме `list`, `metrics.history` 1 ч и 24 ч;
   - уточнить: `screen.video`, `clipboard.*`, `history.list`, таймер выключения (`delaySeconds`).
-- **Этапы:** E0 решения → E1 протокол → E2 проверка прав в агенте → E3 сервер → E4 вход на ПК → E5 дизайн → E6 iOS → E7 платежи → E8 сайт → E9 релиз.
+- **Этапы:** E0 решения → E1 протокол → E2 проверка прав в агенте → E3 сервер → E4 вход на ПК → E5 дизайн (E5 завершён 2026-11-25: docs/design/**) → E6 iOS → E7 платежи → E8 сайт → E9 релиз.
 
 ### OPEN — решения не приняты
 
