@@ -1,4 +1,4 @@
-# План после E5 (итог E5-5, code-architect) — ждёт утверждения владельца
+# План после E5 (итог E5-5, code-architect) — УТВЕРЖДЁН владельцем 2026-11-25
 
 E5 завершён: E5-0 (21dfec8, QA ПРИНЯТО, аудит без замечаний), E5-1…E5-4 + E5-3a (docs/design/**, QA ПРИНЯТО). Все экраны реализуемы на протоколе v1 + аддитивные поля E1; блокирующих изменений протокола нет.
 Проверено главной сессией: агент отвечает `confirm.required` (windows/Nexus.Core/Protocol/ErrorCodes.cs:16) → `auth.confirmationRequired` в docs/API.md:364 — опечатка, правится в W-ACC (п.5).
@@ -93,7 +93,10 @@ E5 завершён: E5-0 (21dfec8, QA ПРИНЯТО, аудит без зам�
 Зависит от: W-TRAY; решение владельца по LICENSE; {THIRD_PARTY_SOURCES_URL}
 ```
 
-## НУЖНО РЕШЕНИЕ (рекомендации)
+## Решения владельца (2026-11-25): все 8 пунктов утверждены по рекомендациям
+Блоки «Задание» для п.1, 3, 4 (протокол/backend) — у code-architect, затем показать владельцу.
+
+## Бывшее НУЖНО РЕШЕНИЕ (рекомендации — приняты)
 1. Коды причин: аддитивные `unavailableCodes` в metrics.snapshot и `reasonCode` в rgb.status — рекомендация: да, отдельной задачей в E6.
 2. Матрица Free/Pro: `screen.video` → Pro (новый feature), clipboard.*, history.list, delaySeconds → Free.
 3. Поле `rebind` в ответе pc-login-describe — рекомендация: да, после вердикта security-auditor; иначе условный текст.
