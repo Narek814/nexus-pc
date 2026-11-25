@@ -78,7 +78,7 @@ A1 ─ «Создать аккаунт» → форма → A2 (ждём пис�
 | почта уже занята (регистрация) | тот же нейтральный текст `account.error.signUpFailed` + ссылка «Войти» (не подтверждаем существование аккаунта) |
 | слабый пароль | `account.error.weakPassword` под полем пароля |
 | нет интернета | `ErrorCard` `onboarding.account.offline` (из `navigation.md`), кнопки выключены, «Повторить» |
-| `rate.limited` | `account.error.rateLimited` (`error-texts.md`, раздел 4) |
+| `rate.limited` | `error.rateLimited` (`error-texts.md`, раздел 4) |
 | Apple отменён пользователем | ничего не показываем (возврат на A1) |
 | Apple ошибка | `account.error.apple` |
 | email не подтверждён (вход) | переход на A2 |
@@ -202,7 +202,7 @@ A1 ─ «Создать аккаунт» → форма → A2 (ждём пис�
 |-------|-----|-----------|
 | шаг 0/1/2, запрос идёт | — | `NeonButton` в загрузке |
 | неверный, истёкший, чужой, уже использованный код | `code.invalid` | `ErrorCard` `account.error.codeInvalid` («Код неверный или истёк. Запросите новый на ПК.»), поле очищается, возврат на шаг 0. Истёк и неверный **не различаем** — сервер отвечает одинаково |
-| слишком много попыток | `rate.limited` | `account.error.rateLimited`, кнопка выключена до `retryAfter` |
+| слишком много попыток | `rate.limited` | `error.rateLimited`, кнопка выключена до `retryAfter` |
 | вход аккаунта истёк | `auth.required` | переход на A1, после входа — снова шаг 0 |
 | нет интернета | — | `account.offline`, «Повторить» |
 | у аккаунта максимум ПК | `pcs.limit` | возникает на ПК при завершении входа (после approve), iPhone его не получает и числа лимита не знает. Поэтому экран «Готово» **всегда** содержит строку `account.pcLogin.limitHint` (`type.caption`). На ПК — текст `account.error.pcsLimit` (E5-4). Код не тратится до конца срока: после удаления лишнего ПК вход завершится сам, если 5 минут не прошли |
@@ -275,7 +275,7 @@ A1 ─ «Создать аккаунт» → форма → A2 (ждём пис�
 - 2FA: если включена, после пароля запрашивается код (A4) — это часть повторного входа.
 - **Пользователь только с Sign in with Apple — ЖДЁТ РЕШЕНИЯ ВЛАДЕЛЬЦА** (COMMERCIAL_PLAN раздел 0, OPEN; рекомендация — принимать свежий вход Apple 300 с). Проект экрана на случай одобрения: шаг 2 = кнопка Sign in with Apple «Подтвердить через Apple» вместо пароля, затем сразу удаление. Пока решения нет, сервер такой вход не принимает (`reauth.required`), и такие пользователи не смогут удалить аккаунт в приложении — это блокер для App Review, его нельзя выпускать без решения. Тексты `account.delete.apple.*` подготовлены (раздел 4).
 - **Платная подписка (E7, текст-заглушка).** Если у аккаунта активная подписка: блок предупреждения на шаге 1. Для подписки из App Store — «Удаление аккаунта не отменяет подписку App Store. Отмените её в настройках Apple» + кнопка «Управление подписками» (системный лист `manageSubscriptionsSheet` / ссылка управления подписками Apple). Для подписки с сайта — «Подписка с сайта будет отменена при удалении аккаунта» (сервер отменяет у провайдера до удаления). Окончательные тексты — E7.
-- Ошибки: `rate.limited` → `account.error.rateLimited` (сервер — 3 попытки в час); `internal` → `account.delete.failed` «Не удалось удалить аккаунт. Ваши данные уже удаляются — повторите через минуту.» с «Повторить» (повтор безопасен); `auth.required` → A1; нет интернета → `account.offline`, кнопка выключена.
+- Ошибки: `rate.limited` → `error.rateLimited` (сервер — 3 попытки в час); `internal` → `account.delete.failed` «Не удалось удалить аккаунт. Ваши данные уже удаляются — повторите через минуту.» с «Повторить» (повтор безопасен); `auth.required` → A1; нет интернета → `account.offline`, кнопка выключена.
 - После успеха: локальный выход, очистка кэша аккаунта; сопряжения и ключ Secure Enclave не трогаем. VoiceOver-объявление «Аккаунт удалён».
 
 ### 2.11 A10 Nexus PC Pro (каркас)
@@ -435,9 +435,9 @@ A1 ─ «Создать аккаунт» → форма → A2 (ждём пис�
 | `account.delete.sub.manage` | Manage Subscriptions | Управление подписками | A9, A10 |
 | `account.delete.sub.web` | Your website subscription will be canceled when the account is deleted. | Подписка с сайта будет отменена при удалении аккаунта. | A9 (заглушка до E7) |
 | `pro.title` | Nexus PC Pro | Nexus PC Pro | A10 |
-| `pro.feature.files` | Extended file transfer | Расширенная передача файлов | A10 |
-| `pro.feature.rgb` | RGB Sync | RGB Sync | A10 |
-| `pro.feature.automations` | Automation Studio | Automation Studio | A10 |
+| `pro.feature.files.title` | Extended file transfer | Расширенная передача файлов | A10 |
+| `pro.feature.rgb.title` | RGB Sync | RGB Sync | A10 |
+| `pro.feature.automations.title` | Automation Studio | Automation Studio | A10 |
 | `pro.feature.monitoring` | Extended monitoring | Расширенный мониторинг | A10 |
 | `pro.plan.monthly` | Monthly | Месяц | A10 |
 | `pro.plan.yearly` | Yearly | Год | A10 |

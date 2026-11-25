@@ -147,7 +147,7 @@
 
 ### 6.2 RGB Lighting (`RgbView`)
 
-Во Free: список устройств из `rgb.status` + `ProCard` (`pro.feature.rgb`) над выключенными элементами. В Pro: цвет, яркость, эффект, профили подсветки. `available: false` — `ErrorCard` `error.rgb.unavailable` (или `rgb.busy` при `conflict`) с пояснением, что нужен OpenRGB на ПК. Пусто (OpenRGB запущен, устройств нет) — `rgb.empty.body`.
+Во Free: список устройств из `rgb.status` + `ProCard` (`pro.feature.rgb.body`) над выключенными элементами. В Pro: цвет, яркость, эффект, профили подсветки. `available: false` — `ErrorCard` `error.rgb.unavailable` (или `rgb.busy` при `conflict`) с пояснением, что нужен OpenRGB на ПК. Пусто (OpenRGB запущен, устройств нет) — `rgb.empty.body`.
 
 ### 6.3 Files (`FilesView`)
 
@@ -260,10 +260,10 @@
 | `automations.paused.body` | They're stopped, not deleted. Renew Pro to run them again. | Они остановлены, а не удалены. Продлите Pro, чтобы они снова работали. | `AutomationsPausedBanner` |
 | `history.empty.body` | Actions from iPhone and automation runs will appear here. | Здесь появятся действия с iPhone и запуски автоматизаций. | History |
 | `pro.feature.profiles` | Open several apps with one tap. | Запуск нескольких программ одним касанием. | `ProCard` |
-| `pro.feature.rgb` | Control lighting from iPhone. | Управление подсветкой с iPhone. | `ProCard` |
-| `pro.feature.automations` | Let the PC do things on schedule. | ПК сам выполняет действия по расписанию. | `ProCard` |
+| `pro.feature.rgb.body` | Control lighting from iPhone. | Управление подсветкой с iPhone. | `ProCard` |
+| `pro.feature.automations.body` | Let the PC do things on schedule. | ПК сам выполняет действия по расписанию. | `ProCard` |
 | `pro.feature.monitoringExtended` | See up to 24 hours of history. | История показателей за сутки. | `ProCard` |
-| `pro.feature.files` | Transfer files without limits. | Передача файлов без ограничений. | `ProCard`, `LimitNotice` |
+| `pro.feature.files.body` | Transfer files without limits. | Передача файлов без ограничений. | `ProCard`, `LimitNotice` |
 | `pro.feature.screenVideo` | Smooth video of the PC screen. | Плавное видео экрана ПК. | вариант Б |
 | `pro.feature.clipboard` | Share the clipboard with the PC. | Общий буфер обмена с ПК. | вариант Б |
 | `pro.feature.history` | See what happened on the PC. | Что происходило на ПК. | вариант Б |

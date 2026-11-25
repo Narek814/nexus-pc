@@ -40,13 +40,17 @@
 
 | Код | Ключ | en | ru | Как |
 |-----|------|----|----|-----|
-| `plan.required` | `pro.card.title` + `pro.feature.<feature>` | Available in Pro · (строка функции, `ios-screens.md` 3) | Доступно в Pro · (строка функции) | Pro |
+| `plan.required` | `pro.card.title` + `pro.feature.<feature>.body` | Available in Pro · (строка функции, `ios-screens.md` 3) | Доступно в Pro · (строка функции) | Pro |
 | `plan.required` при `details.state` = `expired` | `pro.expired.body` | Your Pro plan has ended. Renew it to use this again. | Тариф Pro закончился. Продлите его, чтобы снова пользоваться этим. | Pro |
 | `plan.required` при `details.state` = `revoked` | `pro.revoked.body` | Pro is no longer active for the owner of this PC. | Pro больше не действует для владельца этого ПК. | Pro |
 | `plan.limit` | `limit.title` + `limit.files.body` | Free Plan Limit Reached · You've reached the free limit for file transfer. Pro removes it. | Достигнут лимит бесплатного тарифа · Вы достигли бесплатного лимита передачи файлов. В Pro его нет. | Limit |
 | `plan.limit` с `details.limit` | `limit.files.bodyWithLimit` | The free plan allows {LIMIT}. Pro removes the limit. | В бесплатном тарифе доступно {LIMIT}. В Pro лимита нет. | Limit (только если число пришло от ПК; в тексты приложения числа не вписываются) |
 
-Права Pro — по аккаунту владельца ПК. Поэтому текст не говорит «ваш Pro», если подключившийся iPhone — не владелец: `pro.card.ownerHint` «Pro is checked for the account this PC is linked to.» / «Pro проверяется по аккаунту, к которому привязан этот ПК.»
+Права Pro — по аккаунту владельца ПК. Поэтому текст не говорит «ваш Pro», если подключившийся iPhone — не владелец — показывается `pro.card.ownerHint`:
+
+| Ключ | en | ru | Где |
+|------|----|----|-----|
+| `pro.card.ownerHint` | Pro is checked for the account this PC is linked to. | Pro проверяется по аккаунту, к которому привязан этот ПК. | `ProCard` и экран Pro (A10) для не-владельца ПК |
 
 ### 3.3 Сопряжение
 
