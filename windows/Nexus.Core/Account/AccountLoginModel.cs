@@ -39,6 +39,8 @@ public enum AccountProblem
     AdminRequired,
     /// <summary>The person declined the Windows administrator prompt (UAC).</summary>
     AdminDeclined,
+    /// <summary>The elevated step could not be started (not a declined prompt, not a refusal of the service).</summary>
+    ElevationFailed,
 }
 
 /// <summary>Notice shown once by the tray (balloon) after a login.status answer.</summary>
@@ -80,6 +82,18 @@ public sealed class AccountLoginModel(ILoginMarker marker, TimeProvider? time = 
     public string? EntitlementState { get; private set; }
 
     public bool ShouldPoll => Phase == AccountPhase.Pending;
+
+    /// <summary>True while the Account window is open; login.status is polled only then.</summary>
+    public bool WindowOpen { get; private set; }
+
+    /// <summary>The periodic login.status poll runs only with a code shown and the Account window open.</summary>
+    public bool ShouldPollNow => WindowOpen && ShouldPoll;
+
+    /// <summary>The Account window opened: the tray asks login.status once at once, then polls while a code is shown.</summary>
+    public void OnWindowOpened() => WindowOpen = true;
+
+    /// <summary>The Account window closed: polling stops.</summary>
+    public void OnWindowClosed() => WindowOpen = false;
 
     /// <summary>"ABCD-EFGH": two groups of 4.</summary>
     public string? UserCodeDisplay => FormatUserCode(UserCode);
@@ -212,7 +226,7 @@ public sealed class AccountLoginModel(ILoginMarker marker, TimeProvider? time = 
 
     /// <summary>
     /// The elevated Nexus.Tray.exe for <paramref name="op"/> (login.start or unlink) ended. <paramref name="exitCode"/>
-    /// null: the administrator prompt was declined (other start errors arrive as "failed"). Returns true when the tray should ask
+    /// null: the administrator prompt was declined (other start errors arrive as "elevation"). Returns true when the tray should ask
     /// login.status next (the code, the plan and "linked" come from there). A started sign-in writes the marker here,
     /// in the normal tray's settings, so a later tray start can resume it; the marker holds only the time.
     /// </summary>
@@ -280,6 +294,7 @@ public sealed class AccountLoginModel(ILoginMarker marker, TimeProvider? time = 
         "code.invalid" or "expired" => AccountProblem.Expired,
         "session.unavailable" or "session.timeout" => AccountProblem.ServiceUnavailable,
         SessionOps.AdminRequired => AccountProblem.AdminRequired,
+        ElevatedAccountCommand.ElevationError => AccountProblem.ElevationFailed,
         _ => AccountProblem.Failed,
     };
 

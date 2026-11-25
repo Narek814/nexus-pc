@@ -20,12 +20,16 @@ public static class ElevatedAccountCommand
     private static readonly string[] Errors =
     [
         "failed", SessionOps.AdminRequired, "session.unavailable", "disabled", "keyUnavailable", "rate.limited", "pcs.limit", "transient",
+        ElevationError,
     ];
+
+    /// <summary>The elevated step itself could not start (not an answer of the service): shown as "could not start the administrator step".</summary>
+    public const string ElevationError = "elevation";
 
     /// <summary>ERROR_CANCELLED: the person declined the administrator prompt.</summary>
     public const int UacCancelled = 1223;
 
-    /// <summary>True only for a declined administrator prompt ("Cancelled"); any other Win32 error is "failed".</summary>
+    /// <summary>True only for a declined administrator prompt ("Cancelled"); any other Win32 error is "elevation".</summary>
     public static bool IsUacDeclined(int nativeError) => nativeError == UacCancelled;
 
     /// <summary>The one argument for <paramref name="op"/> (login.start or unlink); anything else is refused.</summary>

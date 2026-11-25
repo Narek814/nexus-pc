@@ -107,7 +107,7 @@ E5 завершён: E5-0 (21dfec8, QA ПРИНЯТО, аудит без зам�
 8. Повторный вход Apple при удалении аккаунта — принимать (свежесть 300 с).
 Не проверено архитектором: отдаёт ли RLS my_pcs поле pc_id в iOS; строгость декодера NexusKit (тест в E6-SCREENS).
 
-## Задания по протоколу/backend (code-architect, 2026-11-25) — ждут утверждения владельца
+## Задания по протоколу/backend (code-architect, 2026-11-25) — УТВЕРЖДЕНЫ владельцем: feature id screen.video; 11 кодов как есть; W-PROTO одним заданием; ENT-2 не включать до iOS с fallback JPEG при plan.required (ограничение для release-manager)
 Новый порядок: W-ACC → QA → security-auditor → W-TRAY → QA → W-PROTO → QA → BE-1 → QA → E6-DS → … → E6-ACC-1 → QA → SEC-REBIND (анализ) → BE-2 → QA → E6-ACC-2 → …
 - W-PROTO (windows-developer): unavailableCodes в metrics.snapshot (11 кодов: sensorDriverMissing, sensorReadFailed, sensorMissing, warmingUp, osQueryFailed, gpuDriverMissing, gpuLibraryRejected, gpuLibraryLoadFailed, gpuInitFailed, gpuListFailed, platformUnsupported), reasonCode в rgb.status (openrgbNotResponding, conflict); PlanPolicy: feature screen.video (Pro), screen.frame Free; docs/API.md, фикстуры.
 - BE-1 (backend-developer): pcs.limit в pc_login_approve (новая миграция, та же блокировка, свой ПК не считается, code.invalid без различий); screen.video в правах Pro.

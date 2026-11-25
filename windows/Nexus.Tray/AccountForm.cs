@@ -5,8 +5,8 @@ namespace Nexus.Tray;
 
 /// <summary>
 /// Sign-in of this PC to an account (E4-5), on the UI thread. Logic is in <see cref="AccountLoginModel"/>; this class
-/// only polls login.status while a code is shown (also with the window closed, while the tray runs; no extra background
-/// process). login.start and unlink run in an elevated helper started through UAC (E4-6, <see cref="ElevatedAccountProcess"/>).
+/// polls login.status only while the Account window is open and a code is shown: polling starts when the window opens
+/// (with one login.status at once) and stops when it closes (no background task). login.start and unlink run in an elevated helper started through UAC (E4-6, <see cref="ElevatedAccountProcess"/>).
 /// The userCode is never written to the log or put on a command line.
 /// </summary>
 internal sealed class AccountController : IDisposable
@@ -156,8 +156,30 @@ internal sealed class AccountController : IDisposable
         {
             return;
         }
-        _poll.Enabled = Model.ShouldPoll;
+        _poll.Enabled = Model.ShouldPollNow;
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The Account window was shown: one login.status at once; polling follows while a code is shown.</summary>
+    public Task WindowOpenedAsync()
+    {
+        if (_disposed)
+        {
+            return Task.CompletedTask;
+        }
+        Model.OnWindowOpened();
+        return CheckAsync(atStartup: false);
+    }
+
+    /// <summary>The Account window closed: no more login.status polls.</summary>
+    public void WindowClosed()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        Model.OnWindowClosed();
+        _poll.Enabled = false;
     }
 
     public void Dispose()
