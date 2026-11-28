@@ -115,3 +115,70 @@ E5 завершён: E5-0 (21dfec8, QA ПРИНЯТО, аудит без зам�
 - BE-2 (backend-developer): rebind в describe — только после вердикта.
 Полный текст блоков — в отчёте архитектора (запросить повторно при необходимости).
 Риски: старый iOS + Free получит plan.required на screen.video и не перейдёт на JPEG (ScreenView.swift:388) → не включать ключи ENT-2 до iOS с fallback; BE-1 развернуть до агента с W-PROTO.
+
+## E6-NAV разбит на два (владелец 2026-11-28, вариант A; блоки — code-architect)
+
+```
+ЗАДАНИЕ E6-NAV-1: RootTabView из 5 вкладок, перенос разделов из HomeView, PermissionCard вместо скрытия
+Исполнитель: ios-developer
+Файлы:
+- изменить: ios/NexusPC/App/NexusPCApp.swift; ios/NexusPC/Views/HomeView.swift; ios/NexusPC/Siri/Localizable.xcstrings; ios/NexusPC/Views/TouchpadView.swift (только вынести поле ввода текста в переиспользуемый View, поведение не менять)
+- новые: ios/NexusPC/Views/RootTabView.swift, ControlHomeView.swift, PCHomeView.swift, ProfilesView.swift, AppsView.swift, KeyboardView.swift, MoreView.swift, ThisPCView.swift
+- только использовать, не менять: ios/NexusPC/Views/DesignSystem/*.swift (Theme.Palette, DS.StatusPill, DS.PowerTile, NavRow, EmptyState.noPC, PermissionCard, PermissionName, OfflineCard, SectionHeader, Toast)
+Сделать:
+1. RootTabView: TabView из 5 вкладок в фиксированном порядке. Подписи — ключи tab.home, tab.control, tab.pc, tab.automations, tab.more. Символы: house.fill, hand.point.up.left.fill, desktopcomputer, gearshape.2.fill, ellipsis.circle.fill. Label всегда с текстом. У каждой вкладки свой NavigationStack. NexusPCApp показывает RootTabView вместо HomeView, .preferredColorScheme(.dark) сохранить.
+2. Единый PCController: `@State private var controller = PCController()` перенести из HomeView (HomeView.swift:6) в RootTabView и передать во все вкладки. В RootTabView перенести:
+   - `.task { refresh }` и refresh по scenePhase == .active;
+   - лист сопряжения `.sheet` с PairingFlowView и `.onOpenURL` с функцией handle(_:) (HomeView.swift:128-131, 376-406).
+   Ссылка `nexuspc://pair…` открывает лист поверх любой активной вкладки. Ссылки `nexuspc://action/lock`, `cancel`, `profile/<id>` работают как сейчас. Ссылка `action/shutdown` переключает на вкладку Home и показывает существующий confirmationDialog: выключения без подтверждения нет. Логику и состояние диалога питания можно оставить в HomeView и привязать через Binding или общее состояние, но они должны быть в одном месте. Плашку `controller.banner` показывать один раз на уровне RootTabView через DS-компонент Toast.
+3. Вкладка Home (HomeView, корень): заголовок — имя ПК (без «NEXUS PC / Command Center»). Затем statusCard с DS.StatusPill, powerGrid на DS.PowerTile с прежними confirmationDialog и pendingPower и «Отменить» таймера. Затем секция Profiles (SectionHeader section.profiles, превью до 3 шт., «Все» по common.seeAll → ProfilesView) и секция Apps (section.apps, превью → AppsView). ProfilesView и AppsView — полный список из кода profilesSection и appsSection. Удалить с Home все NavigationLink-переходы к разделам (HomeView.swift:34-89, monitoringLink, homeLink) и forgetButton. Локальные struct StatusPill, PowerTile и SectionTitle (HomeView.swift:424-480) заменить на DS-компоненты и удалить, если они больше нигде не используются (проверить grep).
+4. Вкладка Control (ControlHomeView): список NavRow → Screen (section.screen → ScreenView), Touchpad (section.touchpad → TouchpadView), Keyboard (section.keyboard → KeyboardView). KeyboardView собрать из существующего кода: поле ввода текста из TouchpadView и ScreenKeysRow (ScreenView.swift:196). Новых команд протокола не добавлять.
+5. Вкладка PC (PCHomeView): NavRow → PC Monitor (section.monitor → MonitoringView), RGB Lighting (section.rgb → RgbView), Files (section.files → FilesView; буфер обмена остаётся внутри Files).
+6. Вкладка Automations: корень — AutomationsView. History (section.history → HistoryView) — строка или сегмент в корне вкладки. Новый «+» не добавлять, если его ещё нет.
+7. Состояние каждого раздела — общий хелпер, например в RootTabView.swift, по порядку проверки:
+   а) `controller.pc == nil` → EmptyState.noPC, кнопка открывает лист сопряжения. Это показывают корни Home, Control, PC и Automations.
+   б) ПК сопряжён, но связи нет, а capabilities ещё не получены → OfflineCard или существующий статус. Не PermissionCard.
+   в) связь есть, но `!controller.can(cmd)` → PermissionCard(permission:, onCheckAgain: { await controller.refresh() }).
+   г) иначе — сам экран.
+   Строка NavRow не скрывается ни в одном состоянии; PermissionCard показывается внутри раздела. Соответствие команд и разрешений:
+   - screen.start → .screen;
+   - input.move → .input (Touchpad, Keyboard);
+   - files.list || clipboard.get → .files;
+   - metrics.snapshot → .monitoring;
+   - rgb.status → .rgb;
+   - automations.list → .automation;
+   - history.list → .automation;
+   - плитки питания: power.* → .power (сейчас плитки выключаются через enabled, это оставить).
+   Если для history.list в трее есть отдельное имя разрешения, взять его и указать в отчёте.
+8. Вкладка More (MoreView): только работающие строки. Строка «Этот ПК» (ThisPCView) показывается, только если `controller.pc != nil`, и переносит без изменений поведения из HomeView.forgetButton (HomeView.swift:311-345): отпечаток ключа `DeviceCrypto.grouped(controller.deviceKeyFingerprint)`, «Обновить адрес ПК по QR-коду» (открывает тот же лист сопряжения с pairingLink = nil), «Забыть ПК» (controller.forget(), с прежним подтверждением, если оно есть). Также строка «Подключить ПК», открывающая лист сопряжения, если ПК нет. В DEBUG — ничего нового. Строк Account, Settings, Help, Diagnostics и Developer НЕ добавлять, заглушек и «Скоро» не делать. В комментарии отметить, что ThisPCView временная: в E6-ACC она переедет в Account → My Devices.
+9. Локализация в ios/NexusPC/Siri/Localizable.xcstrings, EN основной, RU перевод, по таблице docs/design/navigation.md раздел 4:
+   - tab.home, tab.control, tab.pc, tab.automations, tab.more;
+   - section.screen, section.touchpad, section.keyboard, section.monitor, section.rgb, section.files, section.automations, section.history, section.apps, section.profiles.
+   Ключи section.account, section.devices, section.settings, section.help и section.diagnostics пока не добавлять. Для «Этот ПК» добавить ключи section.thisPC (This PC / Этот ПК) и pc.updateAddressByQR, pc.forget, pc.keyFingerprint с текстами из существующего кода (RU) и английским переводом. RU для tab.automations — «Автоматизации» (решение владельца: при обрезке на iPhone SE заменить на «Сценарии»; в отчёте указать, проверялось ли это).
+10. В новых и изменённых View не оставлять литералов Text("…") и Label("…") на русском: только ключи. Тексты внутри экранов, которые просто переносятся (ScreenView, RgbView и другие), не переписывать: это E6-SCREENS.
+Не трогать: NexusKit; протокол v1 и shared/**; PCController (кроме чтения; если без изменения PCController никак, указать в отчёте минимальную правку); PairingFlowView и QRScannerView (кроме точки вызова); внутреннюю логику ScreenView, TouchpadView (кроме выноса поля ввода), MonitoringView, RgbView, FilesView, AutomationsView и HistoryView; DesignSystem/*; виджеты NexusWidgets и Siri/PCIntents.swift; первый запуск и онбординг (E6-NAV-2); ProCard и матрицу Free/Pro (E6-SCREENS).
+Критерии приёмки:
+- 5 вкладок с подписями EN/RU; у каждой свой NavigationStack.
+- Все 11 разделов (Home, Apps, Profiles, Screen, Touchpad, Keyboard, PC Monitor, RGB, Files, Automations, History) достижимы не более чем за 2 касания от таб-бара.
+- `grep -n "if controller.can" ios/NexusPC/Views` не находит условий, скрывающих строки и разделы; can() используется только для выбора состояния (PermissionCard или экран) и для enabled плиток питания.
+- Без ПК корни Home, Control, PC и Automations показывают EmptyState.noPC; без связи — не PermissionCard.
+- `nexuspc://pair…` открывает лист с любой вкладки; action/lock, cancel и profile работают; action/shutdown всегда идёт через подтверждение.
+- На Home нет «Забыть ПК», отпечатка и «Обновить адрес по QR»; все три доступны в More → «Этот ПК» и работают как раньше.
+- В More нет Account, Settings, Help, Diagnostics и заглушек.
+- PCController создаётся ровно один раз (grep `PCController()` даёт одно место в Views/App).
+- Ключи tab.* и section.* из п.9 есть в xcstrings с EN и RU.
+- Новых зависимостей нет.
+- CI .github/workflows/ios.yml зелёный: NexusKit tests и xcodebuild Release.
+Тесты: локальной сборки Xcode нет — сборка проверяется только CI ios.yml (Release); отчёт должен ссылаться на прогон CI или прямо сказать, что CI ещё не запускался. UI-тестов в проекте нет, новых не добавлять. Если в NexusPC есть таргет модульных тестов, добавить тест хелпера состояния раздела: pc nil → noPC, нет capabilities → offline, нет команды → permission, есть → content; если таргета нет, вынести хелпер в чистую функцию и указать это в отчёте. Ручной чек-лист для QA — в «Передаче в QA».
+Зависит от: E6-DS (принято)
+```
+
+```
+ПЕРЕДАЧА В QA E6-NAV-1
+Что проверить:
+1. Статически: grep `PCController()` — одно место; grep `if controller.can` в ios/NexusPC/Views — нет скрывающих условий; в HomeView нет forgetButton, NavigationLink к разделам и локальных StatusPill, PowerTile и SectionTitle; .onOpenURL только в RootTabView; action/shutdown ведёт к confirmationDialog; в MoreView нет Account, Settings, Help, Diagnostics; ключи tab.* (5) и section.* (10 + thisPC) имеют en и ru; нет Text/Label с кириллицей в новых файлах; NexusKit, shared/**, DesignSystem/** и PCController не изменены.
+2. CI ios.yml: NexusKit tests и xcodebuild Release зелёные.
+3. Ручной чек-лист (у владельца): 5 вкладок, повторное касание к корню; без ПК — EmptyState; ПК офлайн — не PermissionCard; выключенное разрешение — PermissionCard внутри раздела, строка видна; «Проверить снова»; QR deep link с вкладок PC и More; More → «Этот ПК»; виджет «Заблокировать» и «Выключить» (с подтверждением); VoiceOver подписей вкладок; «Автоматизации» на iPhone SE.
+```
+
+E6-NAV-2 (после E6-NAV-1 и E5-3 iOS): первый запуск из 4 шагов (Intro → Account → Install → Pair), без «Пропустить», onboarding.account.why о Free без интернета, {DOWNLOAD_URL} = страница релизов GitHub одной константой, при сопряжённом ПК шаг 3 пропускается, «Подключу позже» → вкладки с EmptyState, истёкший вход не блокирует управление, достижимость реализованных экранов карты, ключи onboarding.*. Полный блок — повторно у code-architect при запуске.
