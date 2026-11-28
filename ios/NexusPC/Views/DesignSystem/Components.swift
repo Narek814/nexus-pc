@@ -17,6 +17,10 @@ extension DS {
         let state: StatusPillState
         @ScaledMetric(relativeTo: .caption) private var iconSize: CGFloat = 12
 
+        init(state: StatusPillState) {
+            self.state = state
+        }
+
         var body: some View {
             HStack(spacing: Theme.Space.xs) {
                 icon.frame(width: iconSize, height: iconSize)

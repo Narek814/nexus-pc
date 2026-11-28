@@ -196,6 +196,10 @@ struct PressableButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
         private var a11y = DesignAccessibility()
 
+        init(configuration: ButtonStyleConfiguration) {
+            self.configuration = configuration
+        }
+
         var body: some View {
             configuration.label
                 .scaleEffect(configuration.isPressed && !a11y.reduceMotion ? Theme.Size.pressedScale : 1)
