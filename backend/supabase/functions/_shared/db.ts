@@ -156,7 +156,8 @@ export function configOnce(env: EnvGet): () => Promise<Config | null> {
 
 export const ENT_TTL_SEC = 86400;
 export const ENT_GRACE_SEC = 604800;
-const PRO_FEATURES = new Set(["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"]);
+const PRO_FEATURES = new Set(["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited",
+  "screen.video"]);
 
 // Opaque subject, keyed and per PC (E7-3): not reversible to the user id and
 // not linkable between PCs of one user without ENT_SUB_KEY.

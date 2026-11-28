@@ -53,7 +53,7 @@
 | Условие | state | plan | features |
 |---------|-------|------|----------|
 | ПК не привязан | `unlinked` | `free` | `{}` |
-| есть подписка `active`/`canceled` с `current_period_end > now()` | `active` | `pro` | `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited` |
+| есть подписка `active`/`canceled` с `current_period_end > now()` | `active` | `pro` | `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`, `screen.video` (BE-1, миграция `20261128000011`) |
 | иначе, последняя подписка (по `updated_at`) `refunded`/`revoked` | `revoked` | `free` | `{}` |
 | иначе (нет подписки, срок прошёл, `expired`) | `active` | `free` | `{}` |
 
@@ -104,7 +104,7 @@ nexus-pc-login-v1|consume|{pcId}|{sha256hex(deviceCode)}|{nonceB64u}|{ts}
 | `rate_limit_hit(bucket, key, limit, window_sec) → boolean` | `service_role` (Edge: вход, коды, refresh) | `true`, если попытка в пределах лимита; счётчик растёт при каждом вызове |
 | `pc_login_start(pc_id, spki, name, device_code_hash, user_code_hash, signer_spki, nonce, ts) → text` | `service_role` | `ok` / `pc.key_required` / `request.stale` / `nonce.replay` / `rate.limited` (больше 5 принятых стартов за 10 мин на `pc_id` или уже 3 живых кода у `pc_id`) |
 | `pc_login_describe(user_code_hash) → (status, display_name, requested_at)` | `authenticated` | шаг 1: `ok` с именем ПК и временем запроса (без `pc_id` и ключей) / `code.invalid` / `rate.limited`; помечает код `described_by = auth.uid()` |
-| `pc_login_approve(user_code_hash) → text` | `authenticated` | шаг 2: `ok` / `code.invalid` / `rate.limited`; только если тот же пользователь сделал describe |
+| `pc_login_approve(user_code_hash) → text` | `authenticated` | шаг 2: `ok` / `code.invalid` / `rate.limited` / `pcs.limit`; только если тот же пользователь сделал describe. `pcs.limit` (BE-1) — у пользователя уже 20 ПК, кроме ПК этого кода (то же условие и та же advisory-блокировка по `user_id`, что у триггера `my_pcs_enforce_limit`); код не одобряется и остаётся живым. Лимит проверяется только для действительного кода, поэтому чужой и неизвестный код всегда дают `code.invalid`. Проверка в `pc_login_consume` остаётся (гонка approve → новый ПК → consume) |
 | `pc_login_consume(device_code_hash, refresh_hash, signer_spki, nonce, ts) → (status, pc_id, user_id, rebound)` | `service_role` | `ok` / `pending` / `slow_down` / `code.invalid` / `pcs.limit` / `pc.key_required` / `request.stale` / `nonce.replay`; при `ok` сохраняет `refresh_hash` как первый refresh новой семьи (E3-6); `refresh_hash` не 32 байта — исключение |
 | `pc_release(pc_id) → text` | `authenticated`, владелец | `ok` (удаляет `my_pcs` и каскадно `pc_keys`, вызывает `pc_revoke_refresh_tokens`, аннулирует живые коды ПК) / `pc.not_found` (и для чужого ПК) |
 | `cleanup()` | `service_role`; расписание pg_cron — в облаке, позже | удаляет просроченные и использованные коды, nonce старше 1 ч, окна `rate_limits` старше суток, просроченные refresh-токены ПК |

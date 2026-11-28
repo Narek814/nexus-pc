@@ -4,13 +4,14 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createHandler as startHandler } from "../../supabase/functions/pc-login-start/index.ts";
 import { createHandler as pollHandler } from "../../supabase/functions/pc-login-poll/index.ts";
+import { createHandler as approveHandler } from "../../supabase/functions/pc-login-approve/index.ts";
 import { readFileSync } from "node:fs";
 import { consumeString, pcIdFromSpki, sha256hex, startString } from "../../supabase/functions/_shared/pop.ts";
 import { b64uEncode } from "../../supabase/functions/_shared/entitlement.ts";
 import { deps, FakeDb, HASH_ARGS, hex, nonce, NOW, payload, PC, pcKey, post, sign, testEnv, USER_A, USER_B,
   verifyTokens, captureConsole, assertDefaultLog, randomSecret, secretBytes, type PcKey } from "./_helpers.ts";
 
-const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited"];
+const PRO = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited", "screen.video"];
 
 async function startBody(signer: PcKey, spkiB64u: string, over: Record<string, unknown> = {}, signedName?: string) {
   const n = nonce(), ts = NOW, name = (over.name as string) ?? "Gaming PC";
@@ -405,4 +406,31 @@ test("default logger (pc-login-start): console.* gets only fn/status/ms", async 
   assert.equal(res.status, 200);
   const o = await res.json();
   assertDefaultLog(out, "pc-login-start", 200, [o.deviceCode, o.userCode, k.spkiB64u, PC, USER_A]);
+});
+
+// ---- approve: 20-PC limit (BE-1) ----
+
+test("approve: pcs.limit from SQL -> 409 {error: pcs.limit}, same HTTP code as poll", async () => {
+  const auth = { authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMTExIn0.c2lnbmF0dXJl" };
+  const db = new FakeDb({ pc_login_approve: () => "pcs.limit" });
+  const res = await approveHandler(deps(db))(post({ userCode: "abcd2345" }, auth));
+  assert.equal(res.status, 409);
+  assert.equal(res.headers.get("retry-after"), null);
+  assert.equal(await res.text(), '{"error":"pcs.limit"}');
+  assert.deepEqual(db.names(), ["rate_limit_hit", "pc_login_approve"]);
+  const k = await pcKey();
+  const poll = await pollHandler(deps(pollDb({ key: k,
+    consume: () => [{ status: "pcs.limit", pc_id: null, user_id: null, rebound: false }] })))(post(await pollBody(k, DC)));
+  assert.equal(poll.status, res.status);
+});
+
+test("poll ok: Pro token carries screen.video, Free token does not (BE-1)", async () => {
+  const k = await pcKey();
+  for (const [user, has] of [[USER_A, true], [USER_B, false]] as const) {
+    const db = pollDb({ key: k, consume: () => [{ status: "ok", pc_id: PC, user_id: user, rebound: false }] });
+    const res = await pollHandler(deps(db))(post(await pollBody(k, DC)));
+    assert.equal(res.status, 200);
+    const p = payload((await res.json()).entitlement);
+    assert.equal((p.features as string[]).includes("screen.video"), has, user);
+  }
 });

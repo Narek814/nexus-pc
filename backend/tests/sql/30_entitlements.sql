@@ -51,7 +51,7 @@ grant insert on _results to authenticated, anon, service_role;
 set role service_role;
 do $$
 declare
-  pro text[] := array['profiles','rgb.sync','automations','monitoring.extended','files.unlimited'];
+  pro text[] := array['profiles','rgb.sync','automations','monitoring.extended','files.unlimited','screen.video'];
   r record;
   c record;
 begin

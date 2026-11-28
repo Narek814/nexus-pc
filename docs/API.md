@@ -290,7 +290,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 **`pc-login-describe`** — шаг 1. Тело `{userCode}` (регистр, пробелы и дефисы нормализует сервер). Ответ `{displayName, requestedAt}` (`requestedAt` — RFC 3339); `pcId` и ключей в ответе нет. Ошибки: `code.invalid` (неизвестный, просроченный, чужой, уже одобренный — неразличимы), `rate.limited`, `auth.required`, `bad.request`.
 
-**`pc-login-approve`** — шаг 2, после того как пользователь сверил имя ПК. Тело `{userCode}`. Ответ `{}`. Ошибки: `code.invalid` (в том числе без describe этим же пользователем), `rate.limited`, `auth.required`, `bad.request`. describe и approve делят лимит: 10 за 10 мин на аккаунт плюс лимит по IP.
+**`pc-login-approve`** — шаг 2, после того как пользователь сверил имя ПК. Тело `{userCode}`. Ответ `{}`. Ошибки: `code.invalid` (в том числе без describe этим же пользователем), `pcs.limit` (409: у аккаунта уже 20 ПК; код остаётся действительным до истечения; ПК, уже привязанный к этому аккаунту, не считается новым; для недействительного кода всегда `code.invalid`), `rate.limited`, `auth.required`, `bad.request`. describe и approve делят лимит: 10 за 10 мин на аккаунт плюс лимит по IP.
 
 **`pc-unlink`** — отпустить ПК: отзывает его refresh и живые коды; следующий вход ПК — первая привязка. Тело `{pcId}`. Ответ `{}`. Ошибки: `pc.not_found` (и для чужого ПК), `rate.limited`, `auth.required`, `bad.request`.
 
