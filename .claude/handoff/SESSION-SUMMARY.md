@@ -38,3 +38,4 @@
 - Windows CI на PR #10 (69a9767, включает W-TRAY/W-PROTO/BE-1) — всё зелёное.
 - Владелец: _shared/db.ts вне списка BE-1 ПРИНЯТ; два теста-пробела (approve‖insert, approve чужого ПК при 20) — в BE-2; E6-DS запущен.
 - E6-DS выполнен ios-developer; отклонения: Theme.Palette вместо Theme.Color, DS.StatusPill/DS.PowerTile (конфликт имён со старыми в экранах), ключи в ios/NexusPC/Siri/Localizable.xcstrings (Resources/ не существует), 4 доп. ключа (common.inProgress/unavailable/seeAll, status.a11y %@). Ждёт QA + CI ios.yml.
+- E6-DS ПРИНЯТО QA (96dd6c1; ios.yml и ci.yml зелёные; Release). Открыто для владельца: шаг Debug в ios.yml (рек.: release-manager отдельно); принять отклонения E6-DS (рек.: да). Дальше E6-NAV.
