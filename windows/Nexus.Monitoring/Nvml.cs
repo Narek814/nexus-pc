@@ -33,7 +33,10 @@ internal interface INativeLibraryLoader
 }
 
 /// <summary>The outcome of looking for NVML: a library handle, or the reason there is none.</summary>
-internal readonly record struct NvmlLoadResult(IntPtr Handle, string? LoadedPath, string? Problem);
+internal readonly record struct NvmlLoadResult(IntPtr Handle, string? LoadedPath, UnavailableReason? Reason)
+{
+    public string? Problem => Reason?.Text;
+}
 
 /// <summary>
 /// Where NVML (nvml.dll, installed with the NVIDIA driver) is loaded from: two absolute paths, in this order,
@@ -50,6 +53,10 @@ internal static class NvmlLocation
     public const string Missing = "Нет NVIDIA NVML (nvml.dll): видеокарта не NVIDIA или драйвер не установлен. AMD/Intel — позже.";
     public const string Rejected = "Библиотека NVIDIA (nvml.dll) лежит не на своём месте или подменена ссылкой; она не загружена ради безопасности.";
     public const string LoadFailed = "Библиотека NVIDIA (nvml.dll) есть, но не загрузилась: переустановите драйвер NVIDIA.";
+
+    public static readonly UnavailableReason MissingReason = new(UnavailableCodes.GpuDriverMissing, Missing);
+    public static readonly UnavailableReason RejectedReason = new(UnavailableCodes.GpuLibraryRejected, Rejected);
+    public static readonly UnavailableReason LoadFailedReason = new(UnavailableCodes.GpuLibraryLoadFailed, LoadFailed);
 
     /// <summary>
     /// 1. &lt;System&gt;\nvml.dll (current drivers); 2. &lt;Program Files&gt;\NVIDIA Corporation\NVSMI\nvml.dll (older drivers).
@@ -82,7 +89,7 @@ internal static class NvmlLocation
     {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(loader);
-        string? problem = null;
+        UnavailableReason? problem = null;
         foreach (var candidate in candidates)
         {
             if (!IsFullyQualified(candidate.Path) || !IsFullyQualified(candidate.Root))
@@ -98,16 +105,16 @@ internal static class NvmlLocation
                 || !string.Equals(final, candidate.Path, StringComparison.OrdinalIgnoreCase)
                 || !IsInside(final, candidate.Root))
             {
-                problem = Rejected;
+                problem = RejectedReason;
                 continue;
             }
             if (loader.TryLoad(candidate.Path, out var handle) && handle != IntPtr.Zero)
             {
                 return new NvmlLoadResult(handle, candidate.Path, null);
             }
-            problem = LoadFailed;
+            problem = LoadFailedReason;
         }
-        return new NvmlLoadResult(IntPtr.Zero, null, problem ?? Missing);
+        return new NvmlLoadResult(IntPtr.Zero, null, problem ?? MissingReason);
     }
 
     private static bool IsFullyQualified(string path) => !string.IsNullOrEmpty(path) && Path.IsPathFullyQualified(path);
@@ -132,7 +139,7 @@ internal sealed unsafe class NvmlReader : IDisposable
     private Api _api;
     private IntPtr _library;
     private bool? _initialized;
-    private string? _initProblem;
+    private UnavailableReason? _initProblem;
 
     public NvmlReader(INativeLibraryLoader loader, IReadOnlyList<NvmlCandidate> candidates)
     {
@@ -149,6 +156,14 @@ internal sealed unsafe class NvmlReader : IDisposable
 
     public IReadOnlyList<GpuMetrics> Read(out string? problem)
     {
+        var gpus = ReadWithReason(out var reason);
+        problem = reason?.Text;
+        return gpus;
+    }
+
+    /// <summary>The GPUs, or none with the reason (code and text).</summary>
+    public IReadOnlyList<GpuMetrics> ReadWithReason(out UnavailableReason? problem)
+    {
         if (!EnsureInitialized())
         {
             problem = _initProblem;
@@ -158,7 +173,7 @@ internal sealed unsafe class NvmlReader : IDisposable
         uint count;
         if (_api.GetCount(&count) != Success)
         {
-            problem = "NVML не вернул список видеокарт.";
+            problem = new UnavailableReason(UnavailableCodes.GpuListFailed, "NVML не вернул список видеокарт.");
             return [];
         }
         var gpus = new List<GpuMetrics>();
@@ -206,13 +221,13 @@ internal sealed unsafe class NvmlReader : IDisposable
         var loaded = NvmlLocation.Load(_candidates, _loader);
         if (loaded.Handle == IntPtr.Zero)
         {
-            _initProblem = loaded.Problem;
+            _initProblem = loaded.Reason;
             return false;
         }
         if (!TryBind(loaded.Handle, out _api))
         {
             _loader.Free(loaded.Handle);
-            _initProblem = "NVML недоступна.";
+            _initProblem = new UnavailableReason(UnavailableCodes.GpuInitFailed, "NVML недоступна.");
             return false;
         }
         var result = _api.Init();
@@ -220,7 +235,7 @@ internal sealed unsafe class NvmlReader : IDisposable
         {
             _api = default;
             _loader.Free(loaded.Handle);
-            _initProblem = $"NVML не запустилась (код {result}).";
+            _initProblem = new UnavailableReason(UnavailableCodes.GpuInitFailed, $"NVML не запустилась (код {result}).");
             return false;
         }
         _library = loaded.Handle;

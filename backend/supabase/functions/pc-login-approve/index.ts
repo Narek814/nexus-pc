@@ -19,7 +19,7 @@ export function createHandler(deps: Deps): (req: Request) => Promise<Response> {
     const status = await db.rpc("pc_login_approve",
       { p_user_code_hash: bytea(await hmac(cfg.codePepper, code)) }, { userJwt: jwt });
     if (status === "ok") return jsonResponse(200, {});
-    return sqlStatus(status, ["code.invalid", "rate.limited"], { "rate.limited": 600 });
+    return sqlStatus(status, ["code.invalid", "rate.limited", "pcs.limit"], { "rate.limited": 600 });
   }, deps.log);
 }
 

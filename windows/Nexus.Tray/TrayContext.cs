@@ -1,4 +1,3 @@
-using Microsoft.Win32;
 using Nexus.Core.Apps;
 
 namespace Nexus.Tray;
@@ -6,14 +5,13 @@ namespace Nexus.Tray;
 /// <summary>The tray icon and its menu. Everything else opens from here.</summary>
 internal sealed class TrayContext : ApplicationContext
 {
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValue = "NexusPC.Tray";
 
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _status;
-    private readonly ToolStripMenuItem _autostart;
+    private bool _untrusted;
     private readonly UserAppStore _store;
     private readonly AgentConnection _agent;
+    private readonly AccountController _account;
     private readonly SynchronizationContext _ui;
     private readonly string? _sharedFolder;
     private readonly ToolStripMenuItem _stopScreen;
@@ -43,7 +41,8 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            TrayLog.Write(Path.Combine(dataDir, "tray.log"), "File sharing is off: " + ex.Message);
+            // Only the exception type and HResult: the message may carry a path or user name (W-TRAY 7).
+            TrayLog.Write(TrayLog.DefaultPath, "File sharing is off: " + TrayLog.Describe(ex));
         }
         _sharedFolder = files?.FolderPath;
 
@@ -53,8 +52,8 @@ internal sealed class TrayContext : ApplicationContext
         {
             var allowed = false;
             _ui.Send(_ => allowed = MessageBox.Show(
-                $"«{deviceName}» хочет видеть экран этого ПК.\n\nРазрешить? Ответ запомнится для этого устройства. Запретить показ потом можно в меню значка Nexus PC.",
-                "Nexus PC — показ экрана", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2,
+                TrayText.Format("ScreenAskBody", deviceName),
+                TrayText.Get("ScreenAskTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2,
                 MessageBoxOptions.DefaultDesktopOnly) == DialogResult.Yes, null);
             return allowed;
         };
@@ -70,24 +69,31 @@ internal sealed class TrayContext : ApplicationContext
         _lightingWatch.Start();
 
         var agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Agent", "Nexus.Agent.exe"));
-        _status = new ToolStripMenuItem("Нет связи со службой") { Enabled = false };
-        var logPath = Path.Combine(dataDir, "tray.log");
-        var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(logPath, message));
+        _status = new ToolStripMenuItem(TrayText.Get("TrayStatusConnecting")) { Enabled = false };
+        var agent = new AgentConnection(handler, agentPath, message => TrayLog.Write(TrayLog.DefaultPath, message));
         _agent = agent;
+        // E4-5: the sign-in attempt lives in the service's memory; the tray keeps only "started at T" (no codes).
+        _account = new AccountController(agent, new Nexus.Core.Account.LoginMarkerFile(Path.Combine(dataDir, "login-pending.json")));
+        _account.Notice += (_, text) => Notify(text);
         agent.ConnectedChanged += (_, connected) => _ui.Post(async _ =>
         {
             UpdateStatus(connected);
             await CheckLightingAsync(); // also reads the PC key state at once
+            if (connected)
+            {
+                await _account.CheckAsync(atStartup: true); // a sign-in left from before this tray start
+            }
         }, null);
+        // The reason is already in tray.log (AgentConnection logs it); the menu shows only a fixed text.
         agent.StatusChanged += (_, status) => _ui.Post(_ =>
         {
             if (!agent.IsConnected)
             {
-                _status.Text = status.Length > 90 ? status[..90] + "…" : status;
+                _untrusted = status.StartsWith(AgentConnection.UntrustedPrefix, StringComparison.Ordinal);
+                UpdateStatus(connected: false);
             }
         }, null);
 
-        _autostart = new ToolStripMenuItem("Запускать при входе в Windows", null, (_, _) => ToggleAutostart()) { Checked = IsAutostartEnabled() };
         var menu = new ContextMenuStrip();
         Theme.StyleMenu(menu);
         menu.Items.Add(_status);
@@ -96,43 +102,49 @@ internal sealed class TrayContext : ApplicationContext
         _keyRetry = new ToolStripMenuItem(TrayText.KeyRetry, null, (_, _) => RunAdminCommand(agentPath, "key retry")) { Visible = false };
         menu.Items.Add(_keyRetry);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Подключить iPhone…", null, (_, _) => Show(() => new PairingForm(_agent)));
-        menu.Items.Add("Приложения и профили…", null, (_, _) => Show(() => new AppsForm(_store)));
-        menu.Items.Add("Устройства и разрешения…", null, (_, _) => Show(() => new DevicesForm(_agent, agentPath)));
-        menu.Items.Add("Настроить подсветку (OpenRGB)…", null, (_, _) => OpenRgbWindow(agentPath));
-        var stopInput = new ToolStripMenuItem("Запретить управление мышью и клавиатурой с телефона");
+        // Order of docs/design/windows.md 2.1.
+        menu.Items.Add(TrayText.Get("MenuPair"), null, (_, _) => Show(() => new PairingForm(_agent)));
+        menu.Items.Add(TrayText.Get("MenuDevices"), null, (_, _) => ShowDevices(agentPath));
+        menu.Items.Add(TrayText.Get("MenuApps"), null, (_, _) => Show(() => new AppsForm(_store)));
+        menu.Items.Add(TrayText.Get("MenuLighting"), null, (_, _) => OpenRgbWindow(agentPath));
+        if (_sharedFolder is not null)
+        {
+            menu.Items.Add(TrayText.Get("MenuFiles"), null, (_, _) => OpenSharedFolder());
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        var stopInput = new ToolStripMenuItem(TrayText.Get("MenuStopInput"));
         stopInput.Click += (_, _) =>
         {
             handler.InputPaused = !handler.InputPaused;
             stopInput.Checked = handler.InputPaused;
         };
         menu.Items.Add(stopInput);
-        _stopScreen = new ToolStripMenuItem("Запретить показ экрана");
+        _stopScreen = new ToolStripMenuItem(TrayText.Get("MenuStopScreen"));
         _stopScreen.Click += (_, _) =>
         {
             handler.ScreenPaused = !handler.ScreenPaused;
             _stopScreen.Checked = handler.ScreenPaused;
         };
         menu.Items.Add(_stopScreen);
-        if (_sharedFolder is not null)
-        {
-            menu.Items.Add("Открыть папку файлов с телефона", null, (_, _) => OpenSharedFolder());
-        }
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_autostart);
-        menu.Items.Add("Выход", null, (_, _) => ExitThread());
+        menu.Items.Add(TrayText.AccountMenu, null, (_, _) => Show(() => new AccountForm(_account)));
+        menu.Items.Add(TrayText.Get("MenuSettings"), null, (_, _) => Show(() => new SettingsForm(ExitThread)));
+        menu.Items.Add(TrayText.Get("MenuExit"), null, (_, _) => ExitThread());
 
         _currentIcon = Theme.CreateIcon(connected: false);
         _icon = new NotifyIcon
         {
             Icon = _currentIcon,
-            Text = "Nexus PC — нет связи со службой",
+            Text = TrayText.Get("TrayTipConnecting"),
             ContextMenuStrip = menu,
             Visible = true,
         };
-        _icon.DoubleClick += (_, _) => Show(() => new AppsForm(_store));
+        // W-TRAY 5: the window for decisions about access (docs/design/windows.md 2.1).
+        _icon.DoubleClick += (_, _) => ShowDevices(agentPath);
         _agent.Start();
     }
+
+    private void ShowDevices(string agentPath) => Show(() => new DevicesForm(_agent, agentPath));
 
     private void UpdateStatus(bool connected)
     {
@@ -141,26 +153,47 @@ internal sealed class TrayContext : ApplicationContext
             _keyUnavailable = false;
             _keyRetry.Visible = false;
         }
-        _status.Text = _keyUnavailable ? TrayText.KeyUnavailable : connected ? "Служба подключена" : "Нет связи со службой";
-        _icon.Text = _keyUnavailable ? TrayText.KeyUnavailableTip : connected ? "Nexus PC — готов" : "Nexus PC — нет связи со службой";
+        else
+        {
+            _untrusted = false;
+        }
+        _status.Text = _keyUnavailable ? TrayText.KeyUnavailable
+            : connected ? TrayText.Get("TrayStatusReady")
+            : TrayText.Get(_untrusted ? "TrayStatusServiceUntrusted" : "TrayStatusServiceDown");
+        _icon.Text = _keyUnavailable ? TrayText.KeyUnavailableTip : IdleTip();
+        if (_screenViewer is not null)
+        {
+            ShowScreenSharing(_screenViewer, notify: false);
+        }
         var old = _currentIcon;
         _currentIcon = Theme.CreateIcon(connected);
         _icon.Icon = _currentIcon;
         old.Dispose();
     }
 
-    /// <summary>Visible notice whenever a phone did something on this PC.</summary>
+    private string IdleTip() => TrayText.Get(_agent.IsConnected ? "TrayTipReady" : "TrayTipServiceDown");
+
     /// <summary>Visible indicator while a phone sees the screen (SECURITY.md §6).</summary>
-    private void ShowScreenSharing(string? viewer)
+    private void ShowScreenSharing(string? viewer, bool notify = true)
     {
         _screenViewer = viewer;
-        if (viewer is not null)
+        if (viewer is not null && notify)
         {
-            Notify($"«{viewer}» видит экран этого ПК. Остановить: правой кнопкой по значку → «Запретить показ экрана».");
+            Notify(TrayText.Format("NoticeScreenViewer", viewer));
         }
-        _stopScreen.Text = viewer is null ? "Запретить показ экрана" : $"Запретить показ экрана (сейчас смотрит «{viewer}»)";
-        var text = viewer is null ? (_agent.IsConnected ? "Nexus PC — готов" : "Nexus PC — нет связи со службой") : $"Nexus PC — экран видит «{viewer}»";
-        _icon.Text = text.Length > 63 ? text[..63] : text;
+        _stopScreen.Text = viewer is null ? TrayText.Get("MenuStopScreen") : TrayText.Format("MenuStopScreenViewer", viewer);
+        _icon.Text = viewer is null ? (_keyUnavailable ? TrayText.KeyUnavailableTip : IdleTip()) : ScreenViewerTip(viewer);
+    }
+
+    /// <summary>NotifyIcon.Text allows 63 characters: the device name is cut so the whole tip fits.</summary>
+    private static string ScreenViewerTip(string viewer)
+    {
+        const int Limit = 63;
+        var empty = TrayText.Format("TrayTipScreenViewer", string.Empty);
+        var room = Math.Max(1, Limit - empty.Length);
+        var name = viewer.Length > room ? viewer[..Math.Max(0, room - 1)] + "…" : viewer;
+        var text = TrayText.Format("TrayTipScreenViewer", name);
+        return text.Length > Limit ? text[..Limit] : text;
     }
 
     private void OpenSharedFolder()
@@ -185,12 +218,6 @@ internal sealed class TrayContext : ApplicationContext
         _openForm.Show();
     }
 
-    private static bool IsAutostartEnabled()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-        return key?.GetValue(RunValue) is string;
-    }
-
     /// <summary>
     /// The OpenRGB window installed with Nexus PC (to set zone sizes, check devices). Needs administrator
     /// rights like OpenRGB itself, so it goes through the agent's admin command (Windows asks once).
@@ -199,14 +226,14 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (!File.Exists(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "OpenRGB", "OpenRGB.exe"))))
         {
-            Notify("OpenRGB не установлен вместе с Nexus PC. Запустите NexusPC-Setup.exe ещё раз.");
+            Notify(TrayText.Get("NoticeOpenRgbMissing"));
             return;
         }
         RunAdminCommand(agentPath, "openrgb");
     }
 
     /// <summary>An admin command of the installed agent, elevated (Windows asks); fixed arguments only.</summary>
-    private static void RunAdminCommand(string agentPath, string arguments)
+    private void RunAdminCommand(string agentPath, string arguments)
     {
         try
         {
@@ -217,24 +244,17 @@ internal sealed class TrayContext : ApplicationContext
                 WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
             });
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (System.ComponentModel.Win32Exception ex) when (Nexus.Core.Account.ElevatedAccountCommand.IsUacDeclined(ex.NativeErrorCode))
         {
-            // the person declined the administrator prompt
+            Notify(TrayText.Get("NoticeAdminDeclined")); // the person declined the administrator prompt
         }
-    }
-
-    private void ToggleAutostart()
-    {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (IsAutostartEnabled())
+        catch (System.ComponentModel.Win32Exception ex)
         {
-            key.DeleteValue(RunValue, throwOnMissingValue: false);
+            // Only the Win32 code: never the command's arguments (W-TRAY 4).
+            TrayLog.Write(TrayLog.DefaultPath, "Administrator command could not start: Win32 error "
+                + ex.NativeErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Notify(TrayText.Get("ProblemElevationFailed"));
         }
-        else
-        {
-            key.SetValue(RunValue, $"\"{Environment.ProcessPath}\"");
-        }
-        _autostart.Checked = IsAutostartEnabled();
     }
 
     private async Task CheckLightingAsync()
@@ -258,7 +278,7 @@ internal sealed class TrayContext : ApplicationContext
         var conflict = status.Ok && status.Result?["openRgb"]?.GetValue<string>() == "conflict";
         if (conflict && !_lightingConflictShown)
         {
-            Notify("Подсветку перехватила другая программа");
+            Notify(TrayText.Get("NoticeLightingConflict"));
         }
         _lightingConflictShown = conflict;
     }
@@ -270,6 +290,7 @@ internal sealed class TrayContext : ApplicationContext
         _icon.Visible = false;
         _icon.Dispose();
         _currentIcon.Dispose();
+        _account.Dispose();
         _agent.Dispose();
         base.ExitThreadCore();
     }
@@ -279,6 +300,14 @@ internal sealed class TrayContext : ApplicationContext
 internal static class TrayLog
 {
     private static readonly Lock Gate = new();
+
+    /// <summary>The one place of the tray log path: %LOCALAPPDATA%\NexusPC\tray.log.</summary>
+    public static string DefaultPath { get; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusPC", "tray.log");
+
+    /// <summary>What an exception may say in the log: its type and HResult, never its message (paths, names).</summary>
+    public static string Describe(Exception ex) =>
+        ex.GetType().Name + " 0x" + ex.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
 
     public static void Write(string path, string message)
     {

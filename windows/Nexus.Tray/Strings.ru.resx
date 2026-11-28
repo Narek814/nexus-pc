@@ -21,4 +21,494 @@
   <data name="KeyRetry" xml:space="preserve">
     <value>Повторить</value>
   </data>
+  <data name="AccountMenu" xml:space="preserve">
+    <value>Аккаунт…</value>
+  </data>
+  <data name="AccountTitle" xml:space="preserve">
+    <value>Nexus PC — аккаунт</value>
+  </data>
+  <data name="AccountHeading" xml:space="preserve">
+    <value>Аккаунт Nexus PC</value>
+  </data>
+  <data name="AccountChecking" xml:space="preserve">
+    <value>Проверяем…</value>
+  </data>
+  <data name="AccountSignedOut" xml:space="preserve">
+    <value>Этот ПК не привязан к аккаунту Nexus PC.</value>
+  </data>
+  <data name="AccountSignIn" xml:space="preserve">
+    <value>Войти</value>
+  </data>
+  <data name="AccountStarting" xml:space="preserve">
+    <value>Получаем код…</value>
+  </data>
+  <data name="AccountCodeHint" xml:space="preserve">
+    <value>В приложении Nexus PC на iPhone выберите добавление ПК в аккаунт и введите этот код:</value>
+  </data>
+  <data name="AccountExpiresIn" xml:space="preserve">
+    <value>Код действует ещё {0}. Ждём подтверждения на iPhone…</value>
+  </data>
+  <data name="AccountCancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="AccountClose" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="AccountLinked" xml:space="preserve">
+    <value>Этот ПК привязан к аккаунту Nexus PC, который подтвердил вход на iPhone. Почта аккаунта на ПК не хранится: её видно в приложении.</value>
+  </data>
+  <data name="AccountPlan" xml:space="preserve">
+    <value>План: {0}</value>
+  </data>
+  <data name="PlanFree" xml:space="preserve">
+    <value>Бесплатный</value>
+  </data>
+  <data name="PlanPro" xml:space="preserve">
+    <value>Pro</value>
+  </data>
+  <data name="AccountUnlink" xml:space="preserve">
+    <value>Отвязать</value>
+  </data>
+  <data name="AccountUnlinkConfirm" xml:space="preserve">
+    <value>Отвязать этот ПК от аккаунта? План на этом ПК станет бесплатным. Чтобы полностью убрать ПК из аккаунта, удалите его и в приложении на iPhone.</value>
+  </data>
+  <data name="ProblemRateLimited" xml:space="preserve">
+    <value>Слишком много попыток. Подождите минуту и попробуйте снова.</value>
+  </data>
+  <data name="ProblemPcsLimit" xml:space="preserve">
+    <value>В аккаунте уже максимальное число ПК. Удалите один в приложении на iPhone и попробуйте снова.</value>
+  </data>
+  <data name="ProblemNetwork" xml:space="preserve">
+    <value>Нет связи с сервером Nexus PC. Проверьте подключение к интернету и попробуйте снова.</value>
+  </data>
+  <data name="ProblemNotConfigured" xml:space="preserve">
+    <value>Вход в аккаунт недоступен в этой версии Nexus PC.</value>
+  </data>
+  <data name="ProblemServiceUnavailable" xml:space="preserve">
+    <value>Nexus PC не работает. Перезагрузите ПК и попробуйте снова.</value>
+  </data>
+  <data name="ProblemExpired" xml:space="preserve">
+    <value>Вход не завершён вовремя. Нажмите «Войти», чтобы получить новый код.</value>
+  </data>
+  <data name="ProblemFailed" xml:space="preserve">
+    <value>Не удалось войти. Попробуйте снова.</value>
+  </data>
+  <data name="ProblemAdminRequired" xml:space="preserve">
+    <value>Войти или отвязать этот ПК может только администратор Windows.</value>
+  </data>
+  <data name="ProblemAdminDeclined" xml:space="preserve">
+    <value>Отменено: для входа и отвязки нужны права администратора. Нажмите кнопку ещё раз и разрешите запрос Windows.</value>
+  </data>
+  <data name="ProblemElevationFailed" xml:space="preserve">
+    <value>Не удалось запустить шаг с правами администратора.</value>
+  </data>
+  <data name="AccountAdminNote" xml:space="preserve">
+    <value>Windows запросит разрешение администратора.</value>
+  </data>
+  <data name="NoticeResuming" xml:space="preserve">
+    <value>Вход не завершён — завершаем.</value>
+  </data>
+  <data name="NoticeSignedIn" xml:space="preserve">
+    <value>Этот ПК привязан к вашему аккаунту Nexus PC.</value>
+  </data>
+  <data name="NoticeRetry" xml:space="preserve">
+    <value>Вход не завершён. Откройте «Аккаунт» в меню Nexus PC и войдите снова.</value>
+  </data>
+  <data name="TrayStatusReady" xml:space="preserve">
+    <value>Nexus PC готов</value>
+  </data>
+  <data name="TrayStatusConnecting" xml:space="preserve">
+    <value>Запуск Nexus PC…</value>
+  </data>
+  <data name="TrayStatusServiceDown" xml:space="preserve">
+    <value>Nexus PC не работает. Перезагрузите ПК; если повторится — переустановите Nexus PC.</value>
+  </data>
+  <data name="TrayStatusServiceUntrusted" xml:space="preserve">
+    <value>Nexus PC повреждён. Переустановите его.</value>
+  </data>
+  <data name="TrayTipReady" xml:space="preserve">
+    <value>Nexus PC — готов</value>
+  </data>
+  <data name="TrayTipConnecting" xml:space="preserve">
+    <value>Nexus PC — запуск…</value>
+  </data>
+  <data name="TrayTipServiceDown" xml:space="preserve">
+    <value>Nexus PC — не работает</value>
+  </data>
+  <data name="TrayTipScreenViewer" xml:space="preserve">
+    <value>Nexus PC — экран видит «{0}»</value>
+  </data>
+  <data name="MenuPair" xml:space="preserve">
+    <value>Подключить iPhone…</value>
+  </data>
+  <data name="MenuDevices" xml:space="preserve">
+    <value>Устройства и разрешения…</value>
+  </data>
+  <data name="MenuApps" xml:space="preserve">
+    <value>Программы и профили…</value>
+  </data>
+  <data name="MenuLighting" xml:space="preserve">
+    <value>Подсветка (OpenRGB)…</value>
+  </data>
+  <data name="MenuFiles" xml:space="preserve">
+    <value>Открыть папку файлов с iPhone</value>
+  </data>
+  <data name="MenuStopInput" xml:space="preserve">
+    <value>Запретить управление мышью и клавиатурой</value>
+  </data>
+  <data name="MenuStopScreen" xml:space="preserve">
+    <value>Запретить показ экрана</value>
+  </data>
+  <data name="MenuStopScreenViewer" xml:space="preserve">
+    <value>Запретить показ экрана (сейчас смотрит «{0}»)</value>
+  </data>
+  <data name="MenuSettings" xml:space="preserve">
+    <value>Настройки…</value>
+  </data>
+  <data name="MenuExit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="NoticeScreenViewer" xml:space="preserve">
+    <value>«{0}» видит экран этого ПК. Остановить: правой кнопкой по значку N → «Запретить показ экрана».</value>
+  </data>
+  <data name="NoticeOpenRgbMissing" xml:space="preserve">
+    <value>OpenRGB не установлен вместе с Nexus PC. Запустите установщик Nexus PC ещё раз.</value>
+  </data>
+  <data name="NoticeLightingConflict" xml:space="preserve">
+    <value>Подсветкой управляет другая программа на ПК.</value>
+  </data>
+  <data name="NoticeAdminDeclined" xml:space="preserve">
+    <value>Отменено: для этого нужно разрешение администратора.</value>
+  </data>
+  <data name="ScreenAskTitle" xml:space="preserve">
+    <value>Nexus PC — показ экрана</value>
+  </data>
+  <data name="ScreenAskBody" xml:space="preserve">
+    <value>«{0}» хочет видеть экран этого ПК.
+
+Разрешить? Ответ запомнится для этого устройства. Запретить показ потом можно в меню значка N.</value>
+  </data>
+  <data name="ElevatedTrayTitle" xml:space="preserve">
+    <value>Nexus PC</value>
+  </data>
+  <data name="ElevatedTrayBody" xml:space="preserve">
+    <value>Nexus PC запущен с правами администратора. Тогда программы, запущенные с iPhone, тоже получили бы эти права.
+
+Запустите его обычным способом — из меню «Пуск» или Проводника, без «Запуск от имени администратора».</value>
+  </data>
+  <data name="DevicesTitle" xml:space="preserve">
+    <value>Nexus PC — устройства и разрешения</value>
+  </data>
+  <data name="DevicesHeading" xml:space="preserve">
+    <value>Подключённые устройства</value>
+  </data>
+  <data name="DevicesHint" xml:space="preserve">
+    <value>Отметьте, что этому устройству можно делать.</value>
+  </data>
+  <data name="PermPower" xml:space="preserve">
+    <value>Питание — выключение, сон, блокировка</value>
+  </data>
+  <data name="PermApps" xml:space="preserve">
+    <value>Программы — запуск и профили</value>
+  </data>
+  <data name="PermMonitoring" xml:space="preserve">
+    <value>Мониторинг — показатели и история</value>
+  </data>
+  <data name="PermRgb" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="PermInput" xml:space="preserve">
+    <value>Мышь и клавиатура — полный контроль ПК</value>
+  </data>
+  <data name="PermScreen" xml:space="preserve">
+    <value>Экран — ПК спросит при первом показе</value>
+  </data>
+  <data name="PermFiles" xml:space="preserve">
+    <value>Файлы — папка «Загрузки\Nexus PC»</value>
+  </data>
+  <data name="PermClipboard" xml:space="preserve">
+    <value>Буфер обмена</value>
+  </data>
+  <data name="PermAutomation" xml:space="preserve">
+    <value>Автоматизации</value>
+  </data>
+  <data name="DevicesSave" xml:space="preserve">
+    <value>Сохранить разрешения</value>
+  </data>
+  <data name="DevicesRevoke" xml:space="preserve">
+    <value>Отключить устройство</value>
+  </data>
+  <data name="DevicesEmpty" xml:space="preserve">
+    <value>Устройств пока нет. Подключите iPhone: значок N → «Подключить iPhone».</value>
+  </data>
+  <data name="DevicesServiceDown" xml:space="preserve">
+    <value>Nexus PC не работает. Перезагрузите ПК и попробуйте снова.</value>
+  </data>
+  <data name="DevicesSaved" xml:space="preserve">
+    <value>Сохранено для «{0}». Перезапустите приложение на iPhone, чтобы увидеть изменения.</value>
+  </data>
+  <data name="DevicesSaveFailed" xml:space="preserve">
+    <value>Не удалось сохранить разрешения. Попробуйте снова. Если повторяется — перезагрузите ПК.</value>
+  </data>
+  <data name="DevicesAdminDeclined" xml:space="preserve">
+    <value>Отменено: для изменения разрешений нужно разрешение администратора.</value>
+  </data>
+  <data name="DevicesRevokeConfirm" xml:space="preserve">
+    <value>Отключить «{0}»? Оно сразу потеряет доступ, а его автоматизации перестанут работать. Подключить снова можно по QR-коду.</value>
+  </data>
+  <data name="DevicesRevoked" xml:space="preserve">
+    <value>«{0}» отключено.</value>
+  </data>
+  <data name="DevicesRevokePending" xml:space="preserve">
+    <value>«{0}» ещё отключается. Обновите список чуть позже.</value>
+  </data>
+  <data name="DevicesRevokeFailed" xml:space="preserve">
+    <value>Не удалось отключить устройство. Попробуйте снова.</value>
+  </data>
+  <data name="LoadingText" xml:space="preserve">
+    <value>Загрузка…</value>
+  </data>
+  <data name="PairTitle" xml:space="preserve">
+    <value>Nexus PC — подключить iPhone</value>
+  </data>
+  <data name="PairScanTitle" xml:space="preserve">
+    <value>Отсканируйте QR-код в приложении Nexus PC</value>
+  </data>
+  <data name="PairOpening" xml:space="preserve">
+    <value>Подготовка…</value>
+  </data>
+  <data name="PairCode" xml:space="preserve">
+    <value>Код: {0}</value>
+  </data>
+  <data name="PairScanHint" xml:space="preserve">
+    <value>На iPhone откройте Nexus PC и нажмите «Подключить ПК». Наведите камеру на код.
+
+Окно можно не закрывать: подтверждение появится здесь.</value>
+  </data>
+  <data name="PairCountdown" xml:space="preserve">
+    <value>Осталось {0}</value>
+  </data>
+  <data name="PairConfirmTitle" xml:space="preserve">
+    <value>Подтвердите устройство</value>
+  </data>
+  <data name="PairConfirmBody" xml:space="preserve">
+    <value>«{0}» хочет подключиться к этому ПК.
+
+Код проверки: {1}
+
+Подключайте, только если такой же код показан на вашем устройстве.</value>
+  </data>
+  <data name="PairApprove" xml:space="preserve">
+    <value>Подключить</value>
+  </data>
+  <data name="PairReject" xml:space="preserve">
+    <value>Отклонить</value>
+  </data>
+  <data name="PairRestart" xml:space="preserve">
+    <value>Начать заново</value>
+  </data>
+  <data name="PairDone" xml:space="preserve">
+    <value>Устройство подключено</value>
+  </data>
+  <data name="PairDoneBody" xml:space="preserve">
+    <value>По умолчанию разрешены питание, программы и мониторинг. Остальное включается в «Устройствах и разрешениях».</value>
+  </data>
+  <data name="PairDeclined" xml:space="preserve">
+    <value>Подключение отклонено</value>
+  </data>
+  <data name="PairDeclinedBody" xml:space="preserve">
+    <value>Ничего не сохранено.</value>
+  </data>
+  <data name="PairFailedTitle" xml:space="preserve">
+    <value>Подключение не выполнено</value>
+  </data>
+  <data name="PairTimeout" xml:space="preserve">
+    <value>Время вышло, устройство не подключилось. Нажмите «Начать заново», чтобы показать новый код.</value>
+  </data>
+  <data name="PairBusy" xml:space="preserve">
+    <value>Подключается другое устройство. Подождите минуту и попробуйте снова.</value>
+  </data>
+  <data name="PairDeviceLimit" xml:space="preserve">
+    <value>Подключено слишком много устройств. Отключите лишнее в «Устройствах и разрешениях».</value>
+  </data>
+  <data name="PairFailed" xml:space="preserve">
+    <value>Не удалось подключить устройство. Попробуйте снова.</value>
+  </data>
+  <data name="PairCopyLink" xml:space="preserve">
+    <value>Копировать ссылку (Debug)</value>
+  </data>
+  <data name="PairCopied" xml:space="preserve">
+    <value>Скопировано</value>
+  </data>
+  <data name="PairQrA11y" xml:space="preserve">
+    <value>QR-код для подключения iPhone</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Nexus PC — настройки</value>
+  </data>
+  <data name="SettingsHeading" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="SettingsAutostart" xml:space="preserve">
+    <value>Запускать Nexus PC при входе в Windows</value>
+  </data>
+  <data name="SettingsAutostartHint" xml:space="preserve">
+    <value>Без этого iPhone не сможет запускать программы, блокировать ПК и показывать экран.</value>
+  </data>
+  <data name="SettingsAutostartFailed" xml:space="preserve">
+    <value>Не удалось изменить настройку. Попробуйте снова.</value>
+  </data>
+  <data name="SettingsLanguage" xml:space="preserve">
+    <value>Язык</value>
+  </data>
+  <data name="SettingsLanguageSystem" xml:space="preserve">
+    <value>Как в Windows</value>
+  </data>
+  <data name="SettingsLanguageEn" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="SettingsLanguageRu" xml:space="preserve">
+    <value>Русский</value>
+  </data>
+  <data name="SettingsLanguageRestart" xml:space="preserve">
+    <value>Изменение применится после перезапуска Nexus PC.</value>
+  </data>
+  <data name="SettingsRestart" xml:space="preserve">
+    <value>Перезапустить Nexus PC</value>
+  </data>
+  <data name="SettingsVersion" xml:space="preserve">
+    <value>Версия {0}</value>
+  </data>
+  <data name="SettingsCheckUpdates" xml:space="preserve">
+    <value>Проверить обновления</value>
+  </data>
+  <data name="SettingsLicenses" xml:space="preserve">
+    <value>Лицензии и сторонние компоненты</value>
+  </data>
+  <data name="SettingsClose" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="AppsTitle" xml:space="preserve">
+    <value>Nexus PC — программы и профили</value>
+  </data>
+  <data name="AppsTab" xml:space="preserve">
+    <value>Программы</value>
+  </data>
+  <data name="AppsColName" xml:space="preserve">
+    <value>Название</value>
+  </data>
+  <data name="AppsColType" xml:space="preserve">
+    <value>Тип</value>
+  </data>
+  <data name="AppsColClose" xml:space="preserve">
+    <value>Закрытие с iPhone</value>
+  </data>
+  <data name="AppsHint" xml:space="preserve">
+    <value>iPhone может запускать только программы из этого списка. Добавлять их можно только здесь, на ПК.</value>
+  </data>
+  <data name="AppsFromStart" xml:space="preserve">
+    <value>Из меню «Пуск»…</value>
+  </data>
+  <data name="AppsFromStore" xml:space="preserve">
+    <value>Программы Microsoft Store…</value>
+  </data>
+  <data name="AppsFromExe" xml:space="preserve">
+    <value>Выбрать программу…</value>
+  </data>
+  <data name="AppsRemove" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="AppsAllowClose" xml:space="preserve">
+    <value>Разрешать закрывать с iPhone</value>
+  </data>
+  <data name="AppsKindShortcut" xml:space="preserve">
+    <value>Ярлык</value>
+  </data>
+  <data name="AppsKindStore" xml:space="preserve">
+    <value>Программа Microsoft Store</value>
+  </data>
+  <data name="AppsKindProgram" xml:space="preserve">
+    <value>Программа</value>
+  </data>
+  <data name="AppsCloseAllowed" xml:space="preserve">
+    <value>Разрешено</value>
+  </data>
+  <data name="AppsCloseNo" xml:space="preserve">
+    <value>Нет</value>
+  </data>
+  <data name="AppsNoStoreApps" xml:space="preserve">
+    <value>На этом ПК не найдены программы Microsoft Store.</value>
+  </data>
+  <data name="AppsPickerStart" xml:space="preserve">
+    <value>Меню «Пуск»</value>
+  </data>
+  <data name="AppsPickerStore" xml:space="preserve">
+    <value>Программы Microsoft Store</value>
+  </data>
+  <data name="AppsExeFilter" xml:space="preserve">
+    <value>Программы (*.exe)|*.exe</value>
+  </data>
+  <data name="AppsExeTitle" xml:space="preserve">
+    <value>Выберите программу</value>
+  </data>
+  <data name="AppsSearch" xml:space="preserve">
+    <value>Поиск…</value>
+  </data>
+  <data name="AppsAdd" xml:space="preserve">
+    <value>Добавить</value>
+  </data>
+  <data name="ProfilesTab" xml:space="preserve">
+    <value>Профили</value>
+  </data>
+  <data name="ProfilesPresets" xml:space="preserve">
+    <value>Создать стандартные</value>
+  </data>
+  <data name="ProfilesNew" xml:space="preserve">
+    <value>Новый профиль</value>
+  </data>
+  <data name="ProfilesSave" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="ProfilesDelete" xml:space="preserve">
+    <value>Удалить профиль</value>
+  </data>
+  <data name="ProfilesName" xml:space="preserve">
+    <value>Название</value>
+  </data>
+  <data name="ProfilesApps" xml:space="preserve">
+    <value>Программы профиля</value>
+  </data>
+  <data name="ProfilesPresetsDone" xml:space="preserve">
+    <value>Созданы Gaming, Developer, Creator, Night. Отметьте в каждом нужные программы.</value>
+  </data>
+  <data name="ProfilesDeleted" xml:space="preserve">
+    <value>Профиль удалён.</value>
+  </data>
+  <data name="ProfilesNameInvalid" xml:space="preserve">
+    <value>Название — от 1 до 64 символов.</value>
+  </data>
+  <data name="ProfilesTooManyApps" xml:space="preserve">
+    <value>В профиле может быть не больше {0} программ.</value>
+  </data>
+  <data name="ProfilesSaved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="DesktopInputRejected" xml:space="preserve">
+    <value>Windows не принял ввод: экран ПК заблокирован или открыт запрос администратора (код {0}).</value>
+  </data>
+  <data name="DesktopClipboardBusy" xml:space="preserve">
+    <value>Буфер обмена занят другой программой — попробуйте ещё раз.</value>
+  </data>
+  <data name="DesktopNoScreen" xml:space="preserve">
+    <value>Нет экрана.</value>
+  </data>
+  <data name="DesktopScreenUnavailable" xml:space="preserve">
+    <value>Экран ПК сейчас недоступен: он заблокирован или открыт запрос администратора.</value>
+  </data>
+  <data name="VideoEncoderTimeout" xml:space="preserve">
+    <value>Кодировщик H.264 не запустился за 10 секунд.</value>
+  </data>
+  <data name="VideoUnavailable" xml:space="preserve">
+    <value>Видео H.264 недоступно на этом ПК ({0}). Будут кадры JPEG.</value>
+  </data>
 </root>

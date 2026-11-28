@@ -95,6 +95,15 @@ test("signature does not verify if kid is swapped", async () => {
     new TextEncoder().encode("test-es256-b." + seg)), false);
 });
 
+test("pro token with screen.video keeps feature order and matches schema (BE-1)", async () => {
+  const features = ["profiles", "rgb.sync", "automations", "monitoring.extended", "files.unlimited", "screen.video"];
+  const p = JSON.parse(Buffer.from((await signEntitlement(base({ features }))).split(".")[1],
+    "base64url").toString("utf8"));
+  assertSchema(p);
+  assert.equal(p.plan, "pro");
+  assert.deepEqual(p.features, features);
+});
+
 test("free plan token with empty features", async () => {
   const p = JSON.parse(Buffer.from((await signEntitlement(base({ plan: "free", features: [] }))).split(".")[1],
     "base64url").toString("utf8"));

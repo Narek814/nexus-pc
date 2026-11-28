@@ -7,11 +7,13 @@ public struct NexusResponse: @unchecked Sendable {
     public let payload: [String: Any]
     public let errorCode: String?
     public let errorMessage: String?
+    /// Optional `error.details` (docs/API.md, «Ответы»).
+    public let errorDetails: ServerErrorDetails?
 
     /// Payload for ok responses; throws `NexusError.server` otherwise.
     public func unwrap() throws -> [String: Any] {
         guard ok else {
-            throw NexusError.server(code: errorCode ?? "internal", message: errorMessage ?? "Ошибка")
+            throw NexusError.server(code: errorCode ?? "internal", message: errorMessage ?? "Ошибка", details: errorDetails)
         }
         return payload
     }
@@ -156,7 +158,8 @@ public final class NexusConnection: NSObject, @unchecked Sendable {
             ok: object["ok"] as? Bool ?? false,
             payload: object["payload"] as? [String: Any] ?? [:],
             errorCode: error?["code"] as? String,
-            errorMessage: error?["message"] as? String)
+            errorMessage: error?["message"] as? String,
+            errorDetails: ServerErrorDetails(json: error?["details"]))
         lock.lock()
         let continuation = pending.removeValue(forKey: id)
         lock.unlock()

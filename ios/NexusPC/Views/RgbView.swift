@@ -4,12 +4,14 @@ import NexusKit
 
 /// Lighting (P10): colour, brightness and effect through OpenRGB on the PC, plus lighting profiles.
 /// A lighting profile with the same id as an app profile switches together with it on the PC.
+/// Free (agent with plans, no `rgb.sync`): the device list from `rgb.status` is shown, the controls
+/// are visible but disabled under `ProCard`.
 struct RgbView: View {
     let controller: PCController
 
-    @State private var available = false
-    @State private var reason: String?
-    @State private var conflict = false
+    @State private var loaded = false
+    @State private var rgb: RgbStatus?
+    @State private var loadError: String?
     @State private var devices: [RgbDeviceInfo] = []
     @State private var profiles: [RgbProfileInfo] = []
     @State private var color = Color(red: 0.6, green: 0.2, blue: 1.0)
@@ -21,101 +23,125 @@ struct RgbView: View {
     @State private var newName = ""
     @State private var linkTo = ""
 
+    init(controller: PCController) {
+        self.controller = controller
+    }
+
+    private var syncLock: ProLock? {
+        ProLock.check(controller.hello, feature: ProFeature.rgbSync)
+    }
+
+    /// Saving or deleting lighting profiles is not allowed for this iPhone (the section itself is).
+    private var missesProfilePermission: Bool {
+        !controller.can("rgb.profiles.upsert") || !controller.can("rgb.profiles.delete")
+    }
+
     var body: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let status {
-                        Text(status).font(.footnote).foregroundStyle(Theme.cyan)
+                        Text(verbatim: status).font(.footnote).foregroundStyle(Theme.cyan)
                     }
-                    if available {
-                        SectionTitle("Цвет и эффект")
-                        lookCard
-                        SectionTitle("Профили подсветки")
-                        profilesCard
-                        SectionTitle("Устройства")
-                        devicesCard
-                    } else if conflict {
-                        conflictCard
-                    } else {
-                        unavailableCard
-                    }
+                    content
                 }
                 .padding(20)
             }
             .refreshable { await load() }
         }
-        .navigationTitle("Подсветка")
+        .navigationTitle(Text("section.rgb"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .sheet(isPresented: $saving) { saveSheet }
     }
 
-    // MARK: - Cards
-
-    /// Another program on the PC holds the lighting (rgb.status state "conflict"): a clear state, no controls.
-    private var conflictCard: some View {
-        GlassCard {
-            Label("Lighting unavailable: another program on the PC has taken it over", systemImage: "lightbulb.slash")
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(Theme.textPrimary)
+    @ViewBuilder
+    private var content: some View {
+        if let loadError {
+            ErrorCard(message: loadError) { Task { await load() } }
+        } else if !loaded {
+            LoadingState { Task { await load() } }
+        } else if let rgb, !rgb.available || rgb.isConflict {
+            unavailableCard(rgb)
+        } else {
+            if let lock = syncLock {
+                ProCard(feature: lock.text)
+            }
+            SectionHeader("rgb.section.look")
+            lookCard
+                .disabled(syncLock != nil)
+            SectionHeader("rgb.section.profiles")
+            if missesProfilePermission {
+                PermissionCard(permission: .rgb, isChecking: controller.state == .connecting) {
+                    Task {
+                        await controller.refresh()
+                        await load()
+                    }
+                }
+            }
+            profilesCard
+                .disabled(syncLock != nil)
+            SectionHeader("rgb.section.devices")
+            devicesCard
         }
     }
 
-    private var unavailableCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Подсветка недоступна", systemImage: "lightbulb.slash")
-                    .font(.headline)
-                Text(reason ?? "Загрузка…")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textMuted)
-                Text("OpenRGB входит в Nexus PC и запускается вместе с ПК. Если подсветка не отвечает: закройте Armoury Crate (он перехватывает подсветку) и перезагрузите ПК. Устройства настраиваются на ПК: значок «N» → «Настроить подсветку (OpenRGB)…».")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textMuted)
-                NeonButton(title: "Проверить снова", systemImage: "arrow.clockwise") {
-                    Task { await load() }
-                }
+    // MARK: - Cards
+
+    /// `available: false` or another program holds the lighting: text by `reasonCode` (error-texts.md, 3.9).
+    private func unavailableCard(_ rgb: RgbStatus) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            ErrorCard(message: MonitoringView.text(ErrorPresentation.rgbUnavailable(rgb))) {
+                Task { await load() }
             }
-            .foregroundStyle(Theme.textPrimary)
+            Text("rgb.unavailable.help")
+                .font(.caption)
+                .foregroundStyle(Theme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var lookCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
-                ColorPicker("Цвет", selection: $color, supportsOpacity: false)
+                ColorPicker(selection: $color, supportsOpacity: false) { Text("rgb.color") }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Яркость: \(Int(brightness))%")
-                    Slider(value: $brightness, in: 0...100, step: 5).tint(Theme.violet)
-                }
-                Picker("Эффект", selection: $effect) {
-                    Text("Ровный цвет").tag("static")
-                    Text("Выключить").tag("off")
-                    ForEach(deviceEffects, id: \.self) { name in
-                        Text(name).tag(name)
+                    Text("rgb.brightness \(Int(brightness))")
+                    Slider(value: $brightness, in: 0...100, step: 5) {
+                        Text("rgb.brightness \(Int(brightness))")
                     }
+                    .tint(Theme.violet)
+                }
+                Picker(selection: $effect) {
+                    Text("rgb.effect.static").tag("static")
+                    Text("rgb.effect.off").tag("off")
+                    ForEach(deviceEffects, id: \.self) { name in
+                        Text(verbatim: name).tag(name)
+                    }
+                } label: {
+                    Text("rgb.effect")
                 }
                 .pickerStyle(.menu)
                 .tint(Theme.cyan)
-                Text("Яркость применяется к ровному цвету. Эффекты устройств (Breathing, Rainbow…) работают только на тех устройствах, где они есть.")
+                Text("rgb.effect.help")
                     .font(.caption2)
                     .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    NeonButton(title: "Применить", systemImage: "wand.and.stars") {
+                    NeonButton(title: "rgb.apply", systemImage: "wand.and.stars") {
                         Task { await apply() }
                     }
                     .disabled(busy)
-                    if controller.can("rgb.profiles.upsert") {
-                        Button("Сохранить как профиль") {
-                            newName = ""
-                            linkTo = ""
-                            saving = true
-                        }
-                        .foregroundStyle(Theme.cyan)
+                    Button {
+                        newName = ""
+                        linkTo = ""
+                        saving = true
+                    } label: {
+                        Text("rgb.saveAsProfile")
                     }
+                    .foregroundStyle(Theme.cyan)
+                    .disabled(!controller.can("rgb.profiles.upsert"))
                 }
             }
             .font(.subheadline)
@@ -127,9 +153,10 @@ struct RgbView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 if profiles.isEmpty {
-                    Text("Профилей пока нет. Настройте цвет и нажмите «Сохранить как профиль».")
+                    Text("rgb.profiles.empty")
                         .font(.caption)
                         .foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(profiles) { profile in
                     HStack(spacing: 12) {
@@ -137,9 +164,10 @@ struct RgbView: View {
                             .fill(Color(hex: profile.color) ?? .gray)
                             .frame(width: 22, height: 22)
                             .overlay(Circle().stroke(Theme.textMuted.opacity(0.4)))
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.name).font(.subheadline.weight(.semibold))
-                            Text(profileCaption(profile))
+                            Text(verbatim: profile.name).font(.subheadline.weight(.semibold))
+                            Text(verbatim: profileCaption(profile))
                                 .font(.caption2)
                                 .foregroundStyle(Theme.textMuted)
                         }
@@ -151,19 +179,22 @@ struct RgbView: View {
                         }
                         .foregroundStyle(Theme.cyan)
                         .disabled(busy)
+                        .accessibilityLabel(Text("rgb.profile.apply"))
                     }
                     .contextMenu {
-                        Button("Загрузить в настройки") { load(profile) }
-                        if controller.can("rgb.profiles.delete") {
-                            Button("Удалить", role: .destructive) {
-                                Task { await delete(profile) }
-                            }
+                        Button { load(profile) } label: { Text("rgb.profile.loadToEditor") }
+                        Button(role: .destructive) {
+                            Task { await delete(profile) }
+                        } label: {
+                            Text("rgb.profile.delete")
                         }
+                        .disabled(!controller.can("rgb.profiles.delete"))
                     }
                 }
-                Text("Удерживайте профиль, чтобы изменить или удалить. Профиль, связанный с профилем программ, включается вместе с ним.")
+                Text("rgb.profiles.hint")
                     .font(.caption2)
                     .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(Theme.textPrimary)
         }
@@ -173,21 +204,25 @@ struct RgbView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 8) {
                 if devices.isEmpty {
-                    Text("OpenRGB работает, но не нашёл ни одного устройства.")
+                    Text("rgb.empty.body")
                         .font(.caption)
                         .foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(devices) { device in
                     HStack {
                         Image(systemName: device.symbol).foregroundStyle(Theme.violet).frame(width: 24)
-                        Text(device.name).font(.subheadline)
+                            .accessibilityHidden(true)
+                        Text(verbatim: device.name).font(.subheadline)
                         Spacer()
-                        Text("\(device.leds) LED").font(.caption).foregroundStyle(Theme.textMuted)
+                        Text("rgb.leds \(device.leds)").font(.caption).foregroundStyle(Theme.textMuted)
                     }
+                    .accessibilityElement(children: .combine)
                 }
-                Text("Подсветку монитора Skydimo OpenRGB не поддерживает — она остаётся в приложении Skydimo.")
+                Text("rgb.skydimo")
                     .font(.caption2)
                     .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(Theme.textPrimary)
         }
@@ -198,32 +233,38 @@ struct RgbView: View {
             Form {
                 if !controller.profiles.isEmpty {
                     Section {
-                        Picker("Профиль программ", selection: $linkTo) {
-                            Text("Не связывать").tag("")
+                        Picker(selection: $linkTo) {
+                            Text("rgb.save.noLink").tag("")
                             ForEach(controller.profiles) { profile in
-                                Text(profile.name).tag(profile.id)
+                                Text(verbatim: profile.name).tag(profile.id)
                             }
+                        } label: {
+                            Text("rgb.save.linkTo")
                         }
                     } footer: {
-                        Text("Связанный профиль подсветки включится, когда вы запустите этот профиль программ (с iPhone, через Siri или виджет).")
+                        Text("rgb.save.linkFooter")
                     }
                 }
                 if linkTo.isEmpty {
-                    Section("Название") {
-                        TextField("Например, Вечер", text: $newName)
+                    Section {
+                        TextField(text: $newName) { Text("rgb.save.namePlaceholder") }
+                    } header: {
+                        Text("rgb.save.name")
                     }
                 }
             }
-            .navigationTitle("Профиль подсветки")
+            .navigationTitle(Text("rgb.save.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { saving = false }
+                    Button { saving = false } label: { Text("common.cancel") }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Сохранить") {
+                    Button {
                         saving = false
                         Task { await saveProfile() }
+                    } label: {
+                        Text("common.save")
                     }
                     .disabled(linkTo.isEmpty && newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -254,13 +295,13 @@ struct RgbView: View {
 
     private func profileCaption(_ profile: RgbProfileInfo) -> String {
         let effectName = switch profile.effect.lowercased() {
-        case "static": "ровный цвет"
-        case "off": "выключено"
+        case "static": String(localized: "rgb.effect.static.short")
+        case "off": String(localized: "rgb.effect.off.short")
         default: profile.effect
         }
         var parts = ["\(effectName) · \(profile.brightness)%"]
         if let linked = controller.profiles.first(where: { $0.id == profile.id }) {
-            parts.append("вместе с «\(linked.name)»")
+            parts.append(String(localized: "rgb.linkedWith \(linked.name)"))
         }
         return parts.joined(separator: " · ")
     }
@@ -270,20 +311,18 @@ struct RgbView: View {
     private func load() async {
         do {
             let result = try await controller.fetch("rgb.status")
-            let rgb = RgbStatus(result: result)
-            conflict = rgb.isConflict
-            available = rgb.available && !rgb.isConflict
-            reason = rgb.reason
+            rgb = RgbStatus(result: result)
+            loadError = nil
             devices = (result["devices"] as? [[String: Any]] ?? []).compactMap(RgbDeviceInfo.init)
             profiles = (result["profiles"] as? [[String: Any]] ?? []).compactMap(RgbProfileInfo.init)
             if !deviceEffects.contains(effect), !["static", "off"].contains(effect) {
                 effect = "static"
             }
         } catch {
-            available = false
-            conflict = false
-            reason = message(error)
+            rgb = nil
+            loadError = message(error)
         }
+        loaded = true
     }
 
     private func apply() async {
@@ -327,7 +366,7 @@ struct RgbView: View {
         profile["name"] = name
         do {
             _ = try await controller.fetch("rgb.profiles.upsert", payload: ["profile": profile])
-            status = "Профиль «\(name)» сохранён"
+            status = String(localized: "rgb.profile.saved \(name)")
             await load()
         } catch {
             status = message(error)
@@ -337,7 +376,7 @@ struct RgbView: View {
     private func delete(_ profile: RgbProfileInfo) async {
         do {
             _ = try await controller.fetch("rgb.profiles.delete", payload: ["profileId": profile.id])
-            status = "Профиль «\(profile.name)» удалён"
+            status = String(localized: "rgb.profile.deleted \(profile.name)")
             await load()
         } catch {
             status = message(error)
@@ -349,15 +388,15 @@ struct RgbView: View {
         let applied = result["applied"] as? Int ?? 0
         let failed = items.filter { !($0["ok"] as? Bool ?? false) }
         if failed.isEmpty {
-            return "Применено на \(applied) из \(items.count) устройств"
+            return String(localized: "rgb.applied \(applied) \(items.count)")
         }
         let names = failed.compactMap { $0["name"] as? String }.joined(separator: ", ")
         let why = failed.first?["error"] as? String ?? ""
-        return "Применено на \(applied) из \(items.count). Не удалось: \(names). \(why)"
+        return String(localized: "rgb.appliedPartial \(applied) \(items.count) \(names) \(why)")
     }
 
     private func message(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        MonitoringView.describe(error)
     }
 }
 
@@ -437,11 +476,14 @@ enum Slug {
         return candidate
     }
 
+    /// Lower-case Russian letters (U+0430–U+044F, U+0451) as escapes: string literals here stay ASCII.
     private static let cyrillic: [Character: String] = [
-        "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i",
-        "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t",
-        "у": "u", "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "",
-        "э": "e", "ю": "yu", "я": "ya",
+        "\u{0430}": "a", "\u{0431}": "b", "\u{0432}": "v", "\u{0433}": "g", "\u{0434}": "d", "\u{0435}": "e",
+        "\u{0451}": "e", "\u{0436}": "zh", "\u{0437}": "z", "\u{0438}": "i", "\u{0439}": "y", "\u{043A}": "k",
+        "\u{043B}": "l", "\u{043C}": "m", "\u{043D}": "n", "\u{043E}": "o", "\u{043F}": "p", "\u{0440}": "r",
+        "\u{0441}": "s", "\u{0442}": "t", "\u{0443}": "u", "\u{0444}": "f", "\u{0445}": "h", "\u{0446}": "ts",
+        "\u{0447}": "ch", "\u{0448}": "sh", "\u{0449}": "sch", "\u{044A}": "", "\u{044B}": "y", "\u{044C}": "",
+        "\u{044D}": "e", "\u{044E}": "yu", "\u{044F}": "ya",
     ]
 }
 

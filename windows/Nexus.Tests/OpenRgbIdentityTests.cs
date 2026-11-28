@@ -207,6 +207,7 @@ public sealed class OpenRgbIdentityTests : IDisposable
         Assert.False(status["available"]!.GetValue<bool>());
         Assert.Equal("conflict", status["state"]!.GetValue<string>());
         Assert.Equal(RgbService.ConflictMessage, status["reason"]!.GetValue<string>());
+        Assert.Equal("conflict", status["reasonCode"]!.GetValue<string>());
         await server.Closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(0, server.BytesReceived);
         var apply = await Assert.ThrowsAsync<RgbService.RgbConflictException>(() => rgb.ApplyAsync(new Nexus.Core.Protocol.RgbLook("#FFFFFF", 100, "static"), null, CancellationToken.None));

@@ -20,33 +20,33 @@ public sealed partial class WindowsMetricsSource : IMetricsSource, IDisposable
 
     public MetricsSnapshot Sample(DateTimeOffset now)
     {
-        var unavailable = new Dictionary<string, string>();
+        var unavailable = new UnavailableSet();
         var (cpuTemperature, cpuClock, sensorProblem) = _cpuSensors.Read();
         if (cpuTemperature is null)
         {
-            unavailable["cpu.temperature"] = sensorProblem ?? "Нет датчика температуры процессора.";
+            unavailable.Add("cpu.temperature", sensorProblem ?? MetricsReasons.NoTemperatureSensor);
         }
         if (cpuClock is null)
         {
-            unavailable["cpu.clock"] = sensorProblem ?? "Нет данных о частоте процессора.";
+            unavailable.Add("cpu.clock", sensorProblem ?? MetricsReasons.NoClockData);
         }
 
         var cpuUsage = ReadCpuUsage();
         if (cpuUsage is null)
         {
-            unavailable["cpu.usage"] = "Первое измерение, загрузка появится через пару секунд.";
+            unavailable.Add("cpu.usage", MetricsReasons.FirstSample);
         }
 
         var memory = ReadMemory();
         if (memory is null)
         {
-            unavailable["memory"] = "GlobalMemoryStatusEx не ответил.";
+            unavailable.Add("memory", MetricsReasons.MemoryQueryFailed);
         }
 
-        var gpus = _nvml.Read(out var gpuProblem);
-        if (gpuProblem is not null)
+        var gpus = _nvml.ReadWithReason(out var gpuProblem);
+        if (gpuProblem is { } gpuReason)
         {
-            unavailable["gpu"] = gpuProblem;
+            unavailable.Add("gpu", gpuReason);
         }
 
         return new MetricsSnapshot
@@ -57,8 +57,7 @@ public sealed partial class WindowsMetricsSource : IMetricsSource, IDisposable
             Gpus = gpus,
             Disks = DiskReader.Read(),
             Network = _network.Read(now),
-            Unavailable = unavailable,
-        };
+        }.WithUnavailable(unavailable);
     }
 
     private double? ReadCpuUsage()

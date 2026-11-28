@@ -39,7 +39,7 @@ public static class CpuSensorPicker
 internal sealed class CpuSensorReader : IDisposable
 {
     private readonly Computer? _computer;
-    private readonly string? _openError;
+    private readonly UnavailableReason? _openError;
 
     public CpuSensorReader()
     {
@@ -52,12 +52,12 @@ internal sealed class CpuSensorReader : IDisposable
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            _openError = "Не удалось открыть датчики процессора: " + ex.Message;
+            _openError = MetricsReasons.SensorOpenFailed(ex.Message);
             _computer = null;
         }
     }
 
-    public (double? Temperature, double? ClockMhz, string? Problem) Read()
+    public (double? Temperature, double? ClockMhz, UnavailableReason? Problem) Read()
     {
         if (_computer is null)
         {
@@ -76,12 +76,10 @@ internal sealed class CpuSensorReader : IDisposable
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            return (null, null, "Ошибка чтения датчиков процессора: " + ex.Message);
+            return (null, null, MetricsReasons.SensorReadFailed(ex.Message));
         }
         var (temperature, clock) = CpuSensorPicker.Pick(readings);
-        var problem = temperature is null
-            ? "Нет значения от датчика процессора: нужен драйвер PawnIO (ставится вместе с OpenRGB или с pawnio.eu), затем перезапустите ПК."
-            : null;
+        UnavailableReason? problem = temperature is null ? MetricsReasons.SensorDriverMissing : null;
         return (temperature, clock, problem);
     }
 

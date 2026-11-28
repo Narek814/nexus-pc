@@ -41,6 +41,14 @@ struct AutomationsView: View {
             Theme.background.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if let lock {
+                        // Free: read-only list under ProCard; Pro ended: the rules are paused, not deleted.
+                        if lock.isEnded {
+                            AutomationsPausedBanner()
+                        } else {
+                            ProCard(feature: lock.text)
+                        }
+                    }
                     if let status {
                         Text(status).font(.footnote).foregroundStyle(.orange).textSelection(.enabled)
                     }
@@ -77,6 +85,7 @@ struct AutomationsView: View {
                     Image(systemName: "plus")
                 }
                 .tint(Theme.cyan)
+                .disabled(lock != nil)
             }
         }
         .task { await load() }
@@ -114,6 +123,7 @@ struct AutomationsView: View {
                     }))
                         .labelsHidden()
                         .tint(Theme.violet)
+                        .disabled(lock != nil)
                 }
                 Text(rule.actionsSummary)
                     .font(.caption)
@@ -149,9 +159,15 @@ struct AutomationsView: View {
                 }
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.plain)
+                .disabled(lock != nil)
             }
             .foregroundStyle(Theme.textPrimary)
         }
+    }
+
+    /// `automations` is Pro on agents with plans: the list stays visible, every change is disabled.
+    private var lock: ProLock? {
+        ProLock.check(controller.hello, feature: ProFeature.automations)
     }
 
     private func load() async {
@@ -665,19 +681,19 @@ struct AutomationDraft: Identifiable {
             // Deleted, or not created by this iPhone (the PC does not tell which). Not a permission problem.
             return "Такой автоматизации нет. Список обновлён."
         }
-        if nexus?.code == "auth.permissionDenied", case let .server(_, message)? = nexus, message.contains("разрешения:") {
+        if nexus?.code == "auth.permissionDenied", case let .server(_, message, _)? = nexus, message.contains("разрешения:") {
             return message + " Добавьте их этому iPhone командой администратора на ПК."
         }
         // The command-level check ("Device lacks permission for 'automations.…'"): this iPhone has no
         // "automation" permission. Any other refusal shows the PC's own text instead of the grant-all advice.
-        if nexus?.code == "auth.permissionDenied", case let .server(_, message)? = nexus, !message.contains("automations.") {
+        if nexus?.code == "auth.permissionDenied", case let .server(_, message, _)? = nexus, !message.contains("automations.") {
             return message
         }
         if nexus?.code == "auth.permissionDenied" {
             let id = controller.pc?.deviceId.uuidString.lowercased() ?? "<deviceId>"
             return "Автоматизации не разрешены для этого iPhone. На ПК в PowerShell от имени администратора:\n& \"C:\\Program Files\\NexusPC\\Agent\\Nexus.Agent.exe\" devices permissions \(id) power,apps,monitoring,rgb,input,files,clipboard,automation"
         }
-        if case let .server(_, message)? = nexus {
+        if case let .server(_, message, _)? = nexus {
             return message
         }
         return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

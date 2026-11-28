@@ -183,6 +183,56 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
         Assert.Equal([FakeLoader.Handle], failing.Freed);
     }
 
+    [Fact]
+    public void Every_nvml_reason_carries_its_code_and_unchanged_text()
+    {
+        // Load outcomes (NvmlLocation.Load → loaded.Problem): each maps to exactly one code.
+        var missing = NvmlLocation.Load(NvmlLocation.Candidates(Sys, Pf), new FakeLoader());
+        Assert.Equal(new UnavailableReason(UnavailableCodes.GpuDriverMissing, NvmlLocation.Missing), missing.Reason);
+
+        var linked = new FakeLoader();
+        linked.Files[First] = new FakeFile { IsReparsePoint = true, FinalPath = First };
+        Assert.Equal(new UnavailableReason(UnavailableCodes.GpuLibraryRejected, NvmlLocation.Rejected), NvmlLocation.Load(NvmlLocation.Candidates(Sys, Pf), linked).Reason);
+
+        var broken = new FakeLoader { LoadSucceeds = false };
+        broken.Files[First] = new FakeFile { FinalPath = First };
+        Assert.Equal(new UnavailableReason(UnavailableCodes.GpuLibraryLoadFailed, NvmlLocation.LoadFailed), NvmlLocation.Load(NvmlLocation.Candidates(Sys, Pf), broken).Reason);
+
+        using (var reader = new NvmlReader(new FakeLoader(), NvmlLocation.Candidates(Sys, Pf)))
+        {
+            reader.ReadWithReason(out var reason);
+            Assert.Equal(UnavailableCodes.GpuDriverMissing, reason!.Value.Code);
+        }
+
+        var incomplete = FakeNvml.Loader();
+        incomplete.Exports.Remove("nvmlDeviceGetClockInfo");
+        using (var reader = new NvmlReader(incomplete, NvmlLocation.Candidates(Sys, Pf)))
+        {
+            reader.ReadWithReason(out var reason);
+            Assert.Equal(new UnavailableReason(UnavailableCodes.GpuInitFailed, "NVML недоступна."), reason);
+        }
+
+        using (var reader = new NvmlReader(FakeNvml.Loader(initResult: 9), NvmlLocation.Candidates(Sys, Pf)))
+        {
+            reader.ReadWithReason(out var reason);
+            Assert.Equal(new UnavailableReason(UnavailableCodes.GpuInitFailed, "NVML не запустилась (код 9)."), reason);
+        }
+
+        using (var reader = new NvmlReader(FakeNvml.Loader(countResult: 3), NvmlLocation.Candidates(Sys, Pf)))
+        {
+            Assert.Empty(reader.ReadWithReason(out var reason));
+            Assert.Equal(new UnavailableReason(UnavailableCodes.GpuListFailed, "NVML не вернул список видеокарт."), reason);
+            reader.Read(out var text);
+            Assert.Equal("NVML не вернул список видеокарт.", text); // the old text API is unchanged
+        }
+
+        using (var reader = new NvmlReader(FakeNvml.Loader(), NvmlLocation.Candidates(Sys, Pf)))
+        {
+            Assert.Single(reader.ReadWithReason(out var none));
+            Assert.Null(none);
+        }
+    }
+
     // ---- assemblies (any OS) ----
 
     [Fact]
@@ -681,6 +731,7 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
     {
         private static readonly List<Delegate> Keep = [];
         private static int _initResult;
+        private static int _countResult;
 
         public static int Inits { get; private set; }
 
@@ -695,9 +746,10 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int Memory(IntPtr device, out NvmlReader.MemoryInfo value);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int Clock(IntPtr device, int type, out uint mhz);
 
-        public static FakeLoader Loader(int initResult = 0)
+        public static FakeLoader Loader(int initResult = 0, int countResult = 0)
         {
             _initResult = initResult;
+            _countResult = countResult;
             Inits = 0;
             Shutdowns = 0;
             var loader = new FakeLoader();
@@ -709,7 +761,7 @@ public sealed class NativeLibraryLoadingTests(ITestOutputHelper output) : IDispo
             }
             Add("nvmlInit_v2", new NoArgs(() => { Inits++; return _initResult; }));
             Add("nvmlShutdown", new NoArgs(() => { Shutdowns++; return 0; }));
-            Add("nvmlDeviceGetCount_v2", new Count((out uint count) => { count = 1; return 0; }));
+            Add("nvmlDeviceGetCount_v2", new Count((out uint count) => { count = 1; return _countResult; }));
             Add("nvmlDeviceGetHandleByIndex_v2", new HandleByIndex((uint index, out IntPtr device) => { device = 0x77 + (nint)index; return 0; }));
             Add("nvmlDeviceGetName", new Name((device, buffer, length) =>
             {

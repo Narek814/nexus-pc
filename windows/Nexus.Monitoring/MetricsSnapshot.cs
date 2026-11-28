@@ -15,6 +15,16 @@ public sealed record MetricsSnapshot
 
     /// <summary>Key (e.g. "cpu.temperature") → human-readable reason, in Russian, shown by the app.</summary>
     public IReadOnlyDictionary<string, string> Unavailable { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Same keys as <see cref="Unavailable"/> → stable code from <see cref="Monitoring.UnavailableCodes"/>.</summary>
+    public IReadOnlyDictionary<string, string> UnavailableCodes { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Sets both reason maps from one set.</summary>
+    public MetricsSnapshot WithUnavailable(UnavailableSet set)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        return this with { Unavailable = set.Texts, UnavailableCodes = set.Codes };
+    }
 }
 
 public sealed record CpuMetrics

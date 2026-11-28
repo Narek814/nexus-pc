@@ -17,7 +17,13 @@ struct ScreenView: View {
     @State private var showKeys = false
     @State private var zoomed = false
     @State private var resetZoom = 0
+    @State private var proSheet: ProLock?
     @Environment(\.scenePhase) private var scenePhase
+
+    /// `screen.video` is Pro on this PC (only agents with the entitlements.v1 marker); otherwise `nil`.
+    private var videoLock: ProLock? {
+        ProLock.check(controller.hello, feature: ProFeature.screenVideo)
+    }
 
     init(controller: PCController) {
         self.controller = controller
@@ -70,7 +76,16 @@ struct ScreenView: View {
                 .tint(Theme.cyan)
             }
         }
-        .task { await stream.run() }
+        .task {
+            if videoLock != nil { stream.mode = .jpeg }
+            await stream.run()
+        }
+        .onChange(of: videoLock) { _, lock in
+            if lock != nil, stream.mode == .video { stream.mode = .jpeg }
+        }
+        .sheet(item: $proSheet) { lock in
+            ProCardSheet(lock: lock)
+        }
         .onDisappear {
             stream.stop()
             if fullscreen { Self.rotate(landscape: false) }
@@ -152,19 +167,31 @@ struct ScreenView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 260)
-                Menu {
-                    Picker("Способ", selection: $stream.mode) {
-                        Text("Видео H.264").tag(ScreenStream.Mode.video)
-                        Text("Кадры JPEG").tag(ScreenStream.Mode.jpeg)
-                    }
-                } label: {
-                    Text(stream.mode == .video ? "H.264" : "JPEG")
+                if let lock = videoLock {
+                    // Free on an agent with plans: JPEG only; the video option opens ProCard.
+                    Text(verbatim: "JPEG")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                         .background(Theme.surface, in: Capsule())
+                        .foregroundStyle(Theme.cyan)
+                    ProSegment(Text(verbatim: "H.264")) { proSheet = lock }
+                        .fixedSize()
+                } else {
+                    Menu {
+                        Picker("Способ", selection: $stream.mode) {
+                            Text("Видео H.264").tag(ScreenStream.Mode.video)
+                            Text("Кадры JPEG").tag(ScreenStream.Mode.jpeg)
+                        }
+                    } label: {
+                        Text(stream.mode == .video ? "H.264" : "JPEG")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Theme.surface, in: Capsule())
+                    }
+                    .tint(Theme.cyan)
                 }
-                .tint(Theme.cyan)
                 Spacer()
                 Text(stream.stats)
                     .font(.caption2.monospacedDigit())
@@ -386,8 +413,14 @@ final class ScreenStream {
             frameTimes.removeAll { Date().timeIntervalSince($0.0) > 2 }
             if message != nil { message = nil }
         } catch let error as NexusError where error.code == "screen.videoUnavailable" {
-            if case let .server(_, text) = error { message = text }
+            if case let .server(_, text, _) = error { message = text }
             mode = .jpeg // the PC has no H.264 encoder
+        } catch let error as NexusError where error.code == "plan.required" {
+            // Video is Pro on this PC: silently back to JPEG frames, the event goes to Diagnostics only.
+            if case let .server(code, text, details) = error {
+                controller.record(code: code, details: details, message: text, section: "control")
+            }
+            mode = .jpeg
         } catch let error as NexusError where error.code == "screen.notStarted" {
             _ = try? await controller.fetch("screen.start", timeout: 125)
         } catch {
@@ -434,11 +467,11 @@ final class ScreenStream {
         case "session.unavailable":
             return "На ПК не запущен Nexus PC в трее — экран показывается через него."
         case "screen.denied", "screen.blocked":
-            if case let .server(_, text)? = nexus { return text }
+            if case let .server(_, text, _)? = nexus { return text }
             return "Показ экрана запрещён на ПК."
         default:
             if case .timeout? = nexus { return "ПК не ответил: возможно, окно разрешения на ПК ещё открыто." }
-            if case let .server(_, text)? = nexus { return text }
+            if case let .server(_, text, _)? = nexus { return text }
             return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }

@@ -834,18 +834,63 @@ do $$ begin
   insert into _results values ('approve_counts_every_attempt'), ('user_code_unique_index');
 end $$;
 
--- 20-PC limit at consume: approving account with 20 PCs gets pcs.limit, code stays usable.
+-- 20-PC limit (BE-1): checked at approve for a valid own code only; a PC
+-- already bound to the user is not a new PC. 19 dummy PCs + pc(23) = 20.
 insert into auth.users values ('00000000-0000-0000-0000-0000000005e1', 'lim@example.test');
 insert into public.my_pcs (pc_id, user_id, display_name, platform)
   select ('20000000-0000-0000-0000-0000000e' || lpad(g::text, 4, '0'))::uuid,
-         '00000000-0000-0000-0000-0000000005e1', 'P' || g, 'windows' from generate_series(1, 20) g;
+         '00000000-0000-0000-0000-0000000005e1', 'P' || g, 'windows' from generate_series(1, 19) g;
+insert into public.my_pcs (pc_id, user_id, display_name, platform)
+  values (pg_temp.pc(23), '00000000-0000-0000-0000-0000000005e1', 'Own', 'windows');
+insert into public.pc_keys (pc_id, public_key_spki) values (pg_temp.pc(23), pg_temp.k(23));
 set role service_role;
 select pg_temp.st(pg_temp.pc(18), pg_temp.k(18), 'Extra', 'lim-dev', 'LIM-USER', pg_temp.k(18)) \g /dev/null
+select pg_temp.st(pg_temp.pc(23), pg_temp.k(23), 'Own', 'own-dev', 'OWN-USER', pg_temp.k(23)) \g /dev/null
+select pg_temp.st(pg_temp.pc(22), pg_temp.k(22), 'Undescribed', 'und-dev', 'UND-USER', pg_temp.k(22)) \g /dev/null
 reset role;
 set role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000005e1') \g /dev/null
-select pg_temp.ok('LIM-USER') \g /dev/null
+do $$ declare s text; begin
+  select status into s from public.pc_login_describe(pg_temp.h('LIM-USER'));
+  if s <> 'ok' then raise exception 'FAIL approve_limit_setup %', s; end if;
+  s := public.pc_login_approve(pg_temp.h('LIM-USER'));
+  if s <> 'pcs.limit' then raise exception 'FAIL approve_21st_pcs_limit (got %)', s; end if;
+  s := pg_temp.ok('OWN-USER');
+  if s <> 'ok' then raise exception 'FAIL approve_own_pc_at_20 (got %)', s; end if;
+  -- Unknown and not-own (never described by this user) codes: code.invalid, not pcs.limit.
+  if public.pc_login_approve(pg_temp.h('NEVER-ISSUED-LIM')) <> 'code.invalid'
+     or public.pc_login_approve(pg_temp.h('UND-USER')) <> 'code.invalid' then
+    raise exception 'FAIL approve_invalid_at_20_code_invalid';
+  end if;
+  insert into _results values ('approve_21st_pcs_limit'), ('approve_own_pc_at_20'),
+    ('approve_invalid_at_20_code_invalid');
+end $$;
 reset role;
+do $$ begin
+  if not exists (select 1 from public.pc_login_codes where device_code_hash = pg_temp.h('lim-dev')
+                 and approved_by is null and approved_at is null and consumed_at is null
+                 and expires_at > now()) then
+    raise exception 'FAIL approve_limit_code_untouched';
+  end if;
+  if exists (select 1 from public.pc_login_codes where device_code_hash = pg_temp.h('und-dev')
+             and approved_by is not null) then
+    raise exception 'FAIL approve_invalid_untouched';
+  end if;
+  insert into _results values ('approve_limit_code_untouched'), ('approve_invalid_untouched');
+end $$;
+-- Race approve -> another PC added -> consume: consume still says pcs.limit.
+delete from public.my_pcs where pc_id = pg_temp.pc(23);
+set role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000005e1') \g /dev/null
+do $$ begin
+  if public.pc_login_approve(pg_temp.h('LIM-USER')) <> 'ok' then
+    raise exception 'FAIL approve_after_slot_freed';
+  end if;
+  insert into _results values ('approve_after_slot_freed');
+end $$;
+reset role;
+insert into public.my_pcs (pc_id, user_id, display_name, platform)
+  values ('20000000-0000-0000-0000-0000000e0020', '00000000-0000-0000-0000-0000000005e1', 'P20', 'windows');
 set role service_role;
 do $$ begin
   if (select status from pg_temp.co('lim-dev', pg_temp.k(18))) <> 'pcs.limit' then

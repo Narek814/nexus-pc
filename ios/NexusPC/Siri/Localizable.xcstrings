@@ -1,12 +1,804 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Lighting unavailable: another program on the PC has taken it over": {
+    "pro.feature.profiles.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Open several apps with one tap."}}, "ru": {"stringUnit": {"state": "translated", "value": "Запуск нескольких программ одним касанием."}}}},
+    "pro.feature.rgb.sync.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Control lighting from iPhone."}}, "ru": {"stringUnit": {"state": "translated", "value": "Управление подсветкой с iPhone."}}}},
+    "pro.feature.automations.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Let the PC do things on schedule."}}, "ru": {"stringUnit": {"state": "translated", "value": "ПК сам выполняет действия по расписанию."}}}},
+    "pro.feature.monitoring.extended.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "See up to 24 hours of history."}}, "ru": {"stringUnit": {"state": "translated", "value": "История показателей за сутки."}}}},
+    "pro.feature.screen.video.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Smooth video of the PC screen."}}, "ru": {"stringUnit": {"state": "translated", "value": "Плавное видео экрана ПК."}}}},
+    "pro.feature.files.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Transfer files without limits."}}, "ru": {"stringUnit": {"state": "translated", "value": "Передача файлов без ограничений."}}}},
+    "automations.paused.title": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Automations Paused"}}, "ru": {"stringUnit": {"state": "translated", "value": "Автоматизации остановлены"}}}},
+    "automations.paused.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "They're stopped, not deleted. Renew Pro to run them again."}}, "ru": {"stringUnit": {"state": "translated", "value": "Они остановлены, а не удалены. Продлите Pro, чтобы они снова работали."}}}},
+    "monitor.historyReset": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "History starts again after the PC restarts."}}, "ru": {"stringUnit": {"state": "translated", "value": "После перезапуска ПК история начинается заново."}}}},
+    "rgb.empty.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "OpenRGB is running but found no devices."}}, "ru": {"stringUnit": {"state": "translated", "value": "OpenRGB запущен, но не нашёл устройств."}}}},
+    "monitor.range.10m": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "10 min"}}, "ru": {"stringUnit": {"state": "translated", "value": "10 мин"}}}},
+    "monitor.range.1h": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "1 h"}}, "ru": {"stringUnit": {"state": "translated", "value": "1 ч"}}}},
+    "monitor.range.24h": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "24 h"}}, "ru": {"stringUnit": {"state": "translated", "value": "24 ч"}}}},
+    "monitor.unavailable": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not available"}}, "ru": {"stringUnit": {"state": "translated", "value": "Недоступно"}}}},
+    "files.send": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Send to PC"}}, "ru": {"stringUnit": {"state": "translated", "value": "Отправить на ПК"}}}},
+    "files.download": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Save to iPhone"}}, "ru": {"stringUnit": {"state": "translated", "value": "Сохранить на iPhone"}}}},
+    "files.empty.body": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Files in the Downloads\\Nexus PC folder on the PC appear here."}}, "ru": {"stringUnit": {"state": "translated", "value": "Здесь появляются файлы из папки «Загрузки\\Nexus PC» на ПК."}}}},
+    "clipboard.get": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Paste from PC Clipboard"}}, "ru": {"stringUnit": {"state": "translated", "value": "Из буфера обмена ПК"}}}},
+    "monitor.reason.sensorDriverMissing": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Needs the sensor driver. Reinstall Nexus PC on the PC."}}, "ru": {"stringUnit": {"state": "translated", "value": "Нужен драйвер датчиков. Переустановите Nexus PC на ПК."}}}},
+    "monitor.reason.sensorReadFailed": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't read the sensors. Restart the PC."}}, "ru": {"stringUnit": {"state": "translated", "value": "Не удалось прочитать датчики. Перезагрузите ПК."}}}},
+    "monitor.reason.sensorMissing": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "This processor doesn't report this value."}}, "ru": {"stringUnit": {"state": "translated", "value": "Процессор не сообщает это значение."}}}},
+    "monitor.reason.warmingUp": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Measuring…"}}, "ru": {"stringUnit": {"state": "translated", "value": "Измеряем…"}}}},
+    "monitor.reason.osQueryFailed": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Windows didn't respond. Try again in a moment."}}, "ru": {"stringUnit": {"state": "translated", "value": "Windows не ответила. Подождите немного."}}}},
+    "monitor.reason.gpuDriverMissing": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Available only for NVIDIA graphics with the driver installed."}}, "ru": {"stringUnit": {"state": "translated", "value": "Доступно только для видеокарт NVIDIA с установленным драйвером."}}}},
+    "monitor.reason.gpuLibraryRejected": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The graphics driver files look wrong. Reinstall the NVIDIA driver."}}, "ru": {"stringUnit": {"state": "translated", "value": "Файлы драйвера видеокарты повреждены. Переустановите драйвер NVIDIA."}}}},
+    "monitor.reason.gpuLibraryLoadFailed": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't start the graphics driver. Update the NVIDIA driver."}}, "ru": {"stringUnit": {"state": "translated", "value": "Не удалось запустить драйвер видеокарты. Обновите драйвер NVIDIA."}}}},
+    "monitor.reason.gpuInitFailed": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't start the graphics driver. Update the NVIDIA driver."}}, "ru": {"stringUnit": {"state": "translated", "value": "Не удалось запустить драйвер видеокарты. Обновите драйвер NVIDIA."}}}},
+    "monitor.reason.gpuListFailed": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The graphics card didn't respond. Restart the PC."}}, "ru": {"stringUnit": {"state": "translated", "value": "Видеокарта не ответила. Перезагрузите ПК."}}}},
+    "monitor.reason.platformUnsupported": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not available on this PC."}}, "ru": {"stringUnit": {"state": "translated", "value": "Недоступно на этом ПК."}}}},
+    "monitor.reason.unknown": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not available right now."}}, "ru": {"stringUnit": {"state": "translated", "value": "Сейчас недоступно."}}}},
+    "monitor.unavailable.a11y": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$@, unavailable. %2$@"}}, "ru": {"stringUnit": {"state": "translated", "value": "%1$@, недоступно. %2$@"}}}},
+    "common.save": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Save"}}, "ru": {"stringUnit": {"state": "translated", "value": "Сохранить"}}}},
+    "monitor.section.history": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "History"}}, "ru": {"stringUnit": {"state": "translated", "value": "История"}}}},
+    "monitor.section.cpu": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Processor"}}, "ru": {"stringUnit": {"state": "translated", "value": "Процессор"}}}},
+    "monitor.section.gpu": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Graphics Card"}}, "ru": {"stringUnit": {"state": "translated", "value": "Видеокарта"}}}},
+    "monitor.section.disks": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Disks"}}, "ru": {"stringUnit": {"state": "translated", "value": "Диски"}}}},
+    "monitor.section.network": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Network"}}, "ru": {"stringUnit": {"state": "translated", "value": "Сеть"}}}},
+    "monitor.section.settings": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Settings"}}, "ru": {"stringUnit": {"state": "translated", "value": "Настройки"}}}},
+    "monitor.range": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Period"}}, "ru": {"stringUnit": {"state": "translated", "value": "Период"}}}},
+    "monitor.chart.empty10m": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Data appears every 2 seconds."}}, "ru": {"stringUnit": {"state": "translated", "value": "Данные появляются каждые 2 секунды."}}}},
+    "monitor.chart.emptyLong": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Per-minute averages appear after the PC service has run for a minute."}}, "ru": {"stringUnit": {"state": "translated", "value": "Средние значения за минуту появятся через минуту работы службы."}}}},
+    "monitor.chart.time": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Time"}}, "ru": {"stringUnit": {"state": "translated", "value": "Время"}}}},
+    "monitor.chart.metric": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Metric"}}, "ru": {"stringUnit": {"state": "translated", "value": "Показатель"}}}},
+    "monitor.usage": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Usage"}}, "ru": {"stringUnit": {"state": "translated", "value": "Загрузка"}}}},
+    "monitor.temperature": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Temperature"}}, "ru": {"stringUnit": {"state": "translated", "value": "Температура"}}}},
+    "monitor.clock": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Clock Speed"}}, "ru": {"stringUnit": {"state": "translated", "value": "Частота"}}}},
+    "monitor.threads": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Threads"}}, "ru": {"stringUnit": {"state": "translated", "value": "Потоков"}}}},
+    "monitor.gpu.memory": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Video Memory"}}, "ru": {"stringUnit": {"state": "translated", "value": "Видеопамять"}}}},
+    "monitor.gpu.coreClock": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Core Clock"}}, "ru": {"stringUnit": {"state": "translated", "value": "Частота ядра"}}}},
+    "monitor.mhz %lld": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%lld MHz"}}, "ru": {"stringUnit": {"state": "translated", "value": "%lld МГц"}}}},
+    "monitor.ofTotal %@ %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$@ of %2$@"}}, "ru": {"stringUnit": {"state": "translated", "value": "%1$@ из %2$@"}}}},
+    "monitor.disk.free %@ %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$@ free of %2$@"}}, "ru": {"stringUnit": {"state": "translated", "value": "свободно %1$@ из %2$@"}}}},
+    "monitor.rate %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%@/s"}}, "ru": {"stringUnit": {"state": "translated", "value": "%@/с"}}}},
+    "monitor.net.receive": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Download ↓"}}, "ru": {"stringUnit": {"state": "translated", "value": "Загрузка ↓"}}}},
+    "monitor.net.send": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Upload ↑"}}, "ru": {"stringUnit": {"state": "translated", "value": "Отдача ↑"}}}},
+    "monitor.memory": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Memory"}}, "ru": {"stringUnit": {"state": "translated", "value": "Память"}}}},
+    "monitor.metric.cpuTemperature": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "CPU Temperature"}}, "ru": {"stringUnit": {"state": "translated", "value": "Температура процессора"}}}},
+    "monitor.metric.cpuClock": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "CPU Clock Speed"}}, "ru": {"stringUnit": {"state": "translated", "value": "Частота процессора"}}}},
+    "monitor.metric.cpuUsage": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "CPU Usage"}}, "ru": {"stringUnit": {"state": "translated", "value": "Загрузка процессора"}}}},
+    "monitor.interval": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Refresh Every"}}, "ru": {"stringUnit": {"state": "translated", "value": "Обновлять каждые"}}}},
+    "monitor.seconds %lld": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%lld s"}}, "ru": {"stringUnit": {"state": "translated", "value": "%lld с"}}}},
+    "monitor.chart.showCpu": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "CPU on Chart"}}, "ru": {"stringUnit": {"state": "translated", "value": "CPU на графике"}}}},
+    "monitor.chart.showGpu": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "GPU on Chart"}}, "ru": {"stringUnit": {"state": "translated", "value": "GPU на графике"}}}},
+    "monitor.chart.showMemory": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "RAM on Chart"}}, "ru": {"stringUnit": {"state": "translated", "value": "RAM на графике"}}}},
+    "monitor.chart.showGpuTemp": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "GPU Temperature on Chart"}}, "ru": {"stringUnit": {"state": "translated", "value": "Температура GPU на графике"}}}},
+    "rgb.section.look": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Color and Effect"}}, "ru": {"stringUnit": {"state": "translated", "value": "Цвет и эффект"}}}},
+    "rgb.section.profiles": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Lighting Profiles"}}, "ru": {"stringUnit": {"state": "translated", "value": "Профили подсветки"}}}},
+    "rgb.section.devices": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Devices"}}, "ru": {"stringUnit": {"state": "translated", "value": "Устройства"}}}},
+    "rgb.unavailable.help": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "OpenRGB comes with Nexus PC and starts with the PC. If lighting doesn't respond, close Armoury Crate (it takes over lighting) and restart the PC. Devices are set up on the PC: N icon → Set Up Lighting (OpenRGB)…"}}, "ru": {"stringUnit": {"state": "translated", "value": "OpenRGB входит в Nexus PC и запускается вместе с ПК. Если подсветка не отвечает: закройте Armoury Crate (он перехватывает подсветку) и перезагрузите ПК. Устройства настраиваются на ПК: значок «N» → «Настроить подсветку (OpenRGB)…»."}}}},
+    "rgb.color": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Color"}}, "ru": {"stringUnit": {"state": "translated", "value": "Цвет"}}}},
+    "rgb.brightness %lld": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Brightness: %lld%%"}}, "ru": {"stringUnit": {"state": "translated", "value": "Яркость: %lld%%"}}}},
+    "rgb.effect": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Effect"}}, "ru": {"stringUnit": {"state": "translated", "value": "Эффект"}}}},
+    "rgb.effect.static": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Solid Color"}}, "ru": {"stringUnit": {"state": "translated", "value": "Ровный цвет"}}}},
+    "rgb.effect.off": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Off"}}, "ru": {"stringUnit": {"state": "translated", "value": "Выключить"}}}},
+    "rgb.effect.static.short": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "solid color"}}, "ru": {"stringUnit": {"state": "translated", "value": "ровный цвет"}}}},
+    "rgb.effect.off.short": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "off"}}, "ru": {"stringUnit": {"state": "translated", "value": "выключено"}}}},
+    "rgb.effect.help": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Brightness applies to the solid color. Device effects (Breathing, Rainbow…) work only on devices that have them."}}, "ru": {"stringUnit": {"state": "translated", "value": "Яркость применяется к ровному цвету. Эффекты устройств (Breathing, Rainbow…) работают только на тех устройствах, где они есть."}}}},
+    "rgb.apply": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Apply"}}, "ru": {"stringUnit": {"state": "translated", "value": "Применить"}}}},
+    "rgb.saveAsProfile": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Save as Profile"}}, "ru": {"stringUnit": {"state": "translated", "value": "Сохранить как профиль"}}}},
+    "rgb.profiles.empty": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "No profiles yet. Set up a color and tap Save as Profile."}}, "ru": {"stringUnit": {"state": "translated", "value": "Профилей пока нет. Настройте цвет и нажмите «Сохранить как профиль»."}}}},
+    "rgb.profile.apply": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Apply Profile"}}, "ru": {"stringUnit": {"state": "translated", "value": "Применить профиль"}}}},
+    "rgb.profile.loadToEditor": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Load into Settings"}}, "ru": {"stringUnit": {"state": "translated", "value": "Загрузить в настройки"}}}},
+    "rgb.profile.delete": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Delete"}}, "ru": {"stringUnit": {"state": "translated", "value": "Удалить"}}}},
+    "rgb.profiles.hint": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Touch and hold a profile to change or delete it. A profile linked to an app profile turns on together with it."}}, "ru": {"stringUnit": {"state": "translated", "value": "Удерживайте профиль, чтобы изменить или удалить. Профиль, связанный с профилем программ, включается вместе с ним."}}}},
+    "rgb.leds %lld": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%lld LED"}}, "ru": {"stringUnit": {"state": "translated", "value": "%lld LED"}}}},
+    "rgb.skydimo": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "OpenRGB doesn't support Skydimo monitor lighting: it stays in the Skydimo app."}}, "ru": {"stringUnit": {"state": "translated", "value": "Подсветку монитора Skydimo OpenRGB не поддерживает — она остаётся в приложении Skydimo."}}}},
+    "rgb.save.linkTo": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "App Profile"}}, "ru": {"stringUnit": {"state": "translated", "value": "Профиль программ"}}}},
+    "rgb.save.noLink": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Don't Link"}}, "ru": {"stringUnit": {"state": "translated", "value": "Не связывать"}}}},
+    "rgb.save.linkFooter": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The linked lighting profile turns on when you run this app profile (from iPhone, Siri or a widget)."}}, "ru": {"stringUnit": {"state": "translated", "value": "Связанный профиль подсветки включится, когда вы запустите этот профиль программ (с iPhone, через Siri или виджет)."}}}},
+    "rgb.save.name": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Name"}}, "ru": {"stringUnit": {"state": "translated", "value": "Название"}}}},
+    "rgb.save.namePlaceholder": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "For example, Evening"}}, "ru": {"stringUnit": {"state": "translated", "value": "Например, Вечер"}}}},
+    "rgb.save.title": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Lighting Profile"}}, "ru": {"stringUnit": {"state": "translated", "value": "Профиль подсветки"}}}},
+    "rgb.linkedWith %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "with “%@”"}}, "ru": {"stringUnit": {"state": "translated", "value": "вместе с «%@»"}}}},
+    "rgb.profile.saved %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Profile “%@” saved"}}, "ru": {"stringUnit": {"state": "translated", "value": "Профиль «%@» сохранён"}}}},
+    "rgb.profile.deleted %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Profile “%@” deleted"}}, "ru": {"stringUnit": {"state": "translated", "value": "Профиль «%@» удалён"}}}},
+    "rgb.applied %lld %lld": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Applied on %1$lld of %2$lld devices"}}, "ru": {"stringUnit": {"state": "translated", "value": "Применено на %1$lld из %2$lld устройств"}}}},
+    "rgb.appliedPartial %lld %lld %@ %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Applied on %1$lld of %2$lld. Failed: %3$@. %4$@"}}, "ru": {"stringUnit": {"state": "translated", "value": "Применено на %1$lld из %2$lld. Не удалось: %3$@. %4$@"}}}},
+    "files.section.clipboard": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Clipboard"}}, "ru": {"stringUnit": {"state": "translated", "value": "Буфер обмена"}}}},
+    "files.section.folder": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Nexus PC Folder on PC"}}, "ru": {"stringUnit": {"state": "translated", "value": "Папка Nexus PC на ПК"}}}},
+    "files.pick.photos": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Photos and Videos"}}, "ru": {"stringUnit": {"state": "translated", "value": "Фото и видео"}}}},
+    "files.pick.files": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Files"}}, "ru": {"stringUnit": {"state": "translated", "value": "Файлы"}}}},
+    "files.send.hint": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Files go to Downloads\\Nexus PC on the PC. iPhone photos are sent as JPEG, videos as MP4. If the connection drops, sending the same file again resumes where it stopped. Keep the app open until the transfer ends."}}, "ru": {"stringUnit": {"state": "translated", "value": "Файлы попадут в «Загрузки\\Nexus PC» на ПК. Фото iPhone отправляются как JPEG, видео — как MP4. Если связь оборвётся, повторная отправка того же файла продолжится с места обрыва. Держите приложение открытым до конца передачи."}}}},
+    "clipboard.send.hint": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Pastes text from the iPhone clipboard into the PC clipboard; then press Ctrl+V on the PC."}}, "ru": {"stringUnit": {"state": "translated", "value": "Вставляет текст из буфера iPhone в буфер ПК — дальше Ctrl+V на ПК."}}}},
+    "clipboard.copied": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copied to the iPhone clipboard."}}, "ru": {"stringUnit": {"state": "translated", "value": "Скопировано в буфер iPhone."}}}},
+    "clipboard.note": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Only when you tap: there is no automatic sync. The PC shows a notification when the phone reads or changes its clipboard."}}, "ru": {"stringUnit": {"state": "translated", "value": "Только по нажатию: автоматической синхронизации нет. ПК показывает уведомление, когда телефон читает или меняет его буфер."}}}},
+    "clipboard.sent": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The text is in the PC clipboard: press Ctrl+V."}}, "ru": {"stringUnit": {"state": "translated", "value": "Текст в буфере ПК — нажмите Ctrl+V."}}}},
+    "clipboard.sent.truncated": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sent to the PC (first 100,000 characters)."}}, "ru": {"stringUnit": {"state": "translated", "value": "Отправлено на ПК (первые 100 000 символов)."}}}},
+    "clipboard.empty": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The PC clipboard has no text (it may hold a picture or files)."}}, "ru": {"stringUnit": {"state": "translated", "value": "В буфере ПК нет текста (может быть картинка или файлы)."}}}},
+    "files.freeSpace %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Free on the PC disk: %@"}}, "ru": {"stringUnit": {"state": "translated", "value": "Свободно на диске ПК: %@"}}}},
+    "files.error.photo %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't read the photo: %@"}}, "ru": {"stringUnit": {"state": "translated", "value": "Не удалось прочитать фото: %@"}}}},
+    "files.error.open %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't open “%@”."}}, "ru": {"stringUnit": {"state": "translated", "value": "Не удалось открыть «%@»."}}}},
+    "files.counter %lld %lld": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$lld of %2$lld"}}, "ru": {"stringUnit": {"state": "translated", "value": "%1$lld из %2$lld"}}}},
+    "files.progress %@ %@ %@ %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%1$@ · %2$@ of %3$@ · %4$@/s"}}, "ru": {"stringUnit": {"state": "translated", "value": "%1$@ · %2$@ из %3$@ · %4$@/с"}}}},
+    "files.stage.hashing": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "checking"}}, "ru": {"stringUnit": {"state": "translated", "value": "проверка"}}}},
+    "files.stage.resuming": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "resuming"}}, "ru": {"stringUnit": {"state": "translated", "value": "продолжение"}}}},
+    "files.stage.verifying": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "checking on the PC"}}, "ru": {"stringUnit": {"state": "translated", "value": "проверка на ПК"}}}},
+    "files.stage.downloading": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Downloading"}}, "ru": {"stringUnit": {"state": "translated", "value": "Загрузка"}}}},
+    "files.stage.checking": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Checking"}}, "ru": {"stringUnit": {"state": "translated", "value": "Проверка"}}}},
+    "files.upload.cancelled": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sending cancelled."}}, "ru": {"stringUnit": {"state": "translated", "value": "Отправка отменена."}}}},
+    "files.upload.done %@": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sent: %@"}}, "ru": {"stringUnit": {"state": "translated", "value": "Отправлено: %@"}}}},
+    "files.download.cancelled": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Download cancelled."}}, "ru": {"stringUnit": {"state": "translated", "value": "Загрузка отменена."}}}},
+    "files.download.changed": {"extractionState": "manual", "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The file changed on the PC during the download or got damaged. Try again."}}, "ru": {"stringUnit": {"state": "translated", "value": "Файл изменился на ПК во время загрузки или повредился. Попробуйте ещё раз."}}}},
+    "tab.home": {
+      "extractionState": "manual",
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home"
+          }
+        },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Подсветка недоступна: её перехватила другая программа на ПК"
+            "value": "Главная"
+          }
+        }
+      }
+    },
+    "tab.control": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Управление"
+          }
+        }
+      }
+    },
+    "tab.pc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК"
+          }
+        }
+      }
+    },
+    "tab.automations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automations"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоматизации"
+          }
+        }
+      }
+    },
+    "tab.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё"
+          }
+        }
+      }
+    },
+    "section.screen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Экран"
+          }
+        }
+      }
+    },
+    "section.touchpad": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchpad"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тачпад"
+          }
+        }
+      }
+    },
+    "section.keyboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клавиатура"
+          }
+        }
+      }
+    },
+    "section.monitor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC Monitor"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мониторинг"
+          }
+        }
+      }
+    },
+    "section.rgb": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RGB Lighting"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подсветка"
+          }
+        }
+      }
+    },
+    "section.files": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файлы"
+          }
+        }
+      }
+    },
+    "section.automations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automations"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоматизации"
+          }
+        }
+      }
+    },
+    "section.history": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "История"
+          }
+        }
+      }
+    },
+    "section.apps": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программы"
+          }
+        }
+      }
+    },
+    "section.profiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profiles"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Профили"
+          }
+        }
+      }
+    },
+    "section.thisPC": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот ПК"
+          }
+        }
+      }
+    },
+    "pc.keyFingerprint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This iPhone’s Key Fingerprint"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отпечаток ключа этого iPhone"
+          }
+        }
+      }
+    },
+    "pc.updateAddressByQR": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update PC Address by QR Code"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить адрес ПК по QR-коду"
+          }
+        }
+      }
+    },
+    "pc.forget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forget This PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забыть этот ПК"
+          }
+        }
+      }
+    },
+    "home.uptime %@ %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up %1$@ · %2$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Работает %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "power.shutdown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shut Down"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить"
+          }
+        }
+      }
+    },
+    "power.restart": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить"
+          }
+        }
+      }
+    },
+    "power.sleep": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sleep"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сон"
+          }
+        }
+      }
+    },
+    "power.lock": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lock"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заблокировать"
+          }
+        }
+      }
+    },
+    "power.cancelTimer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить"
+          }
+        }
+      }
+    },
+    "power.confirm.shutdown %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shut down %@?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить %@?"
+          }
+        }
+      }
+    },
+    "power.confirm.restart %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart %@?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить %@?"
+          }
+        }
+      }
+    },
+    "power.confirm.sleep": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Put the PC to sleep?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перевести ПК в сон?"
+          }
+        }
+      }
+    },
+    "power.shutdown.now": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shut Down Now"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключить сейчас"
+          }
+        }
+      }
+    },
+    "power.in10min": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In 10 Minutes"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через 10 минут"
+          }
+        }
+      }
+    },
+    "power.in30min": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In 30 Minutes"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через 30 минут"
+          }
+        }
+      }
+    },
+    "power.restart.now": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Now"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить сейчас"
+          }
+        }
+      }
+    },
+    "profiles.appCount %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld apps"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld прил."
+          }
+        }
+      }
+    },
+    "profiles.empty.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Profiles"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Профилей нет"
+          }
+        }
+      }
+    },
+    "profiles.empty.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profiles set up on the PC appear here."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь появятся профили, настроенные на ПК."
+          }
+        }
+      }
+    },
+    "apps.empty.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Apps"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программ нет"
+          }
+        }
+      }
+    },
+    "apps.empty.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps added on the PC appear here."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь появятся программы, добавленные на ПК."
+          }
+        }
+      }
+    },
+    "keyboard.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Everything you type is sent to the PC right away."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всё, что вы печатаете, сразу отправляется на ПК."
+          }
+        }
+      }
+    },
+    "keyboard.show": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Keyboard"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать клавиатуру"
+          }
+        }
+      }
+    },
+    "keyboard.hide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Keyboard"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть клавиатуру"
           }
         }
       }
@@ -267,6 +1059,1570 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открыто: %@."
+          }
+        }
+      }
+    },
+    "status.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC Ready"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК готов"
+          }
+        }
+      }
+    },
+    "status.connecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение…"
+          }
+        }
+      }
+    },
+    "status.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC Offline"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не в сети"
+          }
+        }
+      }
+    },
+    "status.limited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limited"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ограничено"
+          }
+        }
+      }
+    },
+    "status.a11y %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус: %@"
+          }
+        }
+      }
+    },
+    "status.trayMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Nexus PC app isn't running on the PC. Apps and lock are unavailable."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На ПК не запущено приложение Nexus PC. Программы и блокировка недоступны."
+          }
+        }
+      }
+    },
+    "rgb.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lighting is used by another program on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подсветкой управляет другая программа на ПК."
+          }
+        }
+      }
+    },
+    "permission.input.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn it on on the PC: N icon → Devices and Permissions → Mouse and Keyboard"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включите на ПК: значок N → Устройства и разрешения → Мышь и клавиатура"
+          }
+        }
+      }
+    },
+    "offline.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make sure the PC is on and your iPhone is on the same Wi-Fi network."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверьте, что ПК включён и iPhone в той же сети Wi-Fi."
+          }
+        }
+      }
+    },
+    "offline.wake": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn On PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включить ПК"
+          }
+        }
+      }
+    },
+    "common.retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторить"
+          }
+        }
+      }
+    },
+    "common.loading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка…"
+          }
+        }
+      }
+    },
+    "common.loadingSlow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is taking longer than usual."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это занимает дольше обычного."
+          }
+        }
+      }
+    },
+    "common.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена"
+          }
+        }
+      }
+    },
+    "common.error.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something Went Wrong"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что-то пошло не так"
+          }
+        }
+      }
+    },
+    "common.inProgress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In progress"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "выполняется"
+          }
+        }
+      }
+    },
+    "common.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недоступно"
+          }
+        }
+      }
+    },
+    "common.seeAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See All"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все"
+          }
+        }
+      }
+    },
+    "empty.noPC.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No PC Connected"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не подключён"
+          }
+        }
+      }
+    },
+    "empty.noPC.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the PC, click the N icon near the clock → Connect iPhone, then scan the QR code."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На ПК нажмите значок N у часов → «Подключить iPhone», затем отсканируйте QR-код."
+          }
+        }
+      }
+    },
+    "empty.noPC.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключить ПК"
+          }
+        }
+      }
+    },
+    "permission.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permission Needed on PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужно разрешение на ПК"
+          }
+        }
+      }
+    },
+    "permission.path": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn it on on the PC: N icon → Devices and Permissions → %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включите на ПК: значок N → Устройства и разрешения → %@"
+          }
+        }
+      }
+    },
+    "permission.checkAgain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check Again"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверить снова"
+          }
+        }
+      }
+    },
+    "permission.name.input": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse and Keyboard"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мышь и клавиатура"
+          }
+        }
+      }
+    },
+    "permission.name.screen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Экран"
+          }
+        }
+      }
+    },
+    "permission.name.files": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файлы"
+          }
+        }
+      }
+    },
+    "permission.name.clipboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clipboard"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Буфер обмена"
+          }
+        }
+      }
+    },
+    "permission.name.automation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automations"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоматизации"
+          }
+        }
+      }
+    },
+    "permission.name.power": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Power"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Питание"
+          }
+        }
+      }
+    },
+    "permission.name.apps": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программы"
+          }
+        }
+      }
+    },
+    "permission.name.monitoring": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitoring"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мониторинг"
+          }
+        }
+      }
+    },
+    "permission.name.rgb": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lighting"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подсветка"
+          }
+        }
+      }
+    },
+    "pro.badge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro"
+          }
+        }
+      }
+    },
+    "pro.badge.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires Pro"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Требуется Pro"
+          }
+        }
+      }
+    },
+    "pro.card.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available in Pro"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступно в Pro"
+          }
+        }
+      }
+    },
+    "pro.card.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn About Pro"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подробнее о Pro"
+          }
+        }
+      }
+    },
+    "pro.card.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to the internet to see Pro options."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключитесь к интернету, чтобы увидеть варианты Pro."
+          }
+        }
+      }
+    },
+    "limit.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Plan Limit Reached"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Достигнут лимит бесплатного тарифа"
+          }
+        }
+      }
+    },
+    "error.protocol.tooLarge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was too large for the PC. Try a smaller file or text."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запрос слишком большой для ПК. Попробуйте файл или текст поменьше."
+          }
+        }
+      }
+    },
+    "error.protocol.malformed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC couldn't read the request. Update Nexus PC on iPhone and PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не смог прочитать запрос. Обновите Nexus PC на iPhone и на ПК."
+          }
+        }
+      }
+    },
+    "error.protocol.unsupportedVersion": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app on iPhone and the PC are different versions. Update Nexus PC on both."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Версии Nexus PC на iPhone и на ПК не совпадают. Обновите обе."
+          }
+        }
+      }
+    },
+    "error.command.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This PC doesn't support this action yet. Update Nexus PC on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот ПК пока не поддерживает это действие. Обновите Nexus PC на ПК."
+          }
+        }
+      }
+    },
+    "error.command.notImplemented": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This action isn't available in the version installed on the PC. Update Nexus PC on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это действие недоступно в версии Nexus PC на ПК. Обновите её."
+          }
+        }
+      }
+    },
+    "error.command.invalidPayload": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC didn't accept the data. Check the values and try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не принял данные. Проверьте значения и повторите."
+          }
+        }
+      }
+    },
+    "error.auth.required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting to the PC…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторное подключение к ПК…"
+          }
+        }
+      }
+    },
+    "error.auth.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This iPhone is no longer connected to the PC. Connect it again: on the PC, click the N icon → Connect iPhone."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот iPhone больше не подключён к ПК. Подключите заново: на ПК значок N → «Подключить iPhone»."
+          }
+        }
+      }
+    },
+    "error.auth.clockSkew": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The time on iPhone and PC differs too much. Turn on automatic time on both devices."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Время на iPhone и ПК сильно расходится. Включите автоматическое время на обоих устройствах."
+          }
+        }
+      }
+    },
+    "error.auth.replay": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was repeated. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запрос повторился. Попробуйте ещё раз."
+          }
+        }
+      }
+    },
+    "error.confirm.required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm this action to continue."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтвердите действие, чтобы продолжить."
+          }
+        }
+      }
+    },
+    "pro.expired.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Pro plan has ended. Renew it to use this again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тариф Pro закончился. Продлите его, чтобы снова пользоваться этим."
+          }
+        }
+      }
+    },
+    "pro.revoked.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro is no longer active for the owner of this PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro больше не действует для владельца этого ПК."
+          }
+        }
+      }
+    },
+    "limit.files.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the free limit for file transfer. Pro removes it."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вы достигли бесплатного лимита передачи файлов. В Pro его нет."
+          }
+        }
+      }
+    },
+    "limit.files.bodyWithLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The free plan allows {LIMIT}. Pro removes the limit."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В бесплатном тарифе доступно {LIMIT}. В Pro лимита нет."
+          }
+        }
+      }
+    },
+    "pro.card.ownerHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro is checked for the account this PC is linked to."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro проверяется по аккаунту, к которому привязан этот ПК."
+          }
+        }
+      }
+    },
+    "error.pair.noActiveSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC isn't waiting for a connection. On the PC, click the N icon → Connect iPhone, then scan the new QR code."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК сейчас не ждёт подключения. На ПК нажмите значок N → «Подключить iPhone» и отсканируйте новый QR-код."
+          }
+        }
+      }
+    },
+    "error.pair.invalidCode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The code doesn't match. Scan the QR code on the PC again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Код не совпал. Отсканируйте QR-код на ПК ещё раз."
+          }
+        }
+      }
+    },
+    "error.pair.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC is connecting another device. Wait a minute and try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК подключает другое устройство. Подождите минуту и повторите."
+          }
+        }
+      }
+    },
+    "error.pair.rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection was declined on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение отклонено на ПК."
+          }
+        }
+      }
+    },
+    "error.pair.expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The QR code has expired. On the PC, show a new one and scan it."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Срок QR-кода истёк. Покажите на ПК новый и отсканируйте его."
+          }
+        }
+      }
+    },
+    "error.pair.deviceLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many devices are connected to this PC. Remove one on the PC: N icon → Devices and Permissions."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "К этому ПК подключено слишком много устройств. Удалите лишнее на ПК: значок N → Устройства и разрешения."
+          }
+        }
+      }
+    },
+    "error.session.signIn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to Windows on the PC and make sure Nexus PC is running near the clock."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войдите в Windows на ПК и проверьте, что Nexus PC запущен у часов."
+          }
+        }
+      }
+    },
+    "error.power.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC couldn't do this. It may be blocked by another program. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не смог это выполнить. Возможно, мешает другая программа. Повторите."
+          }
+        }
+      }
+    },
+    "error.power.nothingToCancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There's no scheduled shutdown to cancel."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет запланированного выключения."
+          }
+        }
+      }
+    },
+    "error.power.unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Power control isn't available on this PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Управление питанием на этом ПК недоступно."
+          }
+        }
+      }
+    },
+    "error.power.lockFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC couldn't be locked. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось заблокировать ПК. Повторите."
+          }
+        }
+      }
+    },
+    "error.apps.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app was removed on the PC. Pull down to refresh the list."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа удалена на ПК. Потяните вниз, чтобы обновить список."
+          }
+        }
+      }
+    },
+    "error.apps.launchFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app didn't start on the PC. Check that it's still installed."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа не запустилась на ПК. Проверьте, что она установлена."
+          }
+        }
+      }
+    },
+    "error.apps.closeNotAllowed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app can't be closed from iPhone."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эту программу нельзя закрыть с iPhone."
+          }
+        }
+      }
+    },
+    "error.profiles.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This profile no longer exists. Pull down to refresh."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этого профиля больше нет. Потяните вниз, чтобы обновить."
+          }
+        }
+      }
+    },
+    "error.profiles.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The profile uses an app that isn't on the PC's list. Remove it from the profile."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В профиле есть программа, которой нет в списке ПК. Уберите её из профиля."
+          }
+        }
+      }
+    },
+    "error.profiles.limit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the maximum number of profiles. Delete one to add a new one."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Достигнуто максимальное число профилей. Удалите один, чтобы добавить новый."
+          }
+        }
+      }
+    },
+    "error.rgb.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lighting isn't available. Make sure OpenRGB is running on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подсветка недоступна. Проверьте, что на ПК запущен OpenRGB."
+          }
+        }
+      }
+    },
+    "error.files.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file is no longer in the Nexus PC folder. Refresh the list."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файла больше нет в папке Nexus PC. Обновите список."
+          }
+        }
+      }
+    },
+    "error.files.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The transfer was interrupted. Tap Try Again to continue."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Передача прервалась. Нажмите «Повторить», чтобы продолжить."
+          }
+        }
+      }
+    },
+    "error.files.hashMismatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file arrived damaged and was deleted. Send it again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл пришёл повреждённым и удалён. Отправьте его снова."
+          }
+        }
+      }
+    },
+    "error.files.noSpace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough free space on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На ПК недостаточно свободного места."
+          }
+        }
+      }
+    },
+    "error.files.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file couldn't be transferred. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось передать файл. Повторите."
+          }
+        }
+      }
+    },
+    "error.clipboard.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC clipboard is busy in another program. Try again in a moment."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Буфер обмена ПК занят другой программой. Повторите чуть позже."
+          }
+        }
+      }
+    },
+    "error.automations.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This automation is no longer available on the PC. It may have been deleted or created on another device."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта автоматизация больше недоступна на ПК. Возможно, её удалили или создали на другом устройстве."
+          }
+        }
+      }
+    },
+    "error.automations.limit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the maximum number of automations. Delete one to add a new one."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Достигнуто максимальное число автоматизаций. Удалите одну, чтобы добавить новую."
+          }
+        }
+      }
+    },
+    "error.automations.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This automation is already running."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта автоматизация уже выполняется."
+          }
+        }
+      }
+    },
+    "error.screen.denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen sharing was declined on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показ экрана отклонён на ПК."
+          }
+        }
+      }
+    },
+    "error.screen.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC screen is locked, a security prompt is open, or screen sharing is turned off in the N icon menu."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Экран ПК заблокирован, открыт запрос безопасности или показ экрана запрещён в меню значка N."
+          }
+        }
+      }
+    },
+    "error.input.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC isn't accepting input: the screen is locked, a security prompt is open, or control is turned off in the N icon menu."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не принимает ввод: экран заблокирован, открыт запрос безопасности или управление запрещено в меню значка N."
+          }
+        }
+      }
+    },
+    "error.rateLimited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many requests. Wait a moment and try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слишком много запросов. Подождите немного и повторите."
+          }
+        }
+      }
+    },
+    "error.rateLimited.retryIn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again in %d s"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторить через %d с"
+          }
+        }
+      }
+    },
+    "error.internal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something went wrong on the PC. Try again. If it repeats, restart the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На ПК произошла ошибка. Повторите. Если повторяется — перезагрузите ПК."
+          }
+        }
+      }
+    },
+    "error.generic.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again. If it repeats, see Help → Diagnostics."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторите. Если не помогает — откройте «Помощь → Диагностика»."
+          }
+        }
+      }
+    },
+    "pc.forget.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forget This PC?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забыть этот ПК?"
+          }
+        }
+      }
+    },
+    "pc.forget.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It's removed only from this iPhone. To remove this iPhone on the PC: N icon → Devices and Permissions. To reconnect, scan the QR code again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК удаляется только с этого iPhone. Чтобы удалить iPhone на ПК: значок N → «Устройства и разрешения». Подключиться снова можно по QR-коду."
+          }
+        }
+      }
+    },
+    "pc.forget.confirm.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forget PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забыть ПК"
           }
         }
       }

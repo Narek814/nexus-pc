@@ -15,7 +15,8 @@ namespace Nexus.Agent.Admin;
 /// network access explicitly denied. On other OSes (development) it is restricted to the current user.
 /// One JSON object per line in each direction.
 /// </summary>
-internal sealed partial class AdminPipeServer(AdminService admin, string pipeName, ILogger<AdminPipeServer> logger) : BackgroundService
+internal sealed partial class AdminPipeServer(AdminService admin, string pipeName, ILogger<AdminPipeServer> logger,
+    Func<NamedPipeServerStream, bool>? clientCheck = null) : BackgroundService
 {
     public const string DefaultPipeName = "NexusPC.Admin";
     private const int MaxInstances = 4;
@@ -56,6 +57,7 @@ internal sealed partial class AdminPipeServer(AdminService admin, string pipeNam
     private async Task ServeAsync(NamedPipeServerStream pipe, CancellationToken stoppingToken)
     {
         var state = new AdminConnectionState();
+        bool? clientIsAdministrator = null; // asked once per connection, only for an administrator-only operation
         using var connection = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         try
         {
@@ -69,6 +71,11 @@ internal sealed partial class AdminPipeServer(AdminService admin, string pipeNam
                     if (line.Length > MaxLineChars || JsonNode.Parse(line) is not JsonObject request)
                     {
                         response = new JsonObject { ["ok"] = false, ["error"] = "invalid request" };
+                    }
+                    else if (Nexus.Core.Session.SessionOps.AdminPipeRefusal(request["op"] is JsonValue v && v.TryGetValue<string>(out var op) ? op : null,
+                        () => clientIsAdministrator ??= ClientIsAdministrator(pipe)) is { } refusal)
+                    {
+                        response = new JsonObject { ["ok"] = false, ["error"] = refusal };
                     }
                     else
                     {
@@ -86,6 +93,40 @@ internal sealed partial class AdminPipeServer(AdminService admin, string pipeNam
         {
             admin.ConnectionClosed(state);
         }
+    }
+
+    /// <summary>
+    /// The client's own token decides (E4-6, S2), not a field of the request: on Windows the service impersonates the
+    /// client and checks membership in BUILTIN\Administrators. Under UAC a non-elevated token carries that group as
+    /// deny-only, so the check fails for it; SYSTEM passes. The test override replaces only this decision.
+    /// Elsewhere (development) the pipe is current-user-only and there is no elevation to check.
+    /// </summary>
+    private bool ClientIsAdministrator(NamedPipeServerStream pipe)
+    {
+        if (clientCheck is not null)
+        {
+            return clientCheck(pipe);
+        }
+        return !OperatingSystem.IsWindows() || WindowsClientIsAdministrator(pipe);
+    }
+
+    [SupportedOSPlatform("windows")]
+    internal static bool WindowsClientIsAdministrator(NamedPipeServerStream pipe)
+    {
+        var result = false;
+        try
+        {
+            pipe.RunAsClient(() =>
+            {
+                using var identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query | TokenAccessLevels.Duplicate);
+                result = identity.IsSystem || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or InvalidOperationException)
+        {
+            result = false; // fail closed
+        }
+        return result;
     }
 
     private static NamedPipeServerStream Create(string name, bool first)

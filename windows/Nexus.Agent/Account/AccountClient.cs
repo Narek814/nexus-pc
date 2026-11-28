@@ -22,6 +22,11 @@ internal enum RefreshOutcome
     RateLimited,
     /// <summary>Refused for good: the local refresh token was erased and the plan is Free.</summary>
     Revoked,
+    /// <summary>
+    /// The server did not accept this request (bad.request, or an unknown 4xx code mapped to it): nothing is erased,
+    /// the token and the plan stay, no retry in the same attempt; the next scheduled refresh tries again.
+    /// </summary>
+    Rejected,
 }
 
 internal readonly record struct RefreshResult(RefreshOutcome Outcome, int RetryAfter = 0);
@@ -140,8 +145,11 @@ internal sealed partial class AccountClient : IDisposable
             }
             var state = _loginResult switch
             {
-                null => _store.Load() is not null ? "ok" : "none",
-                "ok" or "expired" => _loginResult,
+                // "ok" is derived from the token on disk, not only from the last attempt: after a Wipe (revoked,
+                // pc.key_required, unlink) or an unreadable store the PC is not linked, so it must never read "ok"
+                // next to linked:false. Wipe() also clears _loginResult; this check covers any other path.
+                null or "ok" => _store.Load() is not null ? "ok" : "none",
+                "expired" => _loginResult,
                 _ => "failed",
             };
             var view = new JsonObject { ["state"] = state };
@@ -280,11 +288,16 @@ internal sealed partial class AccountClient : IDisposable
                         return new RefreshResult(RefreshOutcome.RateLimited, Math.Clamp(reply.RetryAfter ?? 60, 1, 86_400));
                     case Transient or "request.stale" or "nonce.replay":
                         break;
-                    default:
-                        // revoked, reuse.detected, pc.key_required, bad.request: erase and wait for a new sign-in.
+                    case "auth.required" or "pc.not_found" or "revoked" or "reuse.detected" or "pc.key_required":
+                        // Only these say the token is no longer valid: erase and wait for a new sign-in.
                         Wipe();
                         Record("account.token", false, reply.Error);
                         return new RefreshResult(RefreshOutcome.Revoked);
+                    default:
+                        // bad.request (unknown codes are mapped to it) and known codes pc-token never sends: this says
+                        // nothing about the token, so nothing is erased and there is no retry in this attempt.
+                        Record("account.token", false, reply.Error);
+                        return new RefreshResult(RefreshOutcome.Rejected);
                 }
                 if (attempt >= _retryPauses.Count || _time.GetUtcNow() + _retryPauses[attempt] - first >= IdempotentWindow)
                 {
@@ -326,6 +339,7 @@ internal sealed partial class AccountClient : IDisposable
         {
             LogDeleteFailed(_log, ex.GetType().Name);
         }
+        _loginResult = null; // an earlier "ok" no longer holds (PollAsync sets its own result after Wipe)
         _entitlements.MarkRevoked();
     }
 

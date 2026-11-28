@@ -11,15 +11,22 @@ namespace Nexus.Tray;
 /// </summary>
 internal sealed class PairingForm : Form
 {
+#if DEBUG
+    /// <summary>"Copy Link" only feeds Nexus.DevClient during development (docs/design/windows.md 5).</summary>
+    private const bool ShowCopyLink = true;
+#else
+    private const bool ShowCopyLink = false;
+#endif
+
     private readonly AgentConnection _agent;
     private readonly PictureBox _qr = new() { SizeMode = PictureBoxSizeMode.Zoom, Width = 300, Height = 300, BackColor = Color.White };
     private readonly Label _title = new() { AutoSize = false, Width = 560, Height = 30, Font = new Font("Segoe UI Semibold", 13f) };
     private readonly Label _info = new() { AutoSize = false, Width = 240, Height = 220 };
     private readonly Label _countdown = new() { AutoSize = false, Width = 240, Height = 24, ForeColor = Theme.Muted };
-    private readonly Button _copy = new() { Text = "Копировать ссылку", Width = 240, Height = 34, Enabled = false };
-    private readonly Button _approve = new() { Text = "Подключить", Width = 115, Height = 38, Enabled = false };
-    private readonly Button _reject = new() { Text = "Отклонить", Width = 115, Height = 38, Enabled = false };
-    private readonly Button _restart = new() { Text = "Начать заново", Width = 240, Height = 34, Visible = false };
+    private readonly Button _copy = new() { Text = TrayText.Get("PairCopyLink"), Width = 240, Height = 34, Enabled = false };
+    private readonly Button _approve = new() { Text = TrayText.Get("PairApprove"), Width = 115, Height = 38, Enabled = false };
+    private readonly Button _reject = new() { Text = TrayText.Get("PairReject"), Width = 115, Height = 38, Enabled = false };
+    private readonly Button _restart = new() { Text = TrayText.Get("PairRestart"), Width = 240, Height = 34, Visible = false };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 1000 };
     private string? _link;
     private DateTimeOffset _expiresAt;
@@ -28,7 +35,8 @@ internal sealed class PairingForm : Form
     public PairingForm(AgentConnection agent)
     {
         _agent = agent;
-        Text = "Nexus PC — подключить iPhone";
+        Text = TrayText.Get("PairTitle");
+        _qr.AccessibleName = TrayText.Get("PairQrA11y");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -51,7 +59,7 @@ internal sealed class PairingForm : Form
             if (_link is not null)
             {
                 Clipboard.SetText(_link);
-                _copy.Text = "Скопировано";
+                _copy.Text = TrayText.Get("PairCopied");
             }
         };
         _approve.Click += async (_, _) => await DecideAsync(true);
@@ -73,16 +81,16 @@ internal sealed class PairingForm : Form
     {
         _finished = false;
         _restart.Visible = false;
-        _copy.Visible = true;
-        _copy.Text = "Копировать ссылку";
+        _copy.Visible = ShowCopyLink;
+        _copy.Text = TrayText.Get("PairCopyLink");
         _approve.Enabled = _reject.Enabled = false;
-        _title.Text = "Отсканируйте QR-код в приложении Nexus PC";
-        _info.Text = "Открываю сопряжение…";
+        _title.Text = TrayText.Get("PairScanTitle");
+        _info.Text = TrayText.Get("PairOpening");
 
         var started = await _agent.CallAsync(SessionOps.PairStart);
         if (!started.Ok || started.Result?["link"]?.GetValue<string>() is not { } link)
         {
-            ShowFailure(started.Message ?? "Не удалось открыть сопряжение.");
+            ShowFailure(FailureText(started.ErrorCode));
             return;
         }
         _link = link;
@@ -91,9 +99,7 @@ internal sealed class PairingForm : Form
         _qr.Image = Theme.RenderQr(QrCode.EncodeText(link), 6);
         old?.Dispose();
         _copy.Enabled = true;
-        _info.Text = $"Код: {started.Result!["code"]}\n\n" +
-                     "Пока приложения для iPhone нет, скопируйте ссылку и передайте её Nexus.DevClient " +
-                     "(см. docs/SETUP.md).\n\nОкно можно не закрывать: подтверждение появится здесь.";
+        _info.Text = TrayText.Format("PairCode", started.Result!["code"]) + "\n\n" + TrayText.Get("PairScanHint");
         _timer.Start();
         UpdateCountdown();
 
@@ -104,15 +110,13 @@ internal sealed class PairingForm : Form
         }
         if (!pending.Ok)
         {
-            ShowFailure("Время вышло, устройство не подключилось.");
+            ShowFailure(TrayText.Get("PairTimeout"));
             return;
         }
         _timer.Stop();
         _countdown.Text = string.Empty;
-        _title.Text = "Подтвердите устройство";
-        _info.Text = $"«{pending.Result!["deviceName"]}» хочет подключиться к этому ПК.\n\n" +
-                     $"Код проверки: {pending.Result!["verificationCode"]}\n\n" +
-                     "Подключайте, только если такой же код показан на вашем устройстве.";
+        _title.Text = TrayText.Get("PairConfirmTitle");
+        _info.Text = TrayText.Format("PairConfirmBody", pending.Result!["deviceName"], pending.Result!["verificationCode"]);
         _approve.Enabled = _reject.Enabled = true;
         _approve.Focus();
     }
@@ -125,20 +129,29 @@ internal sealed class PairingForm : Form
         _copy.Visible = false;
         if (!result.Ok)
         {
-            ShowFailure(result.Message ?? "Не удалось завершить сопряжение.");
+            ShowFailure(FailureText(result.ErrorCode));
             return;
         }
-        _title.Text = approve && result.Result?["approved"]?.GetValue<bool>() == true ? "Устройство подключено" : "Подключение отклонено";
+        _title.Text = TrayText.Get(approve && result.Result?["approved"]?.GetValue<bool>() == true ? "PairDone" : "PairDeclined");
         _info.Text = approve
-            ? "Разрешения по умолчанию: питание, приложения, мониторинг.\nОстальное включается отдельно."
-            : "Ничего не сохранено.";
+            ? TrayText.Get("PairDoneBody")
+            : TrayText.Get("PairDeclinedBody");
     }
+
+    /// <summary>A plain text by the agent's error code; the agent's own message is not shown.</summary>
+    private static string FailureText(string? errorCode) => errorCode switch
+    {
+        "pair.busy" => TrayText.Get("PairBusy"),
+        "pair.deviceLimit" => TrayText.Get("PairDeviceLimit"),
+        "pair.expired" => TrayText.Get("PairTimeout"),
+        _ => TrayText.Get("PairFailed"),
+    };
 
     private void ShowFailure(string message)
     {
         _timer.Stop();
         _finished = true;
-        _title.Text = "Сопряжение не выполнено";
+        _title.Text = TrayText.Get("PairFailedTitle");
         _info.Text = message;
         _countdown.Text = string.Empty;
         _copy.Visible = false;
@@ -149,7 +162,7 @@ internal sealed class PairingForm : Form
     private void UpdateCountdown()
     {
         var left = _expiresAt - DateTimeOffset.UtcNow;
-        _countdown.Text = left > TimeSpan.Zero ? $"Осталось {left:m\\:ss}" : string.Empty;
+        _countdown.Text = left > TimeSpan.Zero ? TrayText.Format("PairCountdown", left.ToString(@"m\:ss", CultureInfo.InvariantCulture)) : string.Empty;
     }
 
     protected override void Dispose(bool disposing)

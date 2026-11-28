@@ -22,6 +22,12 @@ internal static partial class Theme
 
     public static void Apply(Form form)
     {
+        if (SystemInformation.HighContrast)
+        {
+            // Windows high contrast: system colors, no gradients or glow.
+            form.Font = new Font("Segoe UI", 10f);
+            return;
+        }
         form.BackColor = Background;
         form.ForeColor = Text;
         form.Font = new Font("Segoe UI", 10f);
@@ -63,6 +69,10 @@ internal static partial class Theme
                 button.MouseEnter += (_, _) => button.Invalidate();
                 button.MouseLeave += (_, _) => button.Invalidate();
                 button.EnabledChanged += (_, _) => button.Invalidate();
+                button.MouseDown += (_, _) => button.Invalidate();
+                button.MouseUp += (_, _) => button.Invalidate();
+                button.GotFocus += (_, _) => button.Invalidate();
+                button.LostFocus += (_, _) => button.Invalidate();
                 break;
             case TextBox or ListBox or CheckedListBox or ListView or ComboBox:
                 control.BackColor = Surface;
@@ -118,6 +128,7 @@ internal static partial class Theme
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         g.Clear(button.Parent?.BackColor ?? Background);
         var hover = button.Enabled && button.ClientRectangle.Contains(button.PointToClient(Cursor.Position));
+        var pressed = hover && (Control.MouseButtons & MouseButtons.Left) != 0;
         var rect = new RectangleF(1.5f, 1.5f, button.Width - 3, button.Height - 3);
         using var path = Rounded(rect, Math.Min(10, rect.Height / 2));
         using var gradient = new LinearGradientBrush(button.ClientRectangle, Violet, Cyan, 0f);
@@ -151,7 +162,20 @@ internal static partial class Theme
             using var border = new Pen(gradient, 1.6f);
             g.DrawPath(border, path);
         }
-        var color = !button.Enabled ? Muted : primary ? Color.FromArgb(10, 8, 20) : Text;
+        if (pressed)
+        {
+            // Pressed differs from hover: the fill is darkened by about 15 %.
+            using var shade = new SolidBrush(Color.FromArgb(38, Color.Black));
+            g.FillPath(shade, path);
+        }
+        if (button.Focused && button.Enabled)
+        {
+            // Visible keyboard focus: FlatStyle.Flat with no border would hide it otherwise.
+            using var inner = Rounded(new RectangleF(3f, 3f, button.Width - 6, button.Height - 6), Math.Min(8, (button.Height - 6) / 2f));
+            using var focus = new Pen(Cyan, 2f);
+            g.DrawPath(focus, inner);
+        }
+        var color =!button.Enabled ? Muted : primary ? Color.FromArgb(10, 8, 20) : Text;
         var font = primary ? new Font(button.Font, FontStyle.Bold) : button.Font;
         try
         {
@@ -204,6 +228,10 @@ internal static partial class Theme
     /// <summary>Tab headers drawn dark, the selected one with a neon underline (Windows draws them white).</summary>
     public static void StyleTabs(TabControl tabs)
     {
+        if (SystemInformation.HighContrast)
+        {
+            return;
+        }
         tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
         tabs.SizeMode = TabSizeMode.Fixed;
         tabs.ItemSize = new Size(150, 34);
@@ -228,6 +256,10 @@ internal static partial class Theme
     /// <summary>Dark tray menu with a violet highlight, in the app's style.</summary>
     public static void StyleMenu(ContextMenuStrip menu)
     {
+        if (SystemInformation.HighContrast)
+        {
+            return; // system menu colors in high contrast
+        }
         menu.Renderer = new NeonMenuRenderer();
         menu.BackColor = Surface;
         menu.ForeColor = Text;

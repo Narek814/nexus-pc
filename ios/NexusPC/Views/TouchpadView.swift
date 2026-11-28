@@ -241,7 +241,7 @@ final class InputSender {
         case "session.unavailable":
             return "На ПК не запущен Nexus PC в трее — тачпад работает через него."
         case "input.blocked":
-            if case let .server(_, text)? = error as? NexusError {
+            if case let .server(_, text, _)? = error as? NexusError {
                 return text
             }
             return "Windows не принимает ввод."
@@ -295,14 +295,12 @@ struct TouchpadSurface: UIViewRepresentable {
     }
 }
 
-final class TouchpadUIView: UIView, UIKeyInput {
+final class TouchpadUIView: LiveKeyInputView {
     var onMove: ((CGPoint, CGFloat) -> Void)?
     var onScroll: ((CGPoint) -> Void)?
     var onTap: (() -> Void)?
     var onRightTap: (() -> Void)?
     var onDrag: ((Bool) -> Void)?
-    var onText: ((String) -> Void)?
-    var onKey: ((String) -> Void)?
 
     private var lastMove = CGPoint.zero
     private var lastScroll = CGPoint.zero
@@ -391,6 +389,39 @@ final class TouchpadUIView: UIView, UIKeyInput {
             onDrag?(false)
         }
     }
+}
+
+/// Live typing field (UIKeyInput): every key goes straight to the PC. Shared by the touchpad
+/// (via `TouchpadUIView`) and the Keyboard screen; first responder while `typing` is true.
+struct LiveTypingField: UIViewRepresentable {
+    let typing: Bool
+    let sender: InputSender
+
+    func makeUIView(context: Context) -> LiveKeyInputView {
+        let view = LiveKeyInputView()
+        configure(view)
+        return view
+    }
+
+    func updateUIView(_ view: LiveKeyInputView, context: Context) {
+        configure(view)
+        if typing, !view.isFirstResponder {
+            view.becomeFirstResponder()
+        } else if !typing, view.isFirstResponder {
+            view.resignFirstResponder()
+        }
+    }
+
+    private func configure(_ view: LiveKeyInputView) {
+        let sender = sender
+        view.onText = { text in sender.send(.text(text)) }
+        view.onKey = { key in sender.send(.key(key)) }
+    }
+}
+
+class LiveKeyInputView: UIView, UIKeyInput {
+    var onText: ((String) -> Void)?
+    var onKey: ((String) -> Void)?
 
     // MARK: - Live typing (UIKeyInput): every key goes straight to the PC.
 

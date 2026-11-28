@@ -90,14 +90,14 @@ internal sealed partial class WindowsDesktop : IDesktop
         // windows of elevated apps is dropped silently (UIPI) and cannot be detected here.
         return sent == inputs.Length
             ? DesktopResult.Success
-            : new DesktopResult(false, $"Windows не принял ввод: экран ПК заблокирован или открыт запрос администратора (код {Marshal.GetLastPInvokeError()}).");
+            : new DesktopResult(false, TrayText.Format("DesktopInputRejected", Marshal.GetLastPInvokeError()));
     }
 
     public ClipboardRead GetClipboardText() =>
         OnStaThread(() => Clipboard.ContainsText(TextDataFormat.UnicodeText)
             ? new ClipboardRead(true, Clipboard.GetText(TextDataFormat.UnicodeText))
             : new ClipboardRead(true, null))
-        ?? new ClipboardRead(false, null, "Буфер обмена занят другой программой — попробуйте ещё раз.");
+        ?? new ClipboardRead(false, null, TrayText.Get("DesktopClipboardBusy"));
 
     public DesktopResult SetClipboardText(string text) =>
         OnStaThread(() =>
@@ -106,7 +106,7 @@ internal sealed partial class WindowsDesktop : IDesktop
             Clipboard.SetDataObject(text, copy: true, retryTimes: 10, retryDelay: 100);
             return DesktopResult.Success;
         })
-        ?? new DesktopResult(false, "Буфер обмена занят другой программой — попробуйте ещё раз.");
+        ?? new DesktopResult(false, TrayText.Get("DesktopClipboardBusy"));
 
     /// <summary>The clipboard API needs a single-threaded apartment; pipe requests arrive on pool threads.</summary>
     private static T? OnStaThread<T>(Func<T> work)
@@ -144,7 +144,7 @@ internal sealed partial class WindowsDesktop : IDesktop
         var bounds = System.Windows.Forms.Screen.PrimaryScreen?.Bounds ?? Rectangle.Empty;
         if (bounds.Width == 0)
         {
-            return new(false, null, 0, 0, null, Message: "Нет экрана.");
+            return new(false, null, 0, 0, null, Message: TrayText.Get("DesktopNoScreen"));
         }
         try
         {
@@ -176,7 +176,7 @@ internal sealed partial class WindowsDesktop : IDesktop
         catch (Exception ex) when (ex is Win32Exception or ExternalException or ArgumentException)
         {
             // CopyFromScreen fails while the secure desktop (lock screen, UAC prompt) is shown.
-            return new(false, null, 0, 0, null, Message: "Экран ПК сейчас недоступен: он заблокирован или открыт запрос администратора.");
+            return new(false, null, 0, 0, null, Message: TrayText.Get("DesktopScreenUnavailable"));
         }
     }
 

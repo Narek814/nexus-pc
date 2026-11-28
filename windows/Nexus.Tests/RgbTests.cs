@@ -411,6 +411,9 @@ public sealed class RgbUnavailableTests
             var status = await client.RequestAsync("rgb.status");
             Assert.False(status["payload"]!["available"]!.GetValue<bool>());
             Assert.Contains("OpenRGB", status["payload"]!["reason"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Equal(Nexus.Agent.Server.RgbService.NotRespondingMessage, status["payload"]!["reason"]!.GetValue<string>());
+            Assert.Equal("openrgbNotResponding", status["payload"]!["reasonCode"]!.GetValue<string>());
+            Assert.Null(status["payload"]!["state"]);
             var apply = await client.RequestAsync("rgb.apply", new System.Text.Json.Nodes.JsonObject { ["color"] = "#FFFFFF", ["brightness"] = 100, ["effect"] = "static" });
             Assert.Equal(Nexus.Core.Protocol.ErrorCodes.RgbUnavailable, apply.ErrorCode());
         }

@@ -61,6 +61,8 @@ internal sealed class FakeAccountServer : HttpMessageHandler
     /// <summary>Next pc-token answers are lost this many times (processed, then the connection drops).</summary>
     public int LoseTokenAnswers { get; set; }
     public string? TokenError { get; set; }
+    /// <summary>HTTP status for <see cref="TokenError"/> (default: 429 for rate.limited, else 401).</summary>
+    public HttpStatusCode? TokenStatus { get; set; }
     public string? PollError { get; set; }
     public int TokenRetryAfter { get; set; } = 3600;
     public string EntitlementState { get; set; } = "active";
@@ -140,7 +142,7 @@ internal sealed class FakeAccountServer : HttpMessageHandler
                     {
                         refused["retryAfter"] = TokenRetryAfter;
                     }
-                    return Answer(error == "rate.limited" ? HttpStatusCode.TooManyRequests : HttpStatusCode.Unauthorized, refused);
+                    return Answer(TokenStatus ?? (error == "rate.limited" ? HttpStatusCode.TooManyRequests : HttpStatusCode.Unauthorized), refused);
                 }
                 var old = body["refreshToken"]!.GetValue<string>();
                 if (!Rotations.TryGetValue(old, out var fresh))
@@ -202,6 +204,7 @@ public sealed class AccountClientTests : IDisposable
 
     public AccountClientTests()
     {
+        AgentTestHost.TrustTestAccount(); // account.dat is SYSTEM-only (E4-6); in tests the test account too
         Directory.CreateDirectory(_dir);
         _clock = new FakeEntitlementClock(_time.Now.ToUnixTimeSeconds());
         _key = new TestKey(_ecdsa);
@@ -391,6 +394,8 @@ public sealed class AccountClientTests : IDisposable
     }
 
     [Theory]
+    [InlineData("auth.required")]
+    [InlineData("pc.not_found")]
     [InlineData("revoked")]
     [InlineData("reuse.detected")]
     [InlineData("pc.key_required")]
@@ -404,6 +409,91 @@ public sealed class AccountClientTests : IDisposable
         Assert.Equal("free", _tracker.Current.Plan);
         Assert.Equal(EntitlementState.Revoked, _tracker.Current.State);
         Assert.Contains($"account.token False {error}", _audit);
+    }
+
+    [Fact]
+    public async Task Login_status_is_not_ok_after_the_token_was_revoked()
+    {
+        var (client, fake) = await SignedInAsync();
+        fake.TokenError = "revoked";
+        Assert.Equal(RefreshOutcome.Revoked, (await client.RefreshAsync(CancellationToken.None)).Outcome);
+        var data = (await client.LoginStatusAsync(CancellationToken.None)).Data!;
+        Assert.NotEqual("ok", data["state"]!.GetValue<string>());
+        Assert.False(data["linked"]!.GetValue<bool>());
+        Assert.Equal("free", _tracker.Current.Plan);
+        Assert.Equal(EntitlementState.Revoked, _tracker.Current.State);
+    }
+
+    [Fact]
+    public async Task Unpolled_login_never_changes_the_plan()
+    {
+        var (client, fake) = Create();
+        var plan = _tracker.Current.Plan;
+        var state = _tracker.Current.State;
+        Assert.True((await client.StartLoginAsync(CancellationToken.None)).Ok);
+        _time.Now = _time.Now.AddHours(2);
+        Assert.Equal("expired", (await client.LoginStatusAsync(CancellationToken.None)).Data!["state"]!.GetValue<string>());
+        Assert.Null(_store.Load());
+        Assert.DoesNotContain(fake.Requests, r => r.Function == "pc-login-poll");
+        Assert.Equal(plan, _tracker.Current.Plan);
+        Assert.Equal(state, _tracker.Current.State);
+    }
+
+    [Theory]
+    [InlineData("bad.request", 400)]
+    [InlineData("some.future_code", 400)]
+    [InlineData("some.future_code", 403)]
+    public async Task Bad_request_keeps_the_token_and_the_plan_without_retries(string error, int status)
+    {
+        var (client, fake) = await SignedInAsync();
+        var old = _store.Load();
+        fake.TokenError = error;
+        fake.TokenStatus = (HttpStatusCode)status;
+        Assert.Equal(RefreshOutcome.Rejected, (await client.RefreshAsync(CancellationToken.None)).Outcome);
+        Assert.Equal(old, _store.Load());
+        Assert.Equal(EntitlementState.Active, _tracker.Current.State);
+        Assert.True(_tracker.Current.Has(PlanPolicy.RgbSync));
+        Assert.Equal(1, fake.Requests.Count(r => r.Function == "pc-token"));
+        Assert.Contains("account.token False bad.request", _audit);
+        Assert.DoesNotContain(_log.Lines, l => l.Contains("some.future_code", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("slow_down", 400)]
+    [InlineData("pending", 400)]
+    [InlineData("pcs.limit", 403)]
+    [InlineData("code.invalid", 400)]
+    [InlineData("reauth.required", 401)]
+    [InlineData("reauth.required", 403)]
+    public async Task Known_code_not_expected_from_pc_token_keeps_the_token_and_the_plan(string error, int status)
+    {
+        var (client, fake) = await SignedInAsync();
+        var old = _store.Load();
+        fake.TokenError = error;
+        fake.TokenStatus = (HttpStatusCode)status;
+        Assert.Equal(RefreshOutcome.Rejected, (await client.RefreshAsync(CancellationToken.None)).Outcome);
+        Assert.Equal(old, _store.Load());
+        Assert.Equal(EntitlementState.Active, _tracker.Current.State);
+        Assert.True(_tracker.Current.Has(PlanPolicy.RgbSync));
+        Assert.Equal(1, fake.Requests.Count(r => r.Function == "pc-token"));
+        Assert.Contains(_audit, a => a.StartsWith("account.token False ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Unknown_5xx_error_is_logged_only_as_internal()
+    {
+        var (client, fake) = await SignedInAsync();
+        var old = _store.Load();
+        fake.TokenError = "db.secret_detail_xyz";
+        fake.TokenStatus = HttpStatusCode.InternalServerError;
+        lock (_log.Lines)
+        {
+            _log.Lines.Clear();
+        }
+        Assert.Equal(RefreshOutcome.Offline, (await client.RefreshAsync(CancellationToken.None)).Outcome);
+        Assert.Equal(old, _store.Load());
+        Assert.Contains(_log.Lines, l => l.Contains("internal", StringComparison.Ordinal));
+        Assert.DoesNotContain(_log.Lines.Concat(_audit), l => l.Contains("db.secret_detail_xyz", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -598,9 +688,12 @@ public sealed class AccountAgentTests
             pcId = host.PcId;
             var account = host.Services.Account;
             Assert.NotNull(account);
-            Assert.Contains("login.start", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            // E4-6 (S2): login.status for everyone on the session pipe; login.start and unlink only via the admin pipe.
             Assert.Contains("login.status", Nexus.Core.Session.SessionOps.AllowedFromTray);
-            Assert.Contains("unlink", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            Assert.DoesNotContain("login.start", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            Assert.DoesNotContain("unlink", Nexus.Core.Session.SessionOps.AllowedFromTray);
+            Assert.Equal("admin.required", Nexus.Core.Session.SessionOps.SessionRefusal("login.start"));
+            Assert.Equal("admin.required", Nexus.Core.Session.SessionOps.SessionRefusal("unlink"));
             fake.PendingPolls = 0;
             var admin = new AdminService(host.Services);
             var start = await admin.HandleAsync(new JsonObject { ["op"] = "login.start" }, new AdminConnectionState(), CancellationToken.None);

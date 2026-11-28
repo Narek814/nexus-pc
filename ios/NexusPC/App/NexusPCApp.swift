@@ -4,7 +4,7 @@ import SwiftUI
 struct NexusPCApp: App {
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            RootTabView()
                 .preferredColorScheme(.dark)
         }
     }

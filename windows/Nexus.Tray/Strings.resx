@@ -21,4 +21,494 @@
   <data name="KeyRetry" xml:space="preserve">
     <value>Try again</value>
   </data>
+  <data name="AccountMenu" xml:space="preserve">
+    <value>Account…</value>
+  </data>
+  <data name="AccountTitle" xml:space="preserve">
+    <value>Nexus PC — account</value>
+  </data>
+  <data name="AccountHeading" xml:space="preserve">
+    <value>Nexus PC account</value>
+  </data>
+  <data name="AccountChecking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="AccountSignedOut" xml:space="preserve">
+    <value>This PC is not linked to a Nexus PC account.</value>
+  </data>
+  <data name="AccountSignIn" xml:space="preserve">
+    <value>Sign in</value>
+  </data>
+  <data name="AccountStarting" xml:space="preserve">
+    <value>Getting a code…</value>
+  </data>
+  <data name="AccountCodeHint" xml:space="preserve">
+    <value>In the Nexus PC app on your iPhone, choose to add a PC to your account and enter this code:</value>
+  </data>
+  <data name="AccountExpiresIn" xml:space="preserve">
+    <value>The code is valid for {0} more. Waiting for confirmation on the iPhone…</value>
+  </data>
+  <data name="AccountCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="AccountClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="AccountLinked" xml:space="preserve">
+    <value>This PC is linked to the Nexus PC account that confirmed the sign-in on the iPhone. The account's email is not stored on this PC: you can see it in the app.</value>
+  </data>
+  <data name="AccountPlan" xml:space="preserve">
+    <value>Plan: {0}</value>
+  </data>
+  <data name="PlanFree" xml:space="preserve">
+    <value>Free</value>
+  </data>
+  <data name="PlanPro" xml:space="preserve">
+    <value>Pro</value>
+  </data>
+  <data name="AccountUnlink" xml:space="preserve">
+    <value>Unlink</value>
+  </data>
+  <data name="AccountUnlinkConfirm" xml:space="preserve">
+    <value>Unlink this PC from the account? The plan on this PC becomes Free. To remove the PC from your account completely, also remove it in the app on your iPhone.</value>
+  </data>
+  <data name="ProblemRateLimited" xml:space="preserve">
+    <value>Too many attempts. Wait a minute and try again.</value>
+  </data>
+  <data name="ProblemPcsLimit" xml:space="preserve">
+    <value>Your account already has the maximum number of PCs. Remove one in the app on your iPhone and try again.</value>
+  </data>
+  <data name="ProblemNetwork" xml:space="preserve">
+    <value>No connection to the Nexus PC server. Check the internet connection and try again.</value>
+  </data>
+  <data name="ProblemNotConfigured" xml:space="preserve">
+    <value>Signing in to an account is not available in this version of Nexus PC.</value>
+  </data>
+  <data name="ProblemServiceUnavailable" xml:space="preserve">
+    <value>Nexus PC isn't running. Restart the PC and try again.</value>
+  </data>
+  <data name="ProblemExpired" xml:space="preserve">
+    <value>Sign-in was not finished in time. Press "Sign in" to get a new code.</value>
+  </data>
+  <data name="ProblemFailed" xml:space="preserve">
+    <value>Sign-in failed. Try again.</value>
+  </data>
+  <data name="ProblemAdminRequired" xml:space="preserve">
+    <value>Only a Windows administrator can sign this PC in or unlink it.</value>
+  </data>
+  <data name="ProblemAdminDeclined" xml:space="preserve">
+    <value>Cancelled: signing in and unlinking need administrator rights. Press the button again and allow the Windows prompt.</value>
+  </data>
+  <data name="ProblemElevationFailed" xml:space="preserve">
+    <value>Could not start the step with administrator rights.</value>
+  </data>
+  <data name="AccountAdminNote" xml:space="preserve">
+    <value>Windows will ask for administrator permission.</value>
+  </data>
+  <data name="NoticeResuming" xml:space="preserve">
+    <value>Sign-in was not finished — finishing it now.</value>
+  </data>
+  <data name="NoticeSignedIn" xml:space="preserve">
+    <value>This PC is now linked to your Nexus PC account.</value>
+  </data>
+  <data name="NoticeRetry" xml:space="preserve">
+    <value>Sign-in was not finished. Open "Account" in the Nexus PC menu and sign in again.</value>
+  </data>
+  <data name="TrayStatusReady" xml:space="preserve">
+    <value>Nexus PC is ready</value>
+  </data>
+  <data name="TrayStatusConnecting" xml:space="preserve">
+    <value>Starting Nexus PC…</value>
+  </data>
+  <data name="TrayStatusServiceDown" xml:space="preserve">
+    <value>Nexus PC isn't running. Restart the PC; if it repeats, reinstall Nexus PC.</value>
+  </data>
+  <data name="TrayStatusServiceUntrusted" xml:space="preserve">
+    <value>Nexus PC is damaged. Reinstall it.</value>
+  </data>
+  <data name="TrayTipReady" xml:space="preserve">
+    <value>Nexus PC — ready</value>
+  </data>
+  <data name="TrayTipConnecting" xml:space="preserve">
+    <value>Nexus PC — starting…</value>
+  </data>
+  <data name="TrayTipServiceDown" xml:space="preserve">
+    <value>Nexus PC — not running</value>
+  </data>
+  <data name="TrayTipScreenViewer" xml:space="preserve">
+    <value>Nexus PC — "{0}" sees the screen</value>
+  </data>
+  <data name="MenuPair" xml:space="preserve">
+    <value>Connect iPhone…</value>
+  </data>
+  <data name="MenuDevices" xml:space="preserve">
+    <value>Devices and Permissions…</value>
+  </data>
+  <data name="MenuApps" xml:space="preserve">
+    <value>Apps and Profiles…</value>
+  </data>
+  <data name="MenuLighting" xml:space="preserve">
+    <value>Lighting (OpenRGB)…</value>
+  </data>
+  <data name="MenuFiles" xml:space="preserve">
+    <value>Open Folder of Files from iPhone</value>
+  </data>
+  <data name="MenuStopInput" xml:space="preserve">
+    <value>Block Mouse and Keyboard Control</value>
+  </data>
+  <data name="MenuStopScreen" xml:space="preserve">
+    <value>Block Screen Sharing</value>
+  </data>
+  <data name="MenuStopScreenViewer" xml:space="preserve">
+    <value>Block Screen Sharing ("{0}" is watching)</value>
+  </data>
+  <data name="MenuSettings" xml:space="preserve">
+    <value>Settings…</value>
+  </data>
+  <data name="MenuExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="NoticeScreenViewer" xml:space="preserve">
+    <value>"{0}" can see this PC's screen. To stop: right-click the N icon → Block Screen Sharing.</value>
+  </data>
+  <data name="NoticeOpenRgbMissing" xml:space="preserve">
+    <value>OpenRGB wasn't installed with Nexus PC. Run the Nexus PC installer again.</value>
+  </data>
+  <data name="NoticeLightingConflict" xml:space="preserve">
+    <value>Another program on the PC has taken over the lighting.</value>
+  </data>
+  <data name="NoticeAdminDeclined" xml:space="preserve">
+    <value>Cancelled: this needs administrator permission.</value>
+  </data>
+  <data name="ScreenAskTitle" xml:space="preserve">
+    <value>Nexus PC — screen sharing</value>
+  </data>
+  <data name="ScreenAskBody" xml:space="preserve">
+    <value>"{0}" wants to see this PC's screen.
+
+Allow? The answer is remembered for this device. You can block screen sharing later in the N icon menu.</value>
+  </data>
+  <data name="ElevatedTrayTitle" xml:space="preserve">
+    <value>Nexus PC</value>
+  </data>
+  <data name="ElevatedTrayBody" xml:space="preserve">
+    <value>Nexus PC was started as administrator. Apps started from iPhone would get these rights too.
+
+Start it the usual way, from the Start menu or File Explorer, without "Run as administrator".</value>
+  </data>
+  <data name="DevicesTitle" xml:space="preserve">
+    <value>Nexus PC — Devices and Permissions</value>
+  </data>
+  <data name="DevicesHeading" xml:space="preserve">
+    <value>Connected Devices</value>
+  </data>
+  <data name="DevicesHint" xml:space="preserve">
+    <value>Choose what this device is allowed to do.</value>
+  </data>
+  <data name="PermPower" xml:space="preserve">
+    <value>Power — shut down, sleep, lock</value>
+  </data>
+  <data name="PermApps" xml:space="preserve">
+    <value>Apps — start apps and profiles</value>
+  </data>
+  <data name="PermMonitoring" xml:space="preserve">
+    <value>Monitoring — stats and history</value>
+  </data>
+  <data name="PermRgb" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="PermInput" xml:space="preserve">
+    <value>Mouse and Keyboard — full control of the PC</value>
+  </data>
+  <data name="PermScreen" xml:space="preserve">
+    <value>Screen — the PC asks again the first time</value>
+  </data>
+  <data name="PermFiles" xml:space="preserve">
+    <value>Files — the Downloads\Nexus PC folder</value>
+  </data>
+  <data name="PermClipboard" xml:space="preserve">
+    <value>Clipboard</value>
+  </data>
+  <data name="PermAutomation" xml:space="preserve">
+    <value>Automations</value>
+  </data>
+  <data name="DevicesSave" xml:space="preserve">
+    <value>Save Permissions</value>
+  </data>
+  <data name="DevicesRevoke" xml:space="preserve">
+    <value>Disconnect Device</value>
+  </data>
+  <data name="DevicesEmpty" xml:space="preserve">
+    <value>No devices yet. Connect iPhone: N icon → Connect iPhone.</value>
+  </data>
+  <data name="DevicesServiceDown" xml:space="preserve">
+    <value>Nexus PC isn't running. Restart the PC and try again.</value>
+  </data>
+  <data name="DevicesSaved" xml:space="preserve">
+    <value>Saved for "{0}". Restart the app on iPhone to see the changes.</value>
+  </data>
+  <data name="DevicesSaveFailed" xml:space="preserve">
+    <value>Couldn't save permissions. Try again. If it repeats, restart the PC.</value>
+  </data>
+  <data name="DevicesAdminDeclined" xml:space="preserve">
+    <value>Cancelled: changing permissions needs administrator permission.</value>
+  </data>
+  <data name="DevicesRevokeConfirm" xml:space="preserve">
+    <value>Disconnect "{0}"? It loses access right away, and its automations stop working. You can connect it again with a QR code.</value>
+  </data>
+  <data name="DevicesRevoked" xml:space="preserve">
+    <value>"{0}" is disconnected.</value>
+  </data>
+  <data name="DevicesRevokePending" xml:space="preserve">
+    <value>"{0}" is still being disconnected. Check the list again in a moment.</value>
+  </data>
+  <data name="DevicesRevokeFailed" xml:space="preserve">
+    <value>Couldn't disconnect the device. Try again.</value>
+  </data>
+  <data name="LoadingText" xml:space="preserve">
+    <value>Loading…</value>
+  </data>
+  <data name="PairTitle" xml:space="preserve">
+    <value>Nexus PC — Connect iPhone</value>
+  </data>
+  <data name="PairScanTitle" xml:space="preserve">
+    <value>Scan the QR code in the Nexus PC app</value>
+  </data>
+  <data name="PairOpening" xml:space="preserve">
+    <value>Getting ready…</value>
+  </data>
+  <data name="PairCode" xml:space="preserve">
+    <value>Code: {0}</value>
+  </data>
+  <data name="PairScanHint" xml:space="preserve">
+    <value>On iPhone, open Nexus PC and tap Connect PC. Point the camera at the code.
+
+You can keep this window open: the confirmation appears here.</value>
+  </data>
+  <data name="PairCountdown" xml:space="preserve">
+    <value>{0} left</value>
+  </data>
+  <data name="PairConfirmTitle" xml:space="preserve">
+    <value>Confirm the Device</value>
+  </data>
+  <data name="PairConfirmBody" xml:space="preserve">
+    <value>"{0}" wants to connect to this PC.
+
+Check code: {1}
+
+Connect only if the same code is shown on your device.</value>
+  </data>
+  <data name="PairApprove" xml:space="preserve">
+    <value>Connect</value>
+  </data>
+  <data name="PairReject" xml:space="preserve">
+    <value>Decline</value>
+  </data>
+  <data name="PairRestart" xml:space="preserve">
+    <value>Start Over</value>
+  </data>
+  <data name="PairDone" xml:space="preserve">
+    <value>Device Connected</value>
+  </data>
+  <data name="PairDoneBody" xml:space="preserve">
+    <value>Allowed by default: power, apps, monitoring. Turn on the rest in Devices and Permissions.</value>
+  </data>
+  <data name="PairDeclined" xml:space="preserve">
+    <value>Connection Declined</value>
+  </data>
+  <data name="PairDeclinedBody" xml:space="preserve">
+    <value>Nothing was saved.</value>
+  </data>
+  <data name="PairFailedTitle" xml:space="preserve">
+    <value>Couldn't Connect</value>
+  </data>
+  <data name="PairTimeout" xml:space="preserve">
+    <value>Time ran out and no device connected. Click Start Over to show a new code.</value>
+  </data>
+  <data name="PairBusy" xml:space="preserve">
+    <value>Another device is being connected. Wait a minute and try again.</value>
+  </data>
+  <data name="PairDeviceLimit" xml:space="preserve">
+    <value>Too many devices are connected. Disconnect one in Devices and Permissions.</value>
+  </data>
+  <data name="PairFailed" xml:space="preserve">
+    <value>Couldn't connect the device. Try again.</value>
+  </data>
+  <data name="PairCopyLink" xml:space="preserve">
+    <value>Copy Link (Debug)</value>
+  </data>
+  <data name="PairCopied" xml:space="preserve">
+    <value>Copied</value>
+  </data>
+  <data name="PairQrA11y" xml:space="preserve">
+    <value>QR code for connecting iPhone</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Nexus PC — Settings</value>
+  </data>
+  <data name="SettingsHeading" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SettingsAutostart" xml:space="preserve">
+    <value>Start Nexus PC when I sign in to Windows</value>
+  </data>
+  <data name="SettingsAutostartHint" xml:space="preserve">
+    <value>Without it, iPhone can't start apps, lock the PC or see the screen.</value>
+  </data>
+  <data name="SettingsAutostartFailed" xml:space="preserve">
+    <value>Couldn't change this setting. Try again.</value>
+  </data>
+  <data name="SettingsLanguage" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="SettingsLanguageSystem" xml:space="preserve">
+    <value>Same as Windows</value>
+  </data>
+  <data name="SettingsLanguageEn" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="SettingsLanguageRu" xml:space="preserve">
+    <value>Русский</value>
+  </data>
+  <data name="SettingsLanguageRestart" xml:space="preserve">
+    <value>The change applies after Nexus PC restarts.</value>
+  </data>
+  <data name="SettingsRestart" xml:space="preserve">
+    <value>Restart Nexus PC</value>
+  </data>
+  <data name="SettingsVersion" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="SettingsCheckUpdates" xml:space="preserve">
+    <value>Check for Updates</value>
+  </data>
+  <data name="SettingsLicenses" xml:space="preserve">
+    <value>Licenses and Third-Party Components</value>
+  </data>
+  <data name="SettingsClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="AppsTitle" xml:space="preserve">
+    <value>Nexus PC — Apps and Profiles</value>
+  </data>
+  <data name="AppsTab" xml:space="preserve">
+    <value>Apps</value>
+  </data>
+  <data name="AppsColName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="AppsColType" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="AppsColClose" xml:space="preserve">
+    <value>Close from iPhone</value>
+  </data>
+  <data name="AppsHint" xml:space="preserve">
+    <value>iPhone can start only the apps in this list. You can add them only here, on the PC.</value>
+  </data>
+  <data name="AppsFromStart" xml:space="preserve">
+    <value>From Start Menu…</value>
+  </data>
+  <data name="AppsFromStore" xml:space="preserve">
+    <value>Microsoft Store Apps…</value>
+  </data>
+  <data name="AppsFromExe" xml:space="preserve">
+    <value>Choose a Program…</value>
+  </data>
+  <data name="AppsRemove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="AppsAllowClose" xml:space="preserve">
+    <value>Allow closing from iPhone</value>
+  </data>
+  <data name="AppsKindShortcut" xml:space="preserve">
+    <value>Shortcut</value>
+  </data>
+  <data name="AppsKindStore" xml:space="preserve">
+    <value>Microsoft Store app</value>
+  </data>
+  <data name="AppsKindProgram" xml:space="preserve">
+    <value>Program</value>
+  </data>
+  <data name="AppsCloseAllowed" xml:space="preserve">
+    <value>Allowed</value>
+  </data>
+  <data name="AppsCloseNo" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="AppsNoStoreApps" xml:space="preserve">
+    <value>No Microsoft Store apps found on this PC.</value>
+  </data>
+  <data name="AppsPickerStart" xml:space="preserve">
+    <value>Start Menu</value>
+  </data>
+  <data name="AppsPickerStore" xml:space="preserve">
+    <value>Microsoft Store Apps</value>
+  </data>
+  <data name="AppsExeFilter" xml:space="preserve">
+    <value>Programs (*.exe)|*.exe</value>
+  </data>
+  <data name="AppsExeTitle" xml:space="preserve">
+    <value>Choose a Program</value>
+  </data>
+  <data name="AppsSearch" xml:space="preserve">
+    <value>Search…</value>
+  </data>
+  <data name="AppsAdd" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="ProfilesTab" xml:space="preserve">
+    <value>Profiles</value>
+  </data>
+  <data name="ProfilesPresets" xml:space="preserve">
+    <value>Create Standard Profiles</value>
+  </data>
+  <data name="ProfilesNew" xml:space="preserve">
+    <value>New Profile</value>
+  </data>
+  <data name="ProfilesSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="ProfilesDelete" xml:space="preserve">
+    <value>Delete Profile</value>
+  </data>
+  <data name="ProfilesName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="ProfilesApps" xml:space="preserve">
+    <value>Apps in Profile</value>
+  </data>
+  <data name="ProfilesPresetsDone" xml:space="preserve">
+    <value>Created Gaming, Developer, Creator and Night. Check the apps you want in each.</value>
+  </data>
+  <data name="ProfilesDeleted" xml:space="preserve">
+    <value>Profile deleted.</value>
+  </data>
+  <data name="ProfilesNameInvalid" xml:space="preserve">
+    <value>The name must be 1 to 64 characters.</value>
+  </data>
+  <data name="ProfilesTooManyApps" xml:space="preserve">
+    <value>A profile can have up to {0} apps.</value>
+  </data>
+  <data name="ProfilesSaved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="DesktopInputRejected" xml:space="preserve">
+    <value>Windows didn't accept the input: the PC screen is locked or an administrator prompt is open (code {0}).</value>
+  </data>
+  <data name="DesktopClipboardBusy" xml:space="preserve">
+    <value>Another program is using the clipboard. Try again.</value>
+  </data>
+  <data name="DesktopNoScreen" xml:space="preserve">
+    <value>No screen.</value>
+  </data>
+  <data name="DesktopScreenUnavailable" xml:space="preserve">
+    <value>The PC screen isn't available right now: it is locked or an administrator prompt is open.</value>
+  </data>
+  <data name="VideoEncoderTimeout" xml:space="preserve">
+    <value>The H.264 encoder didn't start within 10 seconds.</value>
+  </data>
+  <data name="VideoUnavailable" xml:space="preserve">
+    <value>H.264 video isn't available on this PC ({0}). JPEG frames will be used.</value>
+  </data>
 </root>

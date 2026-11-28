@@ -70,18 +70,20 @@ public sealed class PortableMetricsSource : IMetricsSource
 {
     private readonly NetworkRateReader _network = new();
 
-    public MetricsSnapshot Sample(DateTimeOffset now) => new()
+    private static readonly string[] Keys = ["cpu.usage", "cpu.temperature", "cpu.clock", "memory", "gpu"];
+
+    public MetricsSnapshot Sample(DateTimeOffset now)
     {
-        Timestamp = now,
-        Disks = DiskReader.Read(),
-        Network = _network.Read(now),
-        Unavailable = new Dictionary<string, string>
+        var unavailable = new UnavailableSet();
+        foreach (var key in Keys)
         {
-            ["cpu.usage"] = "Доступно только на Windows.",
-            ["cpu.temperature"] = "Доступно только на Windows.",
-            ["cpu.clock"] = "Доступно только на Windows.",
-            ["memory"] = "Доступно только на Windows.",
-            ["gpu"] = "Доступно только на Windows.",
-        },
-    };
+            unavailable.Add(key, MetricsReasons.WindowsOnly);
+        }
+        return new MetricsSnapshot
+        {
+            Timestamp = now,
+            Disks = DiskReader.Read(),
+            Network = _network.Read(now),
+        }.WithUnavailable(unavailable);
+    }
 }

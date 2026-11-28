@@ -499,6 +499,108 @@
       }
     },
     {
+      "name": "metrics.snapshot with unavailable and unavailableCodes",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "0b7c8e1a-3f4d-4c2b-9e6a-5d1f2a3b4c5d",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "ts": "2026-11-28T10:00:00.0000000+00:00",
+          "cpu": {
+            "usage": 12.5,
+            "logicalProcessors": 16,
+            "temperature": null,
+            "clockMhz": null
+          },
+          "memory": {
+            "usage": 25,
+            "usedBytes": 8589934592,
+            "totalBytes": 34359738368
+          },
+          "gpus": [],
+          "disks": [
+            {
+              "name": "C:\\",
+              "totalBytes": 1000000000000,
+              "freeBytes": 250000000000,
+              "usage": 75
+            }
+          ],
+          "network": {
+            "receiveBytesPerSecond": 1000,
+            "sendBytesPerSecond": 500
+          },
+          "unavailable": {
+            "cpu.temperature": "Нет значения от датчика процессора: нужен драйвер PawnIO (ставится вместе с OpenRGB или с pawnio.eu), затем перезапустите ПК.",
+            "cpu.clock": "Нет значения от датчика процессора: нужен драйвер PawnIO (ставится вместе с OpenRGB или с pawnio.eu), затем перезапустите ПК.",
+            "gpu": "Нет NVIDIA NVML (nvml.dll): видеокарта не NVIDIA или драйвер не установлен. AMD/Intel — позже."
+          },
+          "unavailableCodes": {
+            "cpu.temperature": "sensorDriverMissing",
+            "cpu.clock": "sensorDriverMissing",
+            "gpu": "gpuDriverMissing"
+          }
+        }
+      }
+    },
+    {
+      "name": "rgb.status unavailable",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "2c4e6a8b-1d3f-4a5c-8e7b-9f0a1b2c3d4e",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "adapter": "OpenRGB",
+          "profiles": [],
+          "available": false,
+          "reason": "OpenRGB не отвечает. Он запускается вместе с Nexus PC через несколько секунд после включения ПК; если не помогло — перезагрузите ПК.",
+          "reasonCode": "openrgbNotResponding",
+          "devices": []
+        }
+      }
+    },
+    {
+      "name": "rgb.status conflict",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "3d5f7b9c-2e4a-4b6d-9f8c-0a1b2c3d4e5f",
+        "kind": "response",
+        "ok": true,
+        "payload": {
+          "adapter": "OpenRGB",
+          "profiles": [],
+          "available": false,
+          "reason": "Подсветка недоступна: её перехватила другая программа на ПК.",
+          "reasonCode": "conflict",
+          "state": "conflict",
+          "devices": []
+        }
+      }
+    },
+    {
+      "name": "plan.required for screen.video",
+      "valid": true,
+      "message": {
+        "v": 1,
+        "id": "4e6a8c0d-3f5b-4c7e-8a9d-1b2c3d4e5f6a",
+        "kind": "response",
+        "ok": false,
+        "error": {
+          "code": "plan.required",
+          "message": "This feature needs Nexus PC Pro.",
+          "details": {
+            "feature": "screen.video",
+            "state": "none"
+          }
+        }
+      }
+    },
+    {
       "name": "error.details with unknown field is invalid",
       "valid": false,
       "message": {

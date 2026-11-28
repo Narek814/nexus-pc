@@ -25,7 +25,10 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
 
     public event EventHandler<bool>? ConnectedChanged;
 
-    /// <summary>Human-readable reason shown in the tray menu while not connected.</summary>
+    /// <summary>Start of the status when the pipe server failed the agent check (the tray shows "damaged, reinstall").</summary>
+    public const string UntrustedPrefix = "The agent failed the check: ";
+
+    /// <summary>Reason for the log while not connected (English; the menu shows a fixed text instead).</summary>
     public event EventHandler<string>? StatusChanged;
 
     public bool IsConnected => _channel is not null;
@@ -36,7 +39,7 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
     {
         if (_channel is not { } channel)
         {
-            return RpcResult.Failure("session.unavailable", "Нет связи со службой Nexus PC Agent.");
+            return RpcResult.Failure("session.unavailable", "Not connected to the Nexus PC Agent service.");
         }
         try
         {
@@ -45,11 +48,11 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
         catch (TimeoutException)
         {
             // The agent may still finish the call (a revocation waits for a running automation step).
-            return RpcResult.Failure(SessionTimeout, "Служба Nexus PC Agent не ответила вовремя.");
+            return RpcResult.Failure(SessionTimeout, "The Nexus PC Agent service did not answer in time.");
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
         {
-            return RpcResult.Failure("session.unavailable", "Служба Nexus PC Agent не ответила.");
+            return RpcResult.Failure("session.unavailable", "The Nexus PC Agent service did not answer.");
         }
     }
 
@@ -63,7 +66,7 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
                 await pipe.ConnectAsync(TimeSpan.FromSeconds(5), stop).ConfigureAwait(false);
                 if (CheckAgent(pipe) is { } problem)
                 {
-                    Report("Служба найдена, но не прошла проверку: " + problem);
+                    Report(UntrustedPrefix + problem);
                     await pipe.DisposeAsync().ConfigureAwait(false);
                     await Task.Delay(TimeSpan.FromSeconds(15), stop).ConfigureAwait(false);
                     continue;
@@ -90,17 +93,17 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
             }
             catch (TimeoutException)
             {
-                Report("Служба Nexus PC Agent не отвечает (не запущена?).");
+                Report("The Nexus PC Agent service does not answer (not running?).");
                 await pipe.DisposeAsync().ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException)
             {
-                Report("Нет доступа к каналу службы.");
+                Report("No access to the agent pipe.");
                 await pipe.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
             {
-                Report("Связь со службой прервалась: " + ex.GetType().Name);
+                Report("The connection to the agent broke: " + ex.GetType().Name);
                 await pipe.DisposeAsync().ConfigureAwait(false);
             }
             try
@@ -124,22 +127,22 @@ internal sealed class AgentConnection(TrayCommandHandler handler, string expecte
     {
         if (WindowsProcesses.PipeServerProcessId(pipe.SafePipeHandle) is not { } serverPid)
         {
-            return "не удалось узнать процесс службы.";
+            return "could not find the pipe server process.";
         }
         if (WindowsServiceInfo.RunningProcessId(ServiceName) is not { } servicePid)
         {
-            return $"служба {ServiceName} не найдена или не запущена.";
+            return $"service {ServiceName} is not installed or not running.";
         }
         if (servicePid != serverPid)
         {
             log($"Pipe server pid {serverPid} is not the {ServiceName} service (pid {servicePid}).");
-            return "канал открыт другим процессом, не службой Nexus PC.";
+            return "the pipe is served by another process, not the Nexus PC service.";
         }
         if (WindowsProcesses.ImagePath(serverPid) is { } path
             && !string.Equals(Path.GetFullPath(path), Path.GetFullPath(expectedAgentPath), StringComparison.OrdinalIgnoreCase))
         {
             log($"Agent runs from an unexpected path: {path}");
-            return "служба запущена не из папки установки Nexus PC.";
+            return "the service does not run from the Nexus PC install folder.";
         }
         return null;
     }

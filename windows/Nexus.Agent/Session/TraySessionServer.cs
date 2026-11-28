@@ -92,9 +92,10 @@ internal sealed partial class TraySessionServer(
 
     private async Task<RpcResult> HandleFromTrayAsync(string op, JsonObject args, AdminConnectionState state, CancellationToken cancellationToken)
     {
-        if (!SessionOps.AllowedFromTray.Contains(op))
+        if (SessionOps.SessionRefusal(op) is { } refusal)
         {
-            return RpcResult.Failure(ErrorCodes.PermissionDenied, $"'{op}' needs an elevated administrator (Nexus.Agent CLI).");
+            // Sign-in and unlink (E4-6) go through the admin pipe from an elevated process; the tray starts one via UAC.
+            return RpcResult.Failure(refusal, $"'{op}' needs an elevated administrator.");
         }
         var request = new JsonObject { ["op"] = op };
         foreach (var (key, value) in args)
