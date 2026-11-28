@@ -33,7 +33,14 @@ public sealed class DataDirectoryHardeningTests
     private DataDirectoryRepair Repair(ScriptedConsole? console = null) => new(_fs, console ?? new ScriptedConsole(DataDirectoryRepair.ConfirmationWord), _time);
 
     private string Backup => _fs.Nodes.Keys.Single(k => k.StartsWith(Root + DataDirectoryRepair.BackupInfix, StringComparison.Ordinal)
-        && !k[(Root.Length + 1)..].Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal) && !k.Contains("2025", StringComparison.Ordinal));
+        && !k[(Root.Length + 1)..].Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) && !k.EndsWith(DataDirectoryRepair.IncompleteSuffix, StringComparison.Ordinal) && !IsForeign(k));
+
+    // Path planted by ForeignBackup (if any). Excluded by exact path, not by substring: the real backup name
+    // ends in a random hex suffix that may itself contain any digits.
+    private string? _foreignBackup;
+
+    private bool IsForeign(string path) => _foreignBackup is { } f
+        && (string.Equals(path, f, StringComparison.Ordinal) || path.StartsWith(f + Sep, StringComparison.Ordinal));
 
     private static string Journal(string backup) => backup + Sep + DataDirectoryRepair.JournalName;
 
@@ -55,6 +62,7 @@ public sealed class DataDirectoryHardeningTests
     private string ForeignBackup(Action<FakeDataFileSystem.Node> spoil)
     {
         var backup = Root + DataDirectoryRepair.BackupInfix + "20250101-000000";
+        _foreignBackup = backup;
         var node = _fs.AddDirectory(backup);
         node.Protected = true;
         _fs.AddFile(backup + Sep + DataDirectoryRepair.JournalName, $$"""{"format":1,"root":"{{JsonEncodedText.Encode(Root)}}","rootFinalPath":"{{JsonEncodedText.Encode(Root)}}","backup":"{{JsonEncodedText.Encode(backup)}}","startedAt":"2025-01-01T00:00:00Z","manifestSha256":"x","originalSecuritySha256":"y","state":"acl-in-progress","steps":[],"problems":[]}""");
