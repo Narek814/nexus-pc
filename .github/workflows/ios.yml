@@ -52,6 +52,12 @@ jobs:
         run: brew install xcodegen
       - name: Generate Xcode project
         run: xcodegen generate --spec ios/project.yml
+      - name: Build Debug app (simulator, compile check)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/NexusPC.xcodeproj -scheme NexusPC -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build-debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
       - name: Build unsigned app
         run: |
           xcodebuild -project ios/NexusPC.xcodeproj -scheme NexusPC -configuration Release \
