@@ -241,7 +241,7 @@ final class InputSender {
         case "session.unavailable":
             return "На ПК не запущен Nexus PC в трее — тачпад работает через него."
         case "input.blocked":
-            if case let .server(_, text)? = error as? NexusError {
+            if case let .server(_, text, _)? = error as? NexusError {
                 return text
             }
             return "Windows не принимает ввод."

@@ -8,6 +8,7 @@ struct ThisPCView: View {
     /// Opens the pairing sheet with the QR scanner (no link), as Home did before.
     let onUpdateAddress: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmingForget = false
 
     init(controller: PCController, onUpdateAddress: @escaping () -> Void) {
         self.controller = controller
@@ -43,12 +44,25 @@ struct ThisPCView: View {
                             .font(.footnote)
                     }
                     .tint(Theme.cyan)
+                    // Never without confirmation: the pairing is removed only on this iPhone.
                     Button(role: .destructive) {
-                        controller.forget()
-                        dismiss()
+                        confirmingForget = true
                     } label: {
                         Label("pc.forget", systemImage: "trash")
                             .font(.footnote)
+                    }
+                    .confirmationDialog(Text("pc.forget.confirm.title"), isPresented: $confirmingForget, titleVisibility: .visible) {
+                        Button(role: .destructive) {
+                            controller.forget()
+                            dismiss()
+                        } label: {
+                            Text("pc.forget.confirm.action")
+                        }
+                        Button(role: .cancel) {} label: {
+                            Text("common.cancel")
+                        }
+                    } message: {
+                        Text("pc.forget.confirm.message")
                     }
                 }
                 .frame(maxWidth: .infinity)

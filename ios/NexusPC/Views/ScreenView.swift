@@ -386,7 +386,7 @@ final class ScreenStream {
             frameTimes.removeAll { Date().timeIntervalSince($0.0) > 2 }
             if message != nil { message = nil }
         } catch let error as NexusError where error.code == "screen.videoUnavailable" {
-            if case let .server(_, text) = error { message = text }
+            if case let .server(_, text, _) = error { message = text }
             mode = .jpeg // the PC has no H.264 encoder
         } catch let error as NexusError where error.code == "screen.notStarted" {
             _ = try? await controller.fetch("screen.start", timeout: 125)
@@ -434,11 +434,11 @@ final class ScreenStream {
         case "session.unavailable":
             return "На ПК не запущен Nexus PC в трее — экран показывается через него."
         case "screen.denied", "screen.blocked":
-            if case let .server(_, text)? = nexus { return text }
+            if case let .server(_, text, _)? = nexus { return text }
             return "Показ экрана запрещён на ПК."
         default:
             if case .timeout? = nexus { return "ПК не ответил: возможно, окно разрешения на ПК ещё открыто." }
-            if case let .server(_, text)? = nexus { return text }
+            if case let .server(_, text, _)? = nexus { return text }
             return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }

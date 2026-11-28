@@ -22,6 +22,18 @@ struct RemoteProfile: Identifiable, Equatable {
     let appCount: Int
 }
 
+/// One agent error: what the section shows (`lastError`) and a line in the Diagnostics log.
+struct PCErrorRecord: Equatable, Identifiable {
+    let id = UUID()
+    let date: Date
+    /// Section where it happened (`control`, `files`, …); `nil` if not known.
+    let section: String?
+    let code: String
+    let details: ServerErrorDetails?
+    /// The PC's own text: a fallback only, always visible in Diagnostics.
+    let message: String
+}
+
 enum PowerCommand: Equatable {
     case shutdown(delaySeconds: Int)
     case restart(delaySeconds: Int)
@@ -51,6 +63,15 @@ final class PCController {
     private(set) var metrics: MetricsReading?
     /// This iPhone's key fingerprint for the paired PC, as the agent's "devices" shows it (T3).
     private(set) var deviceKeyFingerprint: String?
+    /// Last `system.hello` of the current connection (plan fields after `auth.prove`).
+    private(set) var hello: AgentHello?
+    /// Last agent error (code, details, PC message, section).
+    private(set) var lastError: PCErrorRecord?
+    /// Diagnostics log: the last `diagnosticsCapacity` agent errors, in memory only (never saved to disk).
+    private(set) var diagnostics: [PCErrorRecord] = []
+    static let diagnosticsCapacity = 50
+    /// After `rate.limited` with `retryAfter`: "Try Again" stays disabled until this moment.
+    private(set) var retryDisabledUntil: Date?
     var banner: String?
 
     private var connection: NexusConnection?
@@ -80,6 +101,10 @@ final class PCController {
         self.pc = nil
         deviceKeyFingerprint = nil
         status = nil
+        hello = nil
+        capabilities = []
+        lastError = nil
+        retryDisabledUntil = nil
         apps = []
         profiles = []
         state = .notPaired
@@ -185,7 +210,8 @@ final class PCController {
             }
             return try response.unwrap()
         } catch let error as NexusError {
-            if case .server = error {
+            if case let .server(code, message, details) = error {
+                record(code: code, details: details, message: message, section: nil)
                 throw error
             }
             drop(error)
@@ -207,7 +233,8 @@ final class PCController {
 
     // MARK: - Internals
 
-    private func run(_ type: String, payload: [String: Any] = [:], confirmed: Bool = false, onSuccess: @escaping ([String: Any]) -> Void) async {
+    private func run(_ type: String, payload: [String: Any] = [:], confirmed: Bool = false, section: String? = nil,
+                     onSuccess: @escaping ([String: Any]) -> Void) async {
         do {
             let connection = try await ensureConnection()
             var response = try await connection.request(type, payload: payload, confirmed: confirmed)
@@ -219,8 +246,9 @@ final class PCController {
             }
             onSuccess(try response.unwrap())
         } catch let error as NexusError {
-            if case .server = error {
-                banner = error.localizedDescription
+            if case let .server(code, message, details) = error {
+                record(code: code, details: details, message: message, section: section)
+                banner = Self.bannerText(code: code, details: details, message: message, section: section)
             } else {
                 drop(error)
             }
@@ -243,8 +271,9 @@ final class PCController {
     }
 
     private func load(using connection: NexusConnection) async throws {
-        let hello = try await connection.request("system.hello").unwrap()
-        capabilities = Set(hello["capabilities"] as? [String] ?? [])
+        let hello = AgentHello(result: try await connection.request("system.hello").unwrap())
+        self.hello = hello
+        capabilities = hello.capabilities
         let s = try await connection.request("pc.status").unwrap()
         status = PCStatus(
             name: s["pcName"] as? String ?? pc?.name ?? "ПК",
@@ -342,6 +371,61 @@ final class PCController {
         connection?.close()
         connection = nil
         state = .offline((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+    }
+
+    // MARK: - Agent errors
+
+    /// Remembers an agent error: `lastError`, the in-memory Diagnostics ring buffer and the
+    /// `rate.limited` retry pause.
+    func record(code: String, details: ServerErrorDetails?, message: String, section: String?) {
+        let entry = PCErrorRecord(date: Date(), section: section, code: code, details: details, message: message)
+        lastError = entry
+        diagnostics.append(entry)
+        if diagnostics.count > Self.diagnosticsCapacity {
+            diagnostics.removeFirst(diagnostics.count - Self.diagnosticsCapacity)
+        }
+        if code == "rate.limited", let seconds = details?.retryAfter, seconds > 0 {
+            retryDisabledUntil = entry.date.addingTimeInterval(TimeInterval(seconds))
+        }
+    }
+
+    /// Whether "Try Again" is allowed now (`rate.limited` with `retryAfter`).
+    func canRetry(at date: Date = Date()) -> Bool {
+        guard let until = retryDisabledUntil else {
+            return true
+        }
+        return date >= until
+    }
+
+    /// Toast text for an agent error, chosen by code (docs/design/error-texts.md, 2). The code is never shown.
+    static func bannerText(code: String, details: ServerErrorDetails?, message: String, section: String?) -> String? {
+        let presentation = ErrorPresentation.for(code: code, details: details, section: section)
+        switch presentation.style {
+        case .silent:
+            return nil
+        case .pro:
+            // pro.feature.<feature>.body texts come with E6-SCREENS-2; until then the card title.
+            if presentation.key == "pro.expired.body" || presentation.key == "pro.revoked.body" {
+                return localized(presentation.key ?? "pro.card.title")
+            }
+            return localized("pro.card.title")
+        case .limit:
+            if let limit = details?.limit {
+                let text = ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)
+                return localized("limit.files.bodyWithLimit").replacingOccurrences(of: "{LIMIT}", with: text)
+            }
+            return localized("limit.files.body")
+        default:
+            if let key = presentation.key {
+                return localized(key)
+            }
+            return ErrorPresentation.fallbackMessage(message) ?? localized("error.generic.body")
+        }
+    }
+
+    /// Key looked up at run time (the key comes from `ErrorPresentation`).
+    private static func localized(_ key: String) -> String {
+        Bundle.main.localizedString(forKey: key, value: nil, table: nil)
     }
 
     static func duration(_ seconds: Int) -> String {

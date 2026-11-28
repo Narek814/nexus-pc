@@ -111,54 +111,77 @@ struct RootTabView: View {
 
 // MARK: - Section state
 
-/// What a section shows (navigation.md: offline → permission → content). Pure, so it can be
-/// unit-tested once the app gets a test target (NexusPC has none yet).
+/// What a section shows (ios-screens.md §2, steps 1–6). The decision is `SectionAccess` in NexusKit
+/// (unit-tested); here only the permission is mapped to the app's `PermissionName`.
 enum SectionState: Equatable, Sendable {
     case noPC
     case offline
+    case connecting
     case permission(PermissionName)
+    case trayMissing
+    case pro(EntitlementState?)
     case content
 
-    /// - Parameters:
-    ///   - anyOf: the section is available if the PC allows at least one of these commands.
-    static func resolve(isPaired: Bool, isOnline: Bool, capabilities: Set<String>,
-                        anyOf commands: [String], permission: PermissionName) -> SectionState {
-        if !isPaired {
-            return .noPC
+    init(_ access: SectionAccess, permission: PermissionName) {
+        switch access {
+        case .noPC: self = .noPC
+        case .offline: self = .offline
+        case .connecting: self = .connecting
+        case .permission: self = .permission(permission)
+        case .trayMissing: self = .trayMissing
+        case let .pro(state): self = .pro(state)
+        case .content: self = .content
         }
-        if !isOnline, capabilities.isEmpty {
-            return .offline
-        }
-        if !commands.contains(where: { capabilities.contains($0) }) {
-            return .permission(permission)
-        }
-        return .content
     }
 }
 
-/// Shows the section itself, or the empty / offline / permission state in its place.
+/// Shows the section itself, or the empty / offline / connecting / permission / tray / Pro state in its place.
 /// The row that leads here is never hidden.
 struct SectionGate<Content: View>: View {
     let controller: PCController
     let title: LocalizedStringResource
     let commands: [String]
     let permission: PermissionName
+    /// The section needs the tray app on the PC (`pc.status.userSession == available`).
+    let needsTray: Bool
+    /// Pro feature id (docs/API.md, «Планы»); `nil` for Free sections.
+    let requiredFeature: String?
     let onConnect: () -> Void
     private let content: () -> Content
 
     init(controller: PCController, title: LocalizedStringResource, commands: [String], permission: PermissionName,
+         needsTray: Bool = false, requiredFeature: String? = nil,
          onConnect: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
         self.controller = controller
         self.title = title
         self.commands = commands
         self.permission = permission
+        self.needsTray = needsTray
+        self.requiredFeature = requiredFeature
         self.onConnect = onConnect
         self.content = content
     }
 
     private var state: SectionState {
-        SectionState.resolve(isPaired: controller.pc != nil, isOnline: controller.state == .online,
-                             capabilities: controller.capabilities, anyOf: commands, permission: permission)
+        let connection: SectionAccess.Connection = switch controller.state {
+        case .online: .online
+        case .connecting: .connecting
+        case .offline, .notPaired: .offline
+        }
+        let access = SectionAccess.resolve(
+            isPaired: controller.pc != nil, connection: connection, capabilities: controller.capabilities,
+            anyOf: commands, userSessionAvailable: controller.status?.userSessionAvailable ?? false,
+            needsTray: needsTray, hello: controller.hello, requiredFeature: requiredFeature)
+        return SectionState(access, permission: permission)
+    }
+
+    /// `pro.feature.<feature>.body`, or the expired / revoked text.
+    private func proText(_ entitlement: EntitlementState?) -> LocalizedStringResource {
+        switch entitlement {
+        case .expired: "pro.expired.body"
+        case .revoked: "pro.revoked.body"
+        default: LocalizedStringResource(stringLiteral: "pro.feature.\(requiredFeature ?? "").body")
+        }
     }
 
     var body: some View {
@@ -167,6 +190,15 @@ struct SectionGate<Content: View>: View {
             content()
         case .noPC:
             placeholder { EmptyState.noPC(action: onConnect) }
+        case .connecting:
+            placeholder { LoadingState() }
+        case .trayMissing:
+            placeholder { TrayMissingCard() }
+        case let .pro(entitlement):
+            placeholder {
+                // TODO(E6-SCREENS-2 / E6-ACC): open the Pro screen (A10) once it exists.
+                ProCard(feature: proText(entitlement)) {}
+            }
         case .offline:
             placeholder {
                 OfflineCard(

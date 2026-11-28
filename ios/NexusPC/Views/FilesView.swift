@@ -459,7 +459,7 @@ final class FileTransfers {
         case "session.unavailable":
             return "На ПК не запущен Nexus PC в трее — файлы и буфер обмена работают через него."
         default:
-            if case let .server(_, text)? = nexus {
+            if case let .server(_, text, _)? = nexus {
                 return text
             }
             return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

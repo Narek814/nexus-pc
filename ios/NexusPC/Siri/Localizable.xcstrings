@@ -1613,6 +1613,907 @@
           }
         }
       }
+    },
+    "error.protocol.tooLarge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was too large for the PC. Try a smaller file or text."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запрос слишком большой для ПК. Попробуйте файл или текст поменьше."
+          }
+        }
+      }
+    },
+    "error.protocol.malformed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC couldn't read the request. Update Nexus PC on iPhone and PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не смог прочитать запрос. Обновите Nexus PC на iPhone и на ПК."
+          }
+        }
+      }
+    },
+    "error.protocol.unsupportedVersion": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app on iPhone and the PC are different versions. Update Nexus PC on both."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Версии Nexus PC на iPhone и на ПК не совпадают. Обновите обе."
+          }
+        }
+      }
+    },
+    "error.command.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This PC doesn't support this action yet. Update Nexus PC on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот ПК пока не поддерживает это действие. Обновите Nexus PC на ПК."
+          }
+        }
+      }
+    },
+    "error.command.notImplemented": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This action isn't available in the version installed on the PC. Update Nexus PC on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это действие недоступно в версии Nexus PC на ПК. Обновите её."
+          }
+        }
+      }
+    },
+    "error.command.invalidPayload": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC didn't accept the data. Check the values and try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не принял данные. Проверьте значения и повторите."
+          }
+        }
+      }
+    },
+    "error.auth.required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting to the PC…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторное подключение к ПК…"
+          }
+        }
+      }
+    },
+    "error.auth.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This iPhone is no longer connected to the PC. Connect it again: on the PC, click the N icon → Connect iPhone."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот iPhone больше не подключён к ПК. Подключите заново: на ПК значок N → «Подключить iPhone»."
+          }
+        }
+      }
+    },
+    "error.auth.clockSkew": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The time on iPhone and PC differs too much. Turn on automatic time on both devices."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Время на iPhone и ПК сильно расходится. Включите автоматическое время на обоих устройствах."
+          }
+        }
+      }
+    },
+    "error.auth.replay": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was repeated. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запрос повторился. Попробуйте ещё раз."
+          }
+        }
+      }
+    },
+    "error.confirm.required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm this action to continue."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтвердите действие, чтобы продолжить."
+          }
+        }
+      }
+    },
+    "pro.expired.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Pro plan has ended. Renew it to use this again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тариф Pro закончился. Продлите его, чтобы снова пользоваться этим."
+          }
+        }
+      }
+    },
+    "pro.revoked.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro is no longer active for the owner of this PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro больше не действует для владельца этого ПК."
+          }
+        }
+      }
+    },
+    "limit.files.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the free limit for file transfer. Pro removes it."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вы достигли бесплатного лимита передачи файлов. В Pro его нет."
+          }
+        }
+      }
+    },
+    "limit.files.bodyWithLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The free plan allows {LIMIT}. Pro removes the limit."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В бесплатном тарифе доступно {LIMIT}. В Pro лимита нет."
+          }
+        }
+      }
+    },
+    "pro.card.ownerHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro is checked for the account this PC is linked to."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro проверяется по аккаунту, к которому привязан этот ПК."
+          }
+        }
+      }
+    },
+    "error.pair.noActiveSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC isn't waiting for a connection. On the PC, click the N icon → Connect iPhone, then scan the new QR code."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК сейчас не ждёт подключения. На ПК нажмите значок N → «Подключить iPhone» и отсканируйте новый QR-код."
+          }
+        }
+      }
+    },
+    "error.pair.invalidCode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The code doesn't match. Scan the QR code on the PC again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Код не совпал. Отсканируйте QR-код на ПК ещё раз."
+          }
+        }
+      }
+    },
+    "error.pair.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC is connecting another device. Wait a minute and try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК подключает другое устройство. Подождите минуту и повторите."
+          }
+        }
+      }
+    },
+    "error.pair.rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection was declined on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение отклонено на ПК."
+          }
+        }
+      }
+    },
+    "error.pair.expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The QR code has expired. On the PC, show a new one and scan it."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Срок QR-кода истёк. Покажите на ПК новый и отсканируйте его."
+          }
+        }
+      }
+    },
+    "error.pair.deviceLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many devices are connected to this PC. Remove one on the PC: N icon → Devices and Permissions."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "К этому ПК подключено слишком много устройств. Удалите лишнее на ПК: значок N → Устройства и разрешения."
+          }
+        }
+      }
+    },
+    "error.session.signIn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to Windows on the PC and make sure Nexus PC is running near the clock."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войдите в Windows на ПК и проверьте, что Nexus PC запущен у часов."
+          }
+        }
+      }
+    },
+    "error.power.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC couldn't do this. It may be blocked by another program. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не смог это выполнить. Возможно, мешает другая программа. Повторите."
+          }
+        }
+      }
+    },
+    "error.power.nothingToCancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There's no scheduled shutdown to cancel."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет запланированного выключения."
+          }
+        }
+      }
+    },
+    "error.power.unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Power control isn't available on this PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Управление питанием на этом ПК недоступно."
+          }
+        }
+      }
+    },
+    "error.power.lockFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC couldn't be locked. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось заблокировать ПК. Повторите."
+          }
+        }
+      }
+    },
+    "error.apps.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app was removed on the PC. Pull down to refresh the list."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа удалена на ПК. Потяните вниз, чтобы обновить список."
+          }
+        }
+      }
+    },
+    "error.apps.launchFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app didn't start on the PC. Check that it's still installed."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа не запустилась на ПК. Проверьте, что она установлена."
+          }
+        }
+      }
+    },
+    "error.apps.closeNotAllowed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app can't be closed from iPhone."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эту программу нельзя закрыть с iPhone."
+          }
+        }
+      }
+    },
+    "error.profiles.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This profile no longer exists. Pull down to refresh."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этого профиля больше нет. Потяните вниз, чтобы обновить."
+          }
+        }
+      }
+    },
+    "error.profiles.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The profile uses an app that isn't on the PC's list. Remove it from the profile."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В профиле есть программа, которой нет в списке ПК. Уберите её из профиля."
+          }
+        }
+      }
+    },
+    "error.profiles.limit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the maximum number of profiles. Delete one to add a new one."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Достигнуто максимальное число профилей. Удалите один, чтобы добавить новый."
+          }
+        }
+      }
+    },
+    "error.rgb.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lighting isn't available. Make sure OpenRGB is running on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подсветка недоступна. Проверьте, что на ПК запущен OpenRGB."
+          }
+        }
+      }
+    },
+    "error.files.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file is no longer in the Nexus PC folder. Refresh the list."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файла больше нет в папке Nexus PC. Обновите список."
+          }
+        }
+      }
+    },
+    "error.files.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The transfer was interrupted. Tap Try Again to continue."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Передача прервалась. Нажмите «Повторить», чтобы продолжить."
+          }
+        }
+      }
+    },
+    "error.files.hashMismatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file arrived damaged and was deleted. Send it again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл пришёл повреждённым и удалён. Отправьте его снова."
+          }
+        }
+      }
+    },
+    "error.files.noSpace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough free space on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На ПК недостаточно свободного места."
+          }
+        }
+      }
+    },
+    "error.files.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file couldn't be transferred. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось передать файл. Повторите."
+          }
+        }
+      }
+    },
+    "error.clipboard.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC clipboard is busy in another program. Try again in a moment."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Буфер обмена ПК занят другой программой. Повторите чуть позже."
+          }
+        }
+      }
+    },
+    "error.automations.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This automation is no longer available on the PC. It may have been deleted or created on another device."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта автоматизация больше недоступна на ПК. Возможно, её удалили или создали на другом устройстве."
+          }
+        }
+      }
+    },
+    "error.automations.limit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the maximum number of automations. Delete one to add a new one."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Достигнуто максимальное число автоматизаций. Удалите одну, чтобы добавить новую."
+          }
+        }
+      }
+    },
+    "error.automations.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This automation is already running."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта автоматизация уже выполняется."
+          }
+        }
+      }
+    },
+    "error.screen.denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen sharing was declined on the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показ экрана отклонён на ПК."
+          }
+        }
+      }
+    },
+    "error.screen.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC screen is locked, a security prompt is open, or screen sharing is turned off in the N icon menu."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Экран ПК заблокирован, открыт запрос безопасности или показ экрана запрещён в меню значка N."
+          }
+        }
+      }
+    },
+    "error.input.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC isn't accepting input: the screen is locked, a security prompt is open, or control is turned off in the N icon menu."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ПК не принимает ввод: экран заблокирован, открыт запрос безопасности или управление запрещено в меню значка N."
+          }
+        }
+      }
+    },
+    "error.rateLimited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many requests. Wait a moment and try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слишком много запросов. Подождите немного и повторите."
+          }
+        }
+      }
+    },
+    "error.rateLimited.retryIn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again in %d s"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторить через %d с"
+          }
+        }
+      }
+    },
+    "error.internal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something went wrong on the PC. Try again. If it repeats, restart the PC."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На ПК произошла ошибка. Повторите. Если повторяется — перезагрузите ПК."
+          }
+        }
+      }
+    },
+    "error.generic.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again. If it repeats, see Help → Diagnostics."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторите. Если не помогает — откройте «Помощь → Диагностика»."
+          }
+        }
+      }
+    },
+    "pc.forget.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forget This PC?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забыть этот ПК?"
+          }
+        }
+      }
+    },
+    "pc.forget.confirm.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pairing is removed only on this iPhone. On the PC, this device stays in Devices and Permissions until you remove it there."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сопряжение удаляется только на этом iPhone. На ПК устройство останется в «Устройства и разрешения», пока вы не удалите его там."
+          }
+        }
+      }
+    },
+    "pc.forget.confirm.action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forget PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забыть ПК"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
