@@ -26,3 +26,4 @@
 - W-TRAY принято QA (1299/1299 Linux). Хвосты → W-TRAY-2 после ручной проверки владельца: AppsForm ex.Message; фикс. размеры Label (DPI 200%); «Повторить» в Устройствах; лог при !owned && restarting (Program.cs:24-36); WindowsDesktop.cs:38 шлёт ex.Message на телефон (передать security-auditor); хрупкая проверка message.contains("разрешения:") в ios AutomationsView.swift:668. Дальше: W-PROTO.
 - Владелец 2026-11-28: {DOWNLOAD_URL} = страница релизов GitHub до домена; W-TRAY-2 — после ручной проверки владельца на Windows.
 - W-PROTO принято QA (1327/1327, фикстуры 29/29); docs/API.md внесла главная сессия. Дальше BE-1.
+- BE-1 принято QA (SQL 290, TS 83/83); миграция 20261128000011 не применена на стенде. Вне списка файлов: _shared/db.ts:159 (PRO_FEATURES) — QA: нужна; ждёт подтверждения владельца. Пробелы: параллельный тест approve‖insert; approve чужого ПК при 20. Дальше E6-DS.
