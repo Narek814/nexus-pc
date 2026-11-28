@@ -24,3 +24,4 @@
 - П.5 W-ACC (docs/API.md: раздел «Коды канала администратора и трея» + опечатка confirm.required) НЕ внесён: охранник запретил windows-developer. Текст — в отчёте исполнителя; ждёт решения владельца, кто вносит.
 - Для W-TRAY добавить: тест аудита после FileNotFound, вынос проверки пути повышенного процесса в Core (QA), WACC-3 (в tray.log не писать ex.Message). Пункт «Проверить обновления» теперь решён: открывать {DOWNLOAD_URL}.
 - W-TRAY принято QA (1299/1299 Linux). Хвосты → W-TRAY-2 после ручной проверки владельца: AppsForm ex.Message; фикс. размеры Label (DPI 200%); «Повторить» в Устройствах; лог при !owned && restarting (Program.cs:24-36); WindowsDesktop.cs:38 шлёт ex.Message на телефон (передать security-auditor); хрупкая проверка message.contains("разрешения:") в ios AutomationsView.swift:668. Дальше: W-PROTO.
+- Владелец 2026-11-28: {DOWNLOAD_URL} = страница релизов GitHub до домена; W-TRAY-2 — после ручной проверки владельца на Windows.
