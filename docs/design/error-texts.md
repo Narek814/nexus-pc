@@ -117,6 +117,49 @@
 | (неизвестный) | `error.generic.body` | Try again. If it repeats, see Help → Diagnostics. | Повторите. Если не помогает — откройте «Помощь → Диагностика». | Card |
 | (обрыв связи) | `status.offline` + `offline.body` | (`foundations.md`) | (`foundations.md`) | Offline |
 
+### 3.8 Причины недоступности метрик (`metrics.snapshot.unavailableCodes`)
+
+Строка `Caption` (`textSecondary`) под значением «—» в карточке метрики PC Monitor. Не ошибка: без иконки ошибки, без `ErrorCard`. Одна-две строки на iPhone SE; при Dynamic Type AX переносится, не обрезается. Неизвестный код → `monitor.reason.unknown`. `warmingUp` показывается без иконки и исчезает сам.
+
+| Код | Ключ | en | ru |
+|-----|------|----|----|
+| `sensorDriverMissing` | `monitor.reason.sensorDriverMissing` | Needs the sensor driver. Reinstall Nexus PC on the PC. | Нужен драйвер датчиков. Переустановите Nexus PC на ПК. |
+| `sensorReadFailed` | `monitor.reason.sensorReadFailed` | Couldn't read the sensors. Restart the PC. | Не удалось прочитать датчики. Перезагрузите ПК. |
+| `sensorMissing` | `monitor.reason.sensorMissing` | This processor doesn't report this value. | Процессор не сообщает это значение. |
+| `warmingUp` | `monitor.reason.warmingUp` | Measuring… | Измеряем… |
+| `osQueryFailed` | `monitor.reason.osQueryFailed` | Windows didn't respond. Try again in a moment. | Windows не ответила. Подождите немного. |
+| `gpuDriverMissing` | `monitor.reason.gpuDriverMissing` | Available only for NVIDIA graphics with the driver installed. | Доступно только для видеокарт NVIDIA с установленным драйвером. |
+| `gpuLibraryRejected` | `monitor.reason.gpuLibraryRejected` | The graphics driver files look wrong. Reinstall the NVIDIA driver. | Файлы драйвера видеокарты повреждены. Переустановите драйвер NVIDIA. |
+| `gpuLibraryLoadFailed` | `monitor.reason.gpuLibraryLoadFailed` | Couldn't start the graphics driver. Update the NVIDIA driver. | Не удалось запустить драйвер видеокарты. Обновите драйвер NVIDIA. |
+| `gpuInitFailed` | `monitor.reason.gpuInitFailed` | (как `gpuLibraryLoadFailed`, тот же ключ допустим) | (как выше) |
+| `gpuListFailed` | `monitor.reason.gpuListFailed` | The graphics card didn't respond. Restart the PC. | Видеокарта не ответила. Перезагрузите ПК. |
+| `platformUnsupported` | `monitor.reason.platformUnsupported` | Not available on this PC. | Недоступно на этом ПК. |
+| (неизвестный) | `monitor.reason.unknown` | Not available right now. | Сейчас недоступно. |
+
+`gpuInitFailed`: отдельный ключ с текстом `gpuLibraryLoadFailed` (en «Couldn't start the graphics driver. Update the NVIDIA driver.», ru «Не удалось запустить драйвер видеокарты. Обновите драйвер NVIDIA.»), чтобы потом можно было развести.
+
+VoiceOver: метка карточки = «<метрика>, недоступно. <причина>» (`monitor.unavailable.a11y` · en «%@, unavailable. %@» · ru «%@, недоступно. %@»).
+
+### 3.9 Подсветка: `rgb.status.reasonCode`
+
+Существующие ключи покрывают оба кода, новых не нужно:
+
+| `reasonCode` | Ключ | Примечание |
+|--------------|------|-----------|
+| `openrgbNotResponding` | `error.rgb.unavailable` | текст из 3.5 |
+| `conflict` | `rgb.busy` | текст из 3.5; совпадает по смыслу с `reason` агента |
+| (неизвестный) | — | показывать `reason` от агента (`docs/API.md`) |
+
+### 3.10 Подтверждение «Забыть этот ПК»
+
+Alert (`.alert`, кнопка действия `role: .destructive`, «Отмена» — `common.cancel`). Временные тексты в `Localizable.xcstrings` верны по смыслу; финальные добавляют, как подключиться снова, и путь через значок N.
+
+| Ключ | en | ru |
+|------|----|----|
+| `pc.forget.confirm.title` | Forget This PC? | Забыть этот ПК? |
+| `pc.forget.confirm.message` | It's removed only from this iPhone. To remove this iPhone on the PC: N icon → Devices and Permissions. To reconnect, scan the QR code again. | ПК удаляется только с этого iPhone. Чтобы удалить iPhone на ПК: значок N → «Устройства и разрешения». Подключиться снова можно по QR-коду. |
+| `pc.forget.confirm.action` | Forget PC | Забыть ПК |
+
 `admin.required`: код канала трея (E4-6), на iPhone не приходит. Текст — только в трее: `ProblemAdminRequired` (`windows.md`, 3.3). См. `ios-screens.md`, «Нужно от протокола».
 
 ## 4. Коды сервера аккаунтов (HTTPS)
