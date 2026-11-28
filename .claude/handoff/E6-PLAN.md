@@ -293,3 +293,56 @@ E6-SCREENS-2 (Free/Pro в разделах, состояния внутри Rgb 
 Не запускалось: ручная проверка на устройстве (без маркера, Free, Pro, expired; Files без clipboard; RGB conflict; AX5 на iPhone SE) — у владельца
 ```
 Примечание: имена ключей pro.feature.* в docs/design/ios-screens.md:262-267 отличаются от кода — привести документ к коду (ui-ux-designer, мелкая правка).
+
+## E6-SCREENS-3 — полный блок (code-architect, 2026-11-28, вечер)
+Статус: ждёт решений владельца по 3 пунктам (см. ниже), затем запуск ios-developer с этим блоком дословно.
+
+```
+ЗАДАНИЕ E6-SCREENS-3: More (Настройки, Помощь, Диагностика с журналом и экспортом), ключи в оставшихся экранах и PCController
+Исполнитель: ios-developer
+Файлы:
+- новые: ios/NexusPC/Views/SettingsView.swift; ios/NexusPC/Views/HelpView.swift; ios/NexusPC/Views/DiagnosticsView.swift; ios/NexusKit/Sources/NexusKit/DiagnosticsReport.swift; ios/NexusKit/Tests/NexusKitTests/DiagnosticsReportTests.swift
+- изменить: ios/NexusPC/Views/MoreView.swift; ios/NexusPC/ViewModels/PCController.swift; ios/NexusPC/Views/AutomationsView.swift, ScreenView.swift, TouchpadView.swift, KeyboardView.swift, AppsView.swift, ThisPCView.swift (только литералы → ключи; в ScreenView ещё п.6); ios/NexusPC/Siri/Localizable.xcstrings
+- только читать: docs/design/ios-screens.md раздел 8 (строки 168–200) и раздел 10 (строки 244–293); docs/design/error-texts.md; ios/NexusKit/Sources/NexusKit/ErrorPresentation.swift, AgentHello.swift (ServerErrorDetails: feature, state, limit, retryAfter), SectionAccess.swift; ios/NexusPC/Views/FilesView.swift:97-100 (LimitNotice по lastError)
+Сделать:
+1. MoreView: к существующим строкам добавить NavRow Settings (SettingsView) и Help & Support (HelpView). Account не добавлять (E6-ACC). Developer не добавлять. Комментарий MoreView.swift:4 обновить.
+2. SettingsView. Решение владельца: язык приложения — системная настройка, собственного переключателя нет. Нужны: секция settings.language; подпись settings.language.note; кнопка settings.language.openSystem, которая открывает URL(string: UIApplication.openSettingsURLString); секция settings.about со строкой settings.version (CFBundleShortVersionString и CFBundleVersion в формате «1.0 (42)»). Строку settings.licenses не показывать: сторонних компонентов в iOS нет. Ключ settings.language.system не использовать. Своё хранение языка (AppleLanguages, UserDefaults) не делать.
+3. HelpView: строки help.connect, help.permissions, help.offline, help.pro. Каждая открывает статью со статическим текстом по ключу help.<id>.body. Если текста статьи нет в docs/design, статью не показывать и в отчёте перечислить недостающие ключи для ui-ux-designer. Строку help.contact не показывать, пока нет SUPPORT_URL: никаких заглушек. Последняя строка — «Диагностика» (DiagnosticsView), заголовок — ключ diag.title; если текста нет в документах, указать это в отчёте.
+4. DiagnosticsView показывает: версию приложения; состояние подключения (controller.state человеческими словами); имя ПК; разрешения iPhone на этом ПК человеческими названиями (те же ключи, что у PermissionCard); план по controller.hello: diag.plan.free / .pro / .grace / .ended (ended = expired или revoked), без entitlements.v1 строку плана не показывать; строку diag.screen.jpegMode, если включён режим кадров (п.6); список diag.recentErrors из controller.diagnostics, новые сверху: время, раздел, код, текст ПК через Text(verbatim:). Коды ошибок видны только на этом экране. Внизу — подпись diag.export.note и ShareLink diag.export, который отдаёт текст из DiagnosticsReport (п.5) как .txt.
+5. DiagnosticsReport (NexusKit, public, чистая функция, без UIKit). Вход: appVersion, os version, connectionState (строка-перечисление, не текст), plan / entitlementState, capabilities, screenJpegMode, записи (date, section, code, details). Выход: String. Состав только по белому списку: время ISO8601 UTC, section, code; из details только feature, state, limit, retryAfter. НЕ включать: message; имя ПК, pcId, IP и хост, порт; deviceId, отпечатки ключей и сертификатов, токены, payload команд, набранный текст. Отдельной функции «маскировать IP» не нужно: в отчёт эти данные просто не попадают. В PCController — метод diagnosticsReport() -> String, который собирает вход из своих полей.
+6. Режим кадров: в PCController добавить `private(set) var screenJpegFallback: Bool` и метод его установки. ScreenView ставит true там, где переходит на .jpeg из-за screen.videoUnavailable или plan.required (ScreenView.swift:417, :423). Остальную логику потока не трогать. Сбросить в forget() и при новом hello.
+7. PCController, lastError: успешная команда с тем же section, что у lastError с кодом plan.limit, обнуляет lastError (LimitNotice в FilesView не должен висеть); при переподключении (новый hello) lastError с кодом plan.limit тоже обнулять; журнал diagnostics не очищать (только память, ёмкость 50). Если FilesView не передаёт section "files" в run() — добавить аргумент в вызовы (только аргументы, не логика).
+8. PCController.bannerText, case .pro: вернуть localized(presentation.key ?? "pro.card.title"). Если ключ из ErrorPresentation равен pro.feature.<featureId>.body (или pro.expired.body / pro.revoked.body), выводится он. Если ключа нет в каталоге (Bundle возвращает сам ключ), выводить pro.card.title. Устаревший комментарий удалить.
+9. Литералы PCController (строки 82, 143–198, 265, 279, 351–367, 432) заменить ключами EN и RU: для интерполяций — String(localized:) с форматом (%@, %lld); duration() — через DateComponentsFormatter (unitsStyle .short), без «мин»/«с» в коде; текст NexusError.connection на строке 265 сделать ключом; ссылку «docs/REMOTE.md» из пользовательского текста убрать. Имена ключей: banner.*, state.*, wake.*. RU — из текущего кода, EN — перевод; если формулировка есть в error-texts.md, брать её дословно.
+10. Русские литералы в AutomationsView, ScreenView, TouchpadView, KeyboardView, AppsView, ThisPCView заменить ключами EN и RU. Данные с ПК (имена, сообщения) — через Text(verbatim:). Picker("Способ") и подобные заголовки тоже перевести на ключи.
+Не трогать: протокол v1, shared/**, windows/**; NexusConnection, AgentHello, SectionAccess, ErrorPresentation (только читать); логику питания, ввода, потока экрана (кроме п.6); DesignSystem/*; PairingFlowView, QRScannerView; виджеты NexusWidgets; Siri/PCIntents.swift и AppShortcuts.xcstrings; хранение журнала на диске (запрещено); Account и экраны E6-ACC; DeveloperView.
+Критерии приёмки:
+1. В More есть Settings и Help & Support. В Settings нет переключателя языка, кнопка открывает системные настройки приложения, версия в формате «X (N)».
+2. В Help нет строки поддержки и пустых статей. Диагностика открывается из Help.
+3. В DiagnosticsView до 50 последних ошибок, новые сверху; план только при entitlements.v1; при переходе экрана на кадры есть строка diag.screen.jpegMode.
+4. Экспорт через ShareLink. В тексте нет message, имени ПК, pcId, IP, порта, deviceId, отпечатков и токенов (проверено тестом).
+5. Журнал только в памяти: поиск по коду не находит записи diagnostics в UserDefaults, файлы или Keychain.
+6. После plan.limit и успешной следующей команды files.* LimitNotice исчезает; после переподключения — тоже.
+7. plan.required на profiles даёт тост pro.feature.profiles.body; expired даёт pro.expired.body; ключ, которого нет в каталоге, даёт pro.card.title.
+8. В строковых литералах PCController, AutomationsView, ScreenView, TouchpadView, KeyboardView, AppsView, ThisPCView, MoreView и новых View нет кириллицы (комментарии допустимы). Проверка: grep "[А-Яа-я]" внутри кавычек.
+9. Все новые ключи есть в EN и RU в Localizable.xcstrings.
+10. swift test --package-path ios/NexusKit зелёный; сборки iOS Debug и Release в CI зелёные.
+Тесты:
+- DiagnosticsReportTests: запись с message «C:\Users\x\file.txt 192.168.1.5» и details со всеми полями — в отчёте нет message, IP и пути, есть feature, state, limit, retryAfter; отчёт не содержит pcName, pcId и fingerprint (или API их не принимает); пустой журнал даёт валидный текст; время ISO8601 UTC.
+- swift test --package-path ios/NexusKit; сборка Debug и Release в CI.
+- Ручная проверка у владельца: RU и EN системный язык; переход в настройки; экспорт в «Файлы»; plan.limit → исчезновение LimitNotice; AX5 на iPhone SE.
+Зависит от: E6-SCREENS-2 (принят, 7f48365); тексты help.*.body и diag.title — ui-ux-designer
+```
+
+```
+ПЕРЕДАЧА В QA E6-SCREENS-3
+Изменённые файлы: <пути>
+Что проверить: критерии приёмки 1–10 задания E6-SCREENS-3; особо п.4 (состав экспорта по белому списку) и п.5 (журнал только в памяти); затем security-auditor по DiagnosticsReport.swift, DiagnosticsView.swift, PCController.swift
+Запущено: swift test --package-path ios/NexusKit — <результат>; сборка iOS Debug и Release — <ссылка на прогон CI / не запускалось локально: нет Xcode>
+Не запускалось: ручная проверка на устройстве (RU/EN, системные настройки, экспорт, plan.limit, AX5 на iPhone SE) — у владельца
+```
+
+НУЖНО РЕШЕНИЕ (к владельцу):
+1. Тексты help.*.body и diag.title отсутствуют в docs/design. Рек. architect: короткая задача ui-ux-designer до E6-SCREENS-3; альтернатива — Help временно только с «Диагностикой».
+2. message с ПК: на экране показывать, в экспорт не выгружать (рек.).
+3. ios-screens.md:180-184 — переключатель языка противоречит решению; привести документ в UX-VERIFY.
