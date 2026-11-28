@@ -182,3 +182,38 @@ E5 завершён: E5-0 (21dfec8, QA ПРИНЯТО, аудит без зам�
 ```
 
 E6-NAV-2 (после E6-NAV-1 и E5-3 iOS): первый запуск из 4 шагов (Intro → Account → Install → Pair), без «Пропустить», onboarding.account.why о Free без интернета, {DOWNLOAD_URL} = страница релизов GitHub одной константой, при сопряжённом ПК шаг 3 пропускается, «Подключу позже» → вкладки с EmptyState, истёкший вход не блокирует управление, достижимость реализованных экранов карты, ключи onboarding.*. Полный блок — повторно у code-architect при запуске.
+
+## E6-SCREENS разбит на три (code-architect, 2026-11-28)
+Матрица Free/Pro уже решена (выше). «Диагностика» входит (ios-screens.md:178). После E6-SCREENS-3 — security-auditor (экспорт диагностики, журнал ошибок). ENT-2 не включать до релиза iOS с E6-SCREENS-2 п.3.
+
+```
+ЗАДАНИЕ E6-SCREENS-1: модель hello и ошибок в NexusKit, единые состояния раздела, тексты ошибок по коду, подтверждение «Забыть этот ПК»
+Исполнитель: ios-developer
+Файлы:
+- новые: ios/NexusKit/Sources/NexusKit/AgentHello.swift; ios/NexusKit/Sources/NexusKit/ErrorPresentation.swift; ios/NexusKit/Sources/NexusKit/SectionAccess.swift; ios/NexusKit/Tests/NexusKitTests/AgentHelloTests.swift; ios/NexusKit/Tests/NexusKitTests/ErrorPresentationTests.swift; ios/NexusKit/Tests/NexusKitTests/SectionAccessTests.swift
+- изменить: ios/NexusKit/Sources/NexusKit/NexusError.swift; ios/NexusKit/Sources/NexusKit/NexusConnection.swift (только разбор error.details); ios/NexusPC/ViewModels/PCController.swift; ios/NexusPC/Views/RootTabView.swift (SectionState/SectionGate); ios/NexusPC/Views/ThisPCView.swift; ios/NexusPC/Siri/Localizable.xcstrings
+- только читать: docs/design/error-texts.md (разделы 2, 3), docs/design/ios-screens.md (раздел 2, 3.1), docs/API.md:77, :174-176, :206-221, shared/protocol/fixtures/responses.v1.json, windows/Nexus.Core/Entitlements/PlanPolicy.cs:14-60
+Сделать:
+1. AgentHello (NexusKit, public, Sendable, Equatable): init(result: [String: Any]). Поля: protocolVersion, pcId, pcName, agentVersion?, authenticated, capabilities: Set<String>, plan?, features: Set<String>, entitlementState? (enum none/active/grace/expired/revoked плюс unknown(String)), validUntil?. Свойство supportsEntitlements = capabilities.contains("entitlements.v1"). Неизвестные поля и неизвестные значения не ломают разбор.
+2. ServerErrorDetails (NexusKit): feature?, state?, limit?, retryAfter?. Разбирать error.details в NexusConnection. В NexusError.server добавить третье связанное значение details: ServerErrorDetails? = nil; все сопоставления case .server в ios/** поправить. В NexusError.errorDescription не выводить код: для .server — только message. Это запасной путь, основной — п.3.
+3. ErrorPresentation (NexusKit, без SwiftUI): static func for(code: String, details: ServerErrorDetails?, section: String?) -> ErrorPresentation. Результат: key (String-ключ из docs/design/error-texts.md, раздел 3) и style (.card, .toast, .inline, .permission, .pro, .limit, .offline, .tray, .silent). Ровно по таблицам 3.1–3.7, включая: confirm.required и auth.confirmationRequired → один ключ error.confirm.required; plan.required с details.state expired/revoked → pro.expired.body / pro.revoked.body; session.unavailable в разделах control и files → error.session.signIn; screen.videoUnavailable и screen.notStarted → .silent. Неизвестный код → key nil; вызывающий показывает message ПК (не пустой, не длиннее 200 символов) или error.generic.body.
+4. SectionAccess (NexusKit): чистая функция resolve(isPaired, connection: .online/.connecting/.offline, capabilities, anyOf commands, userSessionAvailable, needsTray, hello: AgentHello?, requiredFeature: String?) -> .noPC / .offline / .connecting / .permission / .trayMissing / .pro(state) / .content. Порядок — docs/design/ios-screens.md, раздел 2, шаги 1–6. Решение владельца: .offline при ЛЮБОЙ потере связи (state ≠ online и не connecting), независимо от кэша capabilities. .pro возвращается только если hello.supportsEntitlements и requiredFeature не входит в features. Разрешение (permission) всегда проверяется раньше Pro.
+5. SectionState и SectionGate в RootTabView.swift перевести на SectionAccess. Добавить ветки: LoadingState для connecting, TrayMissingCard, ProCard для .pro (ключ pro.feature.<feature>.body, при expired/revoked — pro.expired.body / pro.revoked.body). PermissionName остаётся в приложении: сопоставление строки разрешения с PermissionName делается в SectionGate. Параметры needsTray и requiredFeature у SectionGate по умолчанию false и nil, существующие вызовы не меняются.
+6. PCController: хранить hello: AgentHello? (заполнять в load(), :246). Публичное ошибочное состояние — lastError(code, details, message, section). banner для ошибок .server формировать по ErrorPresentation, а не через localizedDescription. Журнал «Диагностики»: кольцевой буфер последних 50 записей (время, раздел, код, message ПК) только в памяти, без сохранения на диск. rate.limited с retryAfter: хранить момент, до которого «Повторить» выключено.
+7. ThisPCView: «Забыть этот ПК» через confirmationDialog. Ключи pc.forget.confirm.title, pc.forget.confirm.message, pc.forget.confirm.action, EN и RU. Текст: что сопряжение удаляется только на iPhone, а на ПК устройство остаётся в «Устройства и разрешения». Кнопка role: .destructive, есть «Отмена».
+8. Localizable.xcstrings: добавить EN и RU для всех ключей error.* и pro.expired.body, pro.revoked.body, pro.card.ownerHint, limit.files.body, limit.files.bodyWithLimit, error.generic.body, error.rateLimited.retryIn из docs/design/error-texts.md (разделы 3.1–3.7) дословно. Ключи account.error.* не добавлять (E6-ACC).
+Не трогать: протокол v1, shared/**, windows/**; логику питания, ввода, экрана; вёрстку разделов (E6-SCREENS-2); DesignSystem/*.swift (только использовать); MoreView (E6-SCREENS-3); NexusConnection кроме разбора details.
+Критерии приёмки:
+- AgentHello разбирает все hello-фикстуры responses.v1.json; лишние поля в hello и в metrics.snapshot не ломают разбор (тест с добавленным полем "futureField").
+- details разбираются из фикстур plan.required, plan.limit, rate.limited.
+- ErrorPresentation: для каждого кода из docs/design/error-texts.md 3.1–3.7 есть ожидаемый ключ и стиль (табличный тест); confirm.required и auth.confirmationRequired дают один ключ; неизвестный код → nil.
+- SectionAccess: без связи при непустом кэше capabilities → offline; permission раньше pro; без entitlements.v1 никогда не pro; trayMissing только при needsTray.
+- В основном тексте ошибки нет кода (grep "(\\(code))" в NexusError.swift пусто).
+- «Забыть этот ПК» не срабатывает без подтверждения.
+- Каждый новый ключ есть в EN и RU.
+- swift test в ios/NexusKit зелёный; сборки iOS Debug и Release в CI зелёные.
+Тесты: AgentHelloTests (фикстуры и лишние поля, entitlementState unknown); тест разбора details; ErrorPresentationTests (таблица «код → ключ, стиль» по error-texts.md); SectionAccessTests (порядок 1–6, offline при любой потере связи); swift test --package-path ios/NexusKit; сборка Debug и Release в CI.
+Зависит от: E6-NAV-1 (принят, 3c771b3), W-PROTO (принят)
+```
+
+E6-SCREENS-2 (Free/Pro в разделах, состояния внутри Rgb и Files, unavailableCodes/reasonCode, SectionHeader вместо SectionTitle, ключи в Home/Monitoring/Rgb/Files/Profiles/PCHome/ControlHome; ScreenView → JPEG при plan.required) и E6-SCREENS-3 (More: Настройки, Помощь, Диагностика с журналом и экспортом; ключи в остальных экранах и PCController) — полные блоки в отчёте code-architect 2026-11-28; перед запуском запросить повторно. Открыто: переключатель языка (рек.: системная настройка), тексты monitor.reason.* (рек.: сначала ui-ux-designer).
