@@ -43,3 +43,4 @@
 - CI-IOS-DEBUG: шаг Debug в ios.yml внесён главной сессией по разрешению владельца.
 - Владелец: офлайн-карточка при любой потере связи — в E6-SCREENS; нестабильный DataDirectoryHardeningTests — windows-developer (W-FLAKY); подпись tab.automations — по проверке на iPhone.
 - CI-IOS-DEBUG ПРИНЯТО (Debug 109 с, прогон 5:22). W-FLAKY ПРИНЯТО (adfcf01, windows-latest зелёный). Дальше E6-SCREENS (блок обновить у code-architect: подтверждение «Забыть ПК», OfflineCard при любой потере связи, can() внутри RgbView/FilesView).
+- E6-SCREENS-1 сделан (be65338), ждёт CI/QA. Владелец 2026-11-28: тексты pc.forget.confirm.* и monitor.reason.* (11 кодов) — ui-ux-designer одним заданием; «Подробнее» на ProCard скрыть до экрана Pro; язык — системная настройка приложения (без своего переключателя); строка «Файлы» — раздельные PermissionCard для files и clipboard (E6-SCREENS-2). В E6-SCREENS-2 также: ключи pro.feature.*, rgb conflict → rgb.busy.
