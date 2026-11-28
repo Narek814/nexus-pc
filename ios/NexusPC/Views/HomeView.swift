@@ -1,355 +1,165 @@
 import NexusKit
 import SwiftUI
 
-/// Command Center (P2): PC status, power, apps and profiles.
+/// Home tab root: PC status, power, and previews of profiles and apps.
+/// The power confirmation lives here only; deep links set `confirmPower` from RootTabView.
 struct HomeView: View {
-    @State private var controller = PCController()
-    @State private var showingPairing = false
-    @State private var pairingLink: PairingLink?
-    @State private var confirmPower: PowerAction?
-    @Environment(\.scenePhase) private var scenePhase
+    let controller: PCController
+    @Binding var confirmPower: PowerAction?
+    let onConnect: () -> Void
+    @State private var showingAllProfiles = false
+    @State private var showingAllApps = false
 
     enum PowerAction: String, Identifiable {
         case shutdown, restart, sleep
         var id: String { rawValue }
     }
 
-    var body: some View {
-        NavigationStack {
-            content
-                .toolbar(.hidden, for: .navigationBar)
-        }
+    private static let previewCount = 3
+
+    init(controller: PCController, confirmPower: Binding<PowerAction?>, onConnect: @escaping () -> Void) {
+        self.controller = controller
+        _confirmPower = confirmPower
+        self.onConnect = onConnect
     }
 
-    private var content: some View {
-        ZStack(alignment: .top) {
-            Theme.background.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    if controller.pc == nil {
-                        onboarding
-                    } else {
-                        statusCard
-                        if controller.can("metrics.snapshot") {
-                            monitoringLink
-                        }
-                        if controller.can("input.move") {
-                            NavigationLink {
-                                TouchpadView(controller: controller)
-                            } label: {
-                                GlassCard {
-                                    HStack {
-                                        Label("Тачпад и клавиатура", systemImage: "hand.point.up.left.fill")
-                                            .foregroundStyle(Theme.textPrimary)
-                                        Spacer()
-                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        if controller.can("files.list") || controller.can("clipboard.get") {
-                            NavigationLink {
-                                FilesView(controller: controller)
-                            } label: {
-                                GlassCard {
-                                    HStack {
-                                        Label("Файлы и буфер обмена", systemImage: "arrow.up.arrow.down.square.fill")
-                                            .foregroundStyle(Theme.textPrimary)
-                                        Spacer()
-                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        if controller.can("screen.start") {
-                            homeLink("Экран ПК", icon: "display") { ScreenView(controller: controller) }
-                        }
-                        if controller.can("automations.list") {
-                            homeLink("Автоматизации", icon: "gearshape.2.fill") { AutomationsView(controller: controller) }
-                        }
-                        if controller.can("history.list") {
-                            homeLink("История", icon: "clock.arrow.circlepath") { HistoryView(controller: controller) }
-                        }
-                        if controller.can("rgb.status") {
-                            NavigationLink {
-                                RgbView(controller: controller)
-                            } label: {
-                                GlassCard {
-                                    HStack {
-                                        Label("Подсветка", systemImage: "light.max")
-                                            .foregroundStyle(Theme.textPrimary)
-                                        Spacer()
-                                        Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        powerGrid
-                        if let pending = controller.pendingPower {
-                            GlassCard {
-                                HStack {
-                                    Label(pending, systemImage: "timer").foregroundStyle(Theme.textPrimary)
-                                    Spacer()
-                                    Button("Отменить") { Task { await controller.perform(.cancel) } }
-                                        .foregroundStyle(Theme.cyan)
-                                }
-                            }
-                        }
-                        profilesSection
-                        appsSection
-                        forgetButton
-                    }
-                }
-                .padding(20)
-            }
-            .refreshable { await controller.refresh() }
-
-            if let banner = controller.banner {
-                Text(banner)
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Theme.surface, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Theme.accent, lineWidth: 1))
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .task(id: banner) {
-                        try? await Task.sleep(nanoseconds: 3_000_000_000)
-                        controller.banner = nil
-                    }
+    var body: some View {
+        Group {
+            if controller.pc == nil {
+                NoPCRoot(title: "tab.home", onConnect: onConnect)
+            } else {
+                content
             }
         }
-        .animation(.easeInOut, value: controller.banner)
-        .sheet(isPresented: $showingPairing, onDismiss: { pairingLink = nil }) {
-            PairingFlowView(initialLink: pairingLink) { controller.paired($0) }
-        }
-        .onOpenURL { handle($0) }
         .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirmPower != nil }, set: { if !$0 { confirmPower = nil } }), titleVisibility: .visible) {
             powerChoices
         }
-        .task { await controller.refresh() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                Task { await controller.refresh() }
+        .navigationDestination(isPresented: $showingAllProfiles) { ProfilesView(controller: controller) }
+        .navigationDestination(isPresented: $showingAllApps) { AppsView(controller: controller) }
+    }
+
+    private var pcName: String {
+        controller.status?.name ?? controller.pc?.name ?? ""
+    }
+
+    private var content: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Space.xl) {
+                    statusCard
+                    powerGrid
+                    if let pending = controller.pendingPower {
+                        GlassCard {
+                            HStack {
+                                Label(pending, systemImage: "timer").foregroundStyle(Theme.textPrimary)
+                                Spacer()
+                                Button("power.cancelTimer") { Task { await controller.perform(.cancel) } }
+                                    .foregroundStyle(Theme.cyan)
+                            }
+                        }
+                    }
+                    profilesSection
+                    appsSection
+                }
+                .padding(Theme.Space.xl)
             }
+            .refreshable { await controller.refresh() }
         }
+        .navigationTitle(Text(verbatim: pcName))
     }
 
     // MARK: - Sections
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("NEXUS PC")
-                .font(.system(size: 34, weight: .heavy, design: .rounded))
-                .foregroundStyle(Theme.accent)
-            Text("Command Center")
-                .font(.headline)
-                .foregroundStyle(Theme.textMuted)
-        }
-        .padding(.top, 12)
-    }
-
-    private var onboarding: some View {
-        VStack(spacing: 20) {
-            GlassCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("ПК не подключён", systemImage: "desktopcomputer")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("На ПК нажмите на значок Nexus PC у часов → «Подключить iPhone…», затем отсканируйте QR-код.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textMuted)
-                }
-            }
-            NeonButton(title: "Подключить ПК", systemImage: "qrcode.viewfinder") { showingPairing = true }
+    private var pillState: StatusPillState {
+        switch controller.state {
+        case .online: controller.status?.userSessionAvailable == false ? .limited : .ready
+        case .connecting: .connecting
+        case .offline, .notPaired: .offline
         }
     }
 
     private var statusCard: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
                 HStack {
                     Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(Theme.cyan)
-                    Text(controller.status?.name ?? controller.pc?.name ?? "ПК")
+                        .accessibilityHidden(true)
+                    Text(verbatim: pcName)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(Theme.textPrimary)
                     Spacer()
-                    StatusPill(state: controller.state)
+                    DS.StatusPill(state: pillState)
                 }
                 if let status = controller.status, controller.state == .online {
-                    Text("Работает \(Self.uptime(status.uptimeSeconds)) · \(status.os)")
+                    Text("home.uptime \(Self.uptime(status.uptimeSeconds)) \(status.os)")
                         .font(.footnote)
                         .foregroundStyle(Theme.textMuted)
                     if !status.userSessionAvailable {
-                        Label("Nexus PC Tray не запущен — программы и блокировка недоступны.", systemImage: "exclamationmark.triangle")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
+                        TrayMissingCard()
                     }
                 } else if case let .offline(reason) = controller.state {
                     Text(reason).font(.footnote).foregroundStyle(Theme.textMuted)
                     if controller.canWake {
-                        NeonButton(title: "Включить ПК", systemImage: "power.circle") {
+                        NeonButton(title: "offline.wake", systemImage: "power.circle") {
                             Task { await controller.wake() }
                         }
-                        .padding(.top, 4)
+                        .padding(.top, Theme.Space.xs)
                     }
                 }
             }
-        }
-    }
-
-    private func homeLink<Destination: View>(_ title: String, icon: String, @ViewBuilder destination: @escaping () -> Destination) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
-            GlassCard {
-                HStack {
-                    Label(title, systemImage: icon)
-                        .foregroundStyle(Theme.textPrimary)
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var monitoringLink: some View {
-        NavigationLink {
-            MonitoringView(controller: controller)
-        } label: {
-            GlassCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "waveform.path.ecg").font(.title2).foregroundStyle(Theme.accent)
-                    metricSummary("CPU", Format.percent(controller.metrics?.cpuUsage))
-                    metricSummary("GPU", Format.percent(controller.metrics?.gpus.first?.usage))
-                    metricSummary("RAM", Format.percent(controller.metrics?.memoryUsage))
-                    metricSummary("GPU", Format.temperature(controller.metrics?.gpus.first?.temperature))
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").foregroundStyle(Theme.textMuted)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func metricSummary(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.subheadline.weight(.bold)).monospacedDigit().foregroundStyle(Theme.textPrimary)
-            Text(title).font(.caption2).foregroundStyle(Theme.textMuted)
         }
     }
 
     private var powerGrid: some View {
         let online = controller.state == .online
-        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            PowerTile(title: "Выключить", icon: "power", tint: .red, enabled: online && controller.can("power.shutdown")) { confirmPower = .shutdown }
-            PowerTile(title: "Перезагрузить", icon: "arrow.clockwise", tint: Theme.violet, enabled: online && controller.can("power.restart")) { confirmPower = .restart }
-            PowerTile(title: "Сон", icon: "moon.fill", tint: Theme.cyan, enabled: online && controller.can("power.sleep")) { confirmPower = .sleep }
-            PowerTile(title: "Заблокировать", icon: "lock.fill", tint: Theme.cyan, enabled: online && controller.can("power.lock")) {
+        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Space.m) {
+            DS.PowerTile(title: "power.shutdown", systemImage: "power", tint: Theme.Palette.stateDanger) { confirmPower = .shutdown }
+                .disabled(!(online && controller.can("power.shutdown")))
+            DS.PowerTile(title: "power.restart", systemImage: "arrow.clockwise", tint: Theme.violet) { confirmPower = .restart }
+                .disabled(!(online && controller.can("power.restart")))
+            DS.PowerTile(title: "power.sleep", systemImage: "moon.fill", tint: Theme.cyan) { confirmPower = .sleep }
+                .disabled(!(online && controller.can("power.sleep")))
+            DS.PowerTile(title: "power.lock", systemImage: "lock.fill", tint: Theme.cyan) {
                 Task { await controller.perform(.lock) }
             }
+            .disabled(!(online && controller.can("power.lock")))
         }
     }
 
-    @ViewBuilder
     private var profilesSection: some View {
-        if !controller.profiles.isEmpty {
-            SectionTitle("Профили")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(controller.profiles) { profile in
-                        Button {
-                            Task { await controller.runProfile(profile) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Image(systemName: Self.icon(for: profile.id)).font(.title2).foregroundStyle(Theme.accent)
-                                Text(profile.name).font(.headline).foregroundStyle(Theme.textPrimary)
-                                Text("\(profile.appCount) прил.").font(.caption).foregroundStyle(Theme.textMuted)
-                            }
-                            .frame(width: 130, alignment: .leading)
-                            .padding(14)
-                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.accent, lineWidth: 1).opacity(0.5))
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            SectionHeader("section.profiles", onSeeAll: { showingAllProfiles = true })
+            if !controller.profiles.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Theme.Space.m) {
+                        ForEach(controller.profiles.prefix(Self.previewCount)) { profile in
+                            ProfileCard(controller: controller, profile: profile)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
     }
 
-    @ViewBuilder
     private var appsSection: some View {
-        if !controller.apps.isEmpty {
-            SectionTitle("Приложения")
-            VStack(spacing: 8) {
-                ForEach(controller.apps) { app in
-                    Button {
-                        Task { await controller.launch(app) }
-                    } label: {
-                        HStack {
-                            Image(systemName: "app.badge.fill").foregroundStyle(Theme.cyan)
-                            Text(app.name).foregroundStyle(Theme.textPrimary)
-                            Spacer()
-                            Image(systemName: "play.fill").foregroundStyle(Theme.violet)
-                        }
-                        .padding(14)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            SectionHeader("section.apps", onSeeAll: { showingAllApps = true })
+            VStack(spacing: Theme.Space.s) {
+                ForEach(controller.apps.prefix(Self.previewCount)) { app in
+                    AppRow(controller: controller, app: app)
                 }
             }
         }
-    }
-
-    private var forgetButton: some View {
-        VStack(spacing: 14) {
-            // What the administrator types in "automations assign" on the PC (T3), next to what "devices" shows.
-            if let fingerprint = controller.deviceKeyFingerprint {
-                VStack(spacing: 2) {
-                    Text("Отпечаток ключа этого iPhone")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textMuted)
-                    Text(DeviceCrypto.grouped(fingerprint))
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(Theme.textPrimary)
-                        .textSelection(.enabled)
-                }
-                .accessibilityElement(children: .combine)
-            }
-            // If the PC moved to another address and was not found automatically: scan its QR again.
-            Button {
-                pairingLink = nil
-                showingPairing = true
-            } label: {
-                Label("Обновить адрес ПК по QR-коду", systemImage: "qrcode.viewfinder")
-                    .font(.footnote)
-            }
-            .tint(Theme.cyan)
-            Button(role: .destructive) {
-                controller.forget()
-            } label: {
-                Label("Забыть этот ПК", systemImage: "trash")
-                    .font(.footnote)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 12)
     }
 
     // MARK: - Power confirmation
 
     private var confirmTitle: String {
         switch confirmPower {
-        case .shutdown: return "Выключить \(controller.status?.name ?? "ПК")?"
-        case .restart: return "Перезагрузить \(controller.status?.name ?? "ПК")?"
-        case .sleep: return "Перевести ПК в сон?"
+        case .shutdown: return String(localized: "power.confirm.shutdown \(pcName)")
+        case .restart: return String(localized: "power.confirm.restart \(pcName)")
+        case .sleep: return String(localized: "power.confirm.sleep")
         case nil: return ""
         }
     }
@@ -358,69 +168,32 @@ struct HomeView: View {
     private var powerChoices: some View {
         switch confirmPower {
         case .shutdown:
-            Button("Выключить сейчас", role: .destructive) { Task { await controller.perform(.shutdown(delaySeconds: 0)) } }
-            Button("Через 10 минут") { Task { await controller.perform(.shutdown(delaySeconds: 600)) } }
-            Button("Через 30 минут") { Task { await controller.perform(.shutdown(delaySeconds: 1800)) } }
+            Button("power.shutdown.now", role: .destructive) { Task { await controller.perform(.shutdown(delaySeconds: 0)) } }
+            Button("power.in10min") { Task { await controller.perform(.shutdown(delaySeconds: 600)) } }
+            Button("power.in30min") { Task { await controller.perform(.shutdown(delaySeconds: 1800)) } }
         case .restart:
-            Button("Перезагрузить сейчас", role: .destructive) { Task { await controller.perform(.restart(delaySeconds: 0)) } }
+            Button("power.restart.now", role: .destructive) { Task { await controller.perform(.restart(delaySeconds: 0)) } }
         case .sleep:
-            Button("Сон") { Task { await controller.perform(.sleep) } }
+            Button("power.sleep") { Task { await controller.perform(.sleep) } }
         case nil:
             EmptyView()
         }
-        Button("Отмена", role: .cancel) {}
-    }
-
-    // MARK: - Links from widgets, Live Activities and pairing QR codes
-
-    private func handle(_ url: URL) {
-        guard url.scheme == "nexuspc" else {
-            return
-        }
-        if url.host == "pair" {
-            if let link = PairingLink(url.absoluteString) {
-                pairingLink = link
-                showingPairing = true
-            }
-            return
-        }
-        guard url.host == "action", controller.pc != nil else {
-            return
-        }
-        let parts = url.pathComponents.filter { $0 != "/" }
-        switch parts.first ?? "" {
-        case "lock":
-            Task { await controller.perform(.lock) }
-        case "shutdown":
-            confirmPower = .shutdown // never without confirmation
-        case "cancel":
-            Task { await controller.perform(.cancel) }
-        case "profile" where parts.count > 1:
-            Task { await controller.runProfile(id: parts[1]) }
-        default:
-            break
-        }
+        Button("common.cancel", role: .cancel) {}
     }
 
     // MARK: - Helpers
 
+    /// "3 h 5 min" / "3 ч 5 мин" in the user's language.
     static func uptime(_ seconds: Int) -> String {
-        let hours = seconds / 3600
-        let minutes = seconds % 3600 / 60
-        return hours > 0 ? "\(hours) ч \(minutes) мин" : "\(minutes) мин"
-    }
-
-    static func icon(for profileId: String) -> String {
-        switch profileId {
-        case "gaming": return "gamecontroller.fill"
-        case "developer": return "chevron.left.forwardslash.chevron.right"
-        case "creator": return "video.fill"
-        case "night": return "moon.stars.fill"
-        default: return "square.stack.3d.up.fill"
-        }
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute]
+        formatter.unitsStyle = .short
+        return formatter.string(from: TimeInterval(seconds)) ?? ""
     }
 }
 
+/// Old screen-local section title; still used by MonitoringView, RgbView and FilesView
+/// until E6-SCREENS moves them to `SectionHeader`.
 struct SectionTitle: View {
     let text: String
 
@@ -434,49 +207,5 @@ struct SectionTitle: View {
             .tracking(1.5)
             .foregroundStyle(Theme.textMuted)
             .padding(.top, 4)
-    }
-}
-
-struct StatusPill: View {
-    let state: PCController.ConnectionState
-
-    var body: some View {
-        let (text, color): (String, Color) = switch state {
-        case .online: ("В сети", .green)
-        case .connecting: ("Подключение", .yellow)
-        case .offline: ("Нет связи", .gray)
-        case .notPaired: ("—", .gray)
-        }
-        return HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 8, height: 8).shadow(color: color, radius: 4)
-            Text(text).font(.caption.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Theme.surface, in: Capsule())
-    }
-}
-
-struct PowerTile: View {
-    let title: String
-    let icon: String
-    let tint: Color
-    let enabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                Image(systemName: icon).font(.title2)
-                Text(title).font(.subheadline.weight(.semibold))
-            }
-            .foregroundStyle(enabled ? tint : Theme.textMuted)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(enabled ? tint : Theme.surface, lineWidth: 1).opacity(0.6))
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
     }
 }
