@@ -39,3 +39,4 @@
 - Владелец: _shared/db.ts вне списка BE-1 ПРИНЯТ; два теста-пробела (approve‖insert, approve чужого ПК при 20) — в BE-2; E6-DS запущен.
 - E6-DS выполнен ios-developer; отклонения: Theme.Palette вместо Theme.Color, DS.StatusPill/DS.PowerTile (конфликт имён со старыми в экранах), ключи в ios/NexusPC/Siri/Localizable.xcstrings (Resources/ не существует), 4 доп. ключа (common.inProgress/unavailable/seeAll, status.a11y %@). Ждёт QA + CI ios.yml.
 - E6-DS ПРИНЯТО QA (96dd6c1; ios.yml и ci.yml зелёные; Release). Открыто для владельца: шаг Debug в ios.yml (рек.: release-manager отдельно); принять отклонения E6-DS (рек.: да). Дальше E6-NAV.
+- Владелец 2026-11-28: E6-NAV разбит (вариант A). E6-NAV-1 сделан (3c771b3), ждёт QA. Решения: History гейтится по .monitoring (как агент); подтверждение «Забыть этот ПК» — добавить в E6-SCREENS; шаг Debug в ios.yml — release-manager отдельной задачей; отклонения E6-DS приняты.
