@@ -45,3 +45,16 @@
 - CI-IOS-DEBUG ПРИНЯТО (Debug 109 с, прогон 5:22). W-FLAKY ПРИНЯТО (adfcf01, windows-latest зелёный). Дальше E6-SCREENS (блок обновить у code-architect: подтверждение «Забыть ПК», OfflineCard при любой потере связи, can() внутри RgbView/FilesView).
 - E6-SCREENS-1 сделан (be65338), ждёт CI/QA. Владелец 2026-11-28: тексты pc.forget.confirm.* и monitor.reason.* (11 кодов) — ui-ux-designer одним заданием; «Подробнее» на ProCard скрыть до экрана Pro; язык — системная настройка приложения (без своего переключателя); строка «Файлы» — раздельные PermissionCard для files и clipboard (E6-SCREENS-2). В E6-SCREENS-2 также: ключи pro.feature.*, rgb conflict → rgb.busy.
 - E6-SCREENS-1 ПРИНЯТО QA (be65338, CI зелёный). Дальше: UX-TEXTS (ui-ux-designer) → E6-SCREENS-2.
+
+## Старт новой сессии (точка остановки 2026-11-28, вечер)
+Сделано и ПРИНЯТО QA в этой сессии: E6-DS (96dd6c1), E6-NAV-1 (3c771b3), CI-IOS-DEBUG (550ef7f), W-FLAKY (adfcf01), E6-SCREENS-1 (be65338), UX-TEXTS (944be40), E6-SCREENS-2 (7f48365; CI полностью зелёный: Debug, Release, swift test, .NET win/ubuntu, Installer, Backend).
+Приняты главной сессией: LimitNotice/ProCard без «Подробнее» (решение владельца «скрыть везде»).
+
+Дальше по порядку:
+1. E6-SCREENS-3 — полный блок запросить у code-architect (краткий — E6-PLAN.md, раздел «E6-SCREENS разбит на три»). Учесть: язык = системная настройка приложения (решение владельца); PCController: очистка lastError plan.limit (LimitNotice не должен висеть), bannerText для .pro → pro.feature.<f>.body; ключи вместо литералов в AutomationsView/ScreenView/TouchpadView/KeyboardView/AppsView/ThisPCView/PCController. После — QA, затем security-auditor (экспорт «Диагностики», журнал ошибок).
+2. UX-VERIFY (ui-ux-designer): вычитка ~60 EN-ключей от исполнителя E6-SCREENS-2 (список в его отчёте: monitor.*, rgb.*, files.*, clipboard.*, common.save) + ключи E6-SCREENS-3; привести имена pro.feature.* в docs/design/ios-screens.md:262-267 к коду (pro.feature.<featureId>.body). Рек. владельца: после E6-SCREENS-3 одним заданием.
+3. E6-ACC-1 → QA → SEC-REBIND (полный блок у code-architect) → BE-2 (полный блок у code-architect; добавить 2 теста: параллельно approve‖insert ПК; approve чужого ПК при 20) → QA → E6-NAV-2 (после E5-3 iOS-аккаунта; полный блок у code-architect) → E6-ACC-2 → …
+4. Ограничение релиза: ENT-2 не включать до релиза iOS с E6-SCREENS-2 п.10.
+
+Ручная проверка владельцем на iPhone (накоплено): 5 вкладок, EmptyState/Offline/Permission, deep links и виджет «Выключить» с подтверждением, «Этот ПК» и диалог «Забыть», «Автоматизации» на iPhone SE (иначе «Сценарии»), Free/Pro/expired/без маркера, Files без clipboard, RGB conflict, AX5, исчезновение LimitNotice, мигание offline при коротком обрыве.
+Охранник: правки workflow с флагами подписи агентам не разрешает и окна подтверждения не показывает — такие правки по разрешению владельца вносит главная сессия.
