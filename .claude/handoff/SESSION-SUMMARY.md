@@ -42,3 +42,4 @@
 - Владелец 2026-11-28: E6-NAV разбит (вариант A). E6-NAV-1 сделан (3c771b3), ждёт QA. Решения: History гейтится по .monitoring (как агент); подтверждение «Забыть этот ПК» — добавить в E6-SCREENS; шаг Debug в ios.yml — release-manager отдельной задачей; отклонения E6-DS приняты.
 - CI-IOS-DEBUG: шаг Debug в ios.yml внесён главной сессией по разрешению владельца.
 - Владелец: офлайн-карточка при любой потере связи — в E6-SCREENS; нестабильный DataDirectoryHardeningTests — windows-developer (W-FLAKY); подпись tab.automations — по проверке на iPhone.
+- CI-IOS-DEBUG ПРИНЯТО (Debug 109 с, прогон 5:22). W-FLAKY ПРИНЯТО (adfcf01, windows-latest зелёный). Дальше E6-SCREENS (блок обновить у code-architect: подтверждение «Забыть ПК», OfflineCard при любой потере связи, can() внутри RgbView/FilesView).
