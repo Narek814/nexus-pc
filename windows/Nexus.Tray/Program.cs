@@ -2,6 +2,9 @@ namespace Nexus.Tray;
 
 internal static class Program
 {
+    /// <summary>Settings → "Restart Nexus PC": the new tray waits for the old one to exit instead of quitting.</summary>
+    public const string RestartArgument = "--restart-tray";
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -11,31 +14,44 @@ internal static class Program
         {
             return ElevatedAccountProcess.RunElevated(accountOp);
         }
-        RunTray();
+        RunTray(restarting: args.Length == 1 && args[0] == RestartArgument);
         return 0;
     }
 
-    private static void RunTray()
+    private static void RunTray(bool restarting)
     {
-        // One tray per Windows session.
-        using var single = new Mutex(initiallyOwned: true, @"Local\NexusPC.Tray", out var isFirst);
-        if (!isFirst)
+        // One tray per Windows session. After a restart from Settings, wait a moment for the old tray to exit.
+        using var single = new Mutex(initiallyOwned: false, @"Local\NexusPC.Tray");
+        bool owned;
+        try
+        {
+            owned = single.WaitOne(restarting ? TimeSpan.FromSeconds(15) : TimeSpan.Zero);
+        }
+        catch (AbandonedMutexException)
+        {
+            owned = true; // the previous tray ended without releasing it
+        }
+        if (!owned)
         {
             return;
         }
-        ApplicationConfiguration.Initialize();
-        // Apps started from a phone inherit the tray's rights. Never run elevated.
-        using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+        try
         {
-            if (new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+            ApplicationConfiguration.Initialize();
+            // Apps started from a phone inherit the tray's rights. Never run elevated.
+            using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
             {
-                MessageBox.Show(
-                    "Nexus PC Tray запущен с правами администратора. Тогда программы, запущенные с телефона, тоже получили бы эти права.\n\n" +
-                    "Запустите его обычным способом (из меню «Пуск» или Проводника) — без «Запуск от имени администратора».",
-                    "Nexus PC", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                if (new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+                {
+                    MessageBox.Show(TrayText.Get("ElevatedTrayBody"), TrayText.Get("ElevatedTrayTitle"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
             }
+            Application.Run(new TrayContext());
         }
-        Application.Run(new TrayContext());
+        finally
+        {
+            single.ReleaseMutex();
+        }
     }
 }

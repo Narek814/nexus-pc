@@ -32,6 +32,16 @@ public static class ElevatedAccountCommand
     /// <summary>True only for a declined administrator prompt ("Cancelled"); any other Win32 error is "elevation".</summary>
     public static bool IsUacDeclined(int nativeError) => nativeError == UacCancelled;
 
+    /// <summary>
+    /// W-TRAY 6: the tray's own exe for the elevated step. <see cref="ElevationError"/> when the path is missing or the
+    /// file is not there (nothing to start), otherwise null. <paramref name="fileExists"/> is File.Exists in the tray.
+    /// </summary>
+    public static string? CheckElevatedPath(string? processPath, Func<string, bool> fileExists)
+    {
+        ArgumentNullException.ThrowIfNull(fileExists);
+        return string.IsNullOrWhiteSpace(processPath) || !fileExists(processPath) ? ElevationError : null;
+    }
+
     /// <summary>The one argument for <paramref name="op"/> (login.start or unlink); anything else is refused.</summary>
     public static string ArgumentFor(string op) => op switch
     {

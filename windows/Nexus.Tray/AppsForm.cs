@@ -15,7 +15,7 @@ internal sealed class AppsForm : Form
 
     private readonly UserAppStore _store;
     private readonly ListView _apps = new() { View = View.Details, FullRowSelect = true, Dock = DockStyle.Fill, HideSelection = false };
-    private readonly CheckBox _allowClose = new() { Text = "Разрешать закрывать с телефона", AutoSize = true, Checked = false };
+    private readonly CheckBox _allowClose = new() { Text = TrayText.Get("AppsAllowClose"), AutoSize = true, Checked = false };
     private readonly ListBox _profiles = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly TextBox _profileName = new() { Width = 300 };
     private readonly CheckedListBox _profileApps = new() { Width = 300, Height = 260, CheckOnClick = true };
@@ -25,7 +25,7 @@ internal sealed class AppsForm : Form
     public AppsForm(UserAppStore store)
     {
         _store = store;
-        Text = "Nexus PC — приложения и профили";
+        Text = TrayText.Get("AppsTitle");
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(900, 480);
         MinimumSize = new Size(880, 420);
@@ -46,20 +46,20 @@ internal sealed class AppsForm : Form
 
     private TabPage BuildAppsPage()
     {
-        var page = new TabPage("Приложения") { BackColor = Theme.Background };
-        _apps.Columns.Add("Название", 300);
-        _apps.Columns.Add("Тип", 140);
-        _apps.Columns.Add("Закрытие с телефона", 180);
+        var page = new TabPage(TrayText.Get("AppsTab")) { BackColor = Theme.Background };
+        _apps.Columns.Add(TrayText.Get("AppsColName"), 300);
+        _apps.Columns.Add(TrayText.Get("AppsColType"), 140);
+        _apps.Columns.Add(TrayText.Get("AppsColClose"), 180);
 
         var note = new Label
         {
-            Text = "Телефон может запускать только приложения из этого списка. Добавлять их можно только здесь, на ПК.",
+            Text = TrayText.Get("AppsHint"),
             Dock = DockStyle.Top, Height = 40, ForeColor = Theme.Muted, Padding = new Padding(4),
         };
-        var fromStart = new Button { Text = "Из меню «Пуск»…", Width = 170, Height = 34 };
-        var fromStore = new Button { Text = "Приложения Store…", Width = 180, Height = 34 };
-        var fromExe = new Button { Text = "Выбрать .exe…", Width = 150, Height = 34 };
-        var remove = new Button { Text = "Удалить", Width = 110, Height = 34 };
+        var fromStart = new Button { Text = TrayText.Get("AppsFromStart"), AutoSize = true, MinimumSize = new Size(170, 34), Height = 34 };
+        var fromStore = new Button { Text = TrayText.Get("AppsFromStore"), AutoSize = true, MinimumSize = new Size(180, 34), Height = 34 };
+        var fromExe = new Button { Text = TrayText.Get("AppsFromExe"), AutoSize = true, MinimumSize = new Size(150, 34), Height = 34 };
+        var remove = new Button { Text = TrayText.Get("AppsRemove"), AutoSize = true, MinimumSize = new Size(110, 34), Height = 34 };
         fromStart.Click += (_, _) => AddFromStartMenu();
         fromStore.Click += (_, _) => AddPackagedApp();
         fromExe.Click += (_, _) => AddExecutable();
@@ -80,22 +80,22 @@ internal sealed class AppsForm : Form
 
     private TabPage BuildProfilesPage()
     {
-        var page = new TabPage("Профили") { BackColor = Theme.Background };
+        var page = new TabPage(TrayText.Get("ProfilesTab")) { BackColor = Theme.Background };
         var left = new Panel { Dock = DockStyle.Left, Width = 230, Padding = new Padding(4) };
-        var presets = new Button { Text = "Создать стандартные", Dock = DockStyle.Bottom, Height = 34 };
-        var create = new Button { Text = "Новый профиль", Dock = DockStyle.Bottom, Height = 34 };
+        var presets = new Button { Text = TrayText.Get("ProfilesPresets"), Dock = DockStyle.Bottom, Height = 34 };
+        var create = new Button { Text = TrayText.Get("ProfilesNew"), Dock = DockStyle.Bottom, Height = 34 };
         left.Controls.Add(_profiles);
         left.Controls.Add(create);
         left.Controls.Add(presets);
 
         var right = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(12), WrapContents = false };
-        var save = new Button { Text = "Сохранить", Width = 140, Height = 34 };
+        var save = new Button { Text = TrayText.Get("ProfilesSave"), AutoSize = true, MinimumSize = new Size(140, 34), Height = 34 };
         Theme.MakePrimary(save);
-        var delete = new Button { Text = "Удалить профиль", Width = 160, Height = 34 };
+        var delete = new Button { Text = TrayText.Get("ProfilesDelete"), AutoSize = true, MinimumSize = new Size(160, 34), Height = 34 };
         var actions = new FlowLayoutPanel { AutoSize = true };
         actions.Controls.AddRange([save, delete]);
-        right.Controls.AddRange([new Label { Text = "Название", AutoSize = true }, _profileName,
-            new Label { Text = "Приложения профиля", AutoSize = true }, _profileApps, actions, _profileStatus]);
+        right.Controls.AddRange([new Label { Text = TrayText.Get("ProfilesName"), AutoSize = true }, _profileName,
+            new Label { Text = TrayText.Get("ProfilesApps"), AutoSize = true }, _profileApps, actions, _profileStatus]);
 
         page.Controls.Add(right);
         page.Controls.Add(left);
@@ -121,7 +121,7 @@ internal sealed class AppsForm : Form
                     _store.UpsertProfile(new ProfileDefinition(id, name, []));
                 }
             }
-            _profileStatus.Text = "Созданы Gaming, Developer, Creator, Night. Отметьте в каждом нужные приложения.";
+            _profileStatus.Text = TrayText.Get("ProfilesPresetsDone");
         };
         save.Click += (_, _) => SaveProfile();
         delete.Click += (_, _) =>
@@ -130,7 +130,7 @@ internal sealed class AppsForm : Form
             {
                 _store.DeleteProfile(id);
                 _editingProfileId = null;
-                _profileStatus.Text = "Профиль удалён.";
+                _profileStatus.Text = TrayText.Get("ProfilesDeleted");
             }
         };
         return page;
@@ -144,11 +144,11 @@ internal sealed class AppsForm : Form
         {
             var kind = app.Kind switch
             {
-                AppLaunchKind.Shortcut => "Ярлык",
-                AppLaunchKind.PackagedApp => "Приложение Store",
-                _ => "Программа",
+                AppLaunchKind.Shortcut => TrayText.Get("AppsKindShortcut"),
+                AppLaunchKind.PackagedApp => TrayText.Get("AppsKindStore"),
+                _ => TrayText.Get("AppsKindProgram"),
             };
-            var close = app.CloseAllowed && app.ProcessPath is not null ? "Разрешено" : "Нет";
+            var close = app.CloseAllowed && app.ProcessPath is not null ? TrayText.Get("AppsCloseAllowed") : TrayText.Get("AppsCloseNo");
             _apps.Items.Add(new ListViewItem([app.DisplayName, kind, close]) { Tag = app.Id });
         }
         _apps.EndUpdate();
@@ -191,13 +191,13 @@ internal sealed class AppsForm : Form
         var name = _profileName.Text.Trim();
         if (!ProfileRules.IsValidName(name))
         {
-            _profileStatus.Text = "Название: от 1 до 64 символов.";
+            _profileStatus.Text = TrayText.Get("ProfilesNameInvalid");
             return;
         }
         var appIds = _profileApps.CheckedItems.Cast<AppItem>().Select(a => a.App.Id).ToList();
         if (appIds.Count > ProfileRules.MaxApps)
         {
-            _profileStatus.Text = $"Не больше {ProfileRules.MaxApps} приложений в профиле.";
+            _profileStatus.Text = TrayText.Format("ProfilesTooManyApps", ProfileRules.MaxApps);
             return;
         }
         var id = _editingProfileId ?? Identifiers.Slugify(name, _store.Profiles.Select(p => p.Id));
@@ -205,7 +205,7 @@ internal sealed class AppsForm : Form
         {
             _store.UpsertProfile(new ProfileDefinition(id, name, appIds));
             _editingProfileId = id;
-            _profileStatus.Text = "Сохранено.";
+            _profileStatus.Text = TrayText.Get("ProfilesSaved");
         }
         catch (InvalidOperationException ex)
         {
@@ -215,7 +215,7 @@ internal sealed class AppsForm : Form
 
     private void AddFromStartMenu()
     {
-        using var picker = new StartMenuPicker("Меню «Пуск»", ShellLinks.StartMenu());
+        using var picker = new StartMenuPicker(TrayText.Get("AppsPickerStart"), ShellLinks.StartMenu());
         if (picker.ShowDialog(this) != DialogResult.OK || picker.Selected is not { } item)
         {
             return;
@@ -238,10 +238,10 @@ internal sealed class AppsForm : Form
         }
         if (apps.Count == 0)
         {
-            MessageBox.Show(this, "Не удалось найти приложения Microsoft Store на этом ПК.", "Nexus PC", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, TrayText.Get("AppsNoStoreApps"), "Nexus PC", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        using var picker = new StartMenuPicker("Приложения Microsoft Store", apps);
+        using var picker = new StartMenuPicker(TrayText.Get("AppsPickerStore"), apps);
         if (picker.ShowDialog(this) != DialogResult.OK || picker.Selected is not { } item)
         {
             return;
@@ -252,7 +252,7 @@ internal sealed class AppsForm : Form
 
     private void AddExecutable()
     {
-        using var dialog = new OpenFileDialog { Filter = "Программы (*.exe)|*.exe", Title = "Выберите программу" };
+        using var dialog = new OpenFileDialog { Filter = TrayText.Get("AppsExeFilter"), Title = TrayText.Get("AppsExeTitle") };
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
             return;
@@ -288,7 +288,7 @@ internal sealed class AppsForm : Form
 internal sealed class StartMenuPicker : Form
 {
     private readonly IReadOnlyList<ShellLinks.StartMenuItem> _all;
-    private readonly TextBox _search = new() { Dock = DockStyle.Top, PlaceholderText = "Поиск…" };
+    private readonly TextBox _search = new() { Dock = DockStyle.Top, PlaceholderText = TrayText.Get("AppsSearch") };
     private readonly ListBox _list = new() { Dock = DockStyle.Fill, IntegralHeight = false };
 
     public StartMenuPicker(string title, IReadOnlyList<ShellLinks.StartMenuItem> items)
@@ -297,7 +297,7 @@ internal sealed class StartMenuPicker : Form
         Text = title;
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(420, 520);
-        var ok = new Button { Text = "Добавить", Dock = DockStyle.Bottom, Height = 38, DialogResult = DialogResult.OK };
+        var ok = new Button { Text = TrayText.Get("AppsAdd"), Dock = DockStyle.Bottom, Height = 38, DialogResult = DialogResult.OK };
         Theme.MakePrimary(ok);
         Controls.Add(_list);
         Controls.Add(_search);

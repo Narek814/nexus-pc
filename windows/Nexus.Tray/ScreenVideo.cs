@@ -47,13 +47,13 @@ internal sealed class ScreenVideoStream : IScreenVideo
         if (!stream._ready.Wait(TimeSpan.FromSeconds(10)))
         {
             stream.Dispose();
-            problem = "Кодировщик H.264 не запустился за 10 секунд.";
+            problem = TrayText.Get("VideoEncoderTimeout");
             return null;
         }
         if (stream._error is { } error)
         {
             stream.Dispose();
-            problem = "Видео H.264 недоступно на этом ПК (" + error + "). Будут кадры JPEG.";
+            problem = TrayText.Format("VideoUnavailable", error);
             return null;
         }
         problem = null;

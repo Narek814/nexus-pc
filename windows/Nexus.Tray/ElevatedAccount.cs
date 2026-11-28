@@ -22,11 +22,11 @@ internal static class ElevatedAccountProcess
     public static async Task<int?> RunAsync(string op)
     {
         var self = Environment.ProcessPath;
-        if (self is null || !File.Exists(self))
+        if (ElevatedAccountCommand.CheckElevatedPath(self, File.Exists) is { } error)
         {
-            return ElevatedAccountCommand.ExitCodeOfError(ElevatedAccountCommand.ElevationError);
+            return ElevatedAccountCommand.ExitCodeOfError(error);
         }
-        var start = new ProcessStartInfo(self, ElevatedAccountCommand.ArgumentFor(op))
+        var start = new ProcessStartInfo(self!,ElevatedAccountCommand.ArgumentFor(op))
         {
             UseShellExecute = true,
             Verb = "runas",

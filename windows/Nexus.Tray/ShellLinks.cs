@@ -9,6 +9,9 @@ internal static class ShellLinks
 {
     public sealed record StartMenuItem(string Name, string Path);
 
+    /// <summary>Start of Russian uninstall shortcut names (a filter, not a UI text).</summary>
+    private const string RussianRemove = "\u0443\u0434\u0430\u043B";
+
     public static IReadOnlyList<StartMenuItem> StartMenu()
     {
         var roots = new[]
@@ -27,7 +30,7 @@ internal static class ShellLinks
                     continue;
                 }
                 var name = System.IO.Path.GetFileNameWithoutExtension(file);
-                if (name.Contains("uninstall", StringComparison.OrdinalIgnoreCase) || name.Contains("удал", StringComparison.OrdinalIgnoreCase))
+                if (name.Contains("uninstall", StringComparison.OrdinalIgnoreCase) || name.Contains(RussianRemove, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

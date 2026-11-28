@@ -546,6 +546,27 @@ public sealed class AccountFileAndAdminTests : IDisposable
         Assert.Equal(2, audits);
     }
 
+    [Fact]
+    public void Access_denied_is_audited_again_after_the_file_was_gone()
+    {
+        WriteOldFile();
+        var access = new ThrowingAccess(ProtectedFileVerdict.Trusted) { OnInspect = new UnauthorizedAccessException() };
+        var audits = 0;
+        var once = new OnceUntilReset(() => audits++);
+        var store = new RefreshTokenStore(_dir, new XorProtector(), access, onAccessDenied: once.Run, onAccessible: once.Reset);
+        Assert.Null(store.Load());
+        Assert.Equal(1, audits);
+
+        File.Delete(store.FilePath); // no file is not an access problem: it re-arms the audit
+        Assert.Null(store.Load());
+        Assert.Equal(1, audits);
+
+        WriteOldFile();
+        Assert.Null(store.Load());
+        Assert.Null(store.Load());
+        Assert.Equal(2, audits);
+    }
+
     [Theory]
     [InlineData(null, AccountProblem.AdminDeclined)]
     [InlineData("failed", AccountProblem.Failed)]
