@@ -33,3 +33,8 @@
 2. Ждут решения владельца (рекомендации: да/да/да): принять _shared/db.ts вне списка BE-1; два теста-пробела QA добавить в BE-2; запуск E6-DS (ios-developer, сборка только в ios.yml).
 3. Порядок дальше: E6-DS → QA → E6-NAV → QA → E6-SCREENS → QA → E6-ACC-1 → QA → SEC-REBIND → BE-2 → QA → E6-ACC-2 → … Блоки — .claude/handoff/E6-PLAN.md (SEC-REBIND/BE-2 — в кратком виде; полный текст при необходимости запросить у code-architect заново).
 4. docs/API.md правит главная сессия по готовому тексту исполнителя (охранник не пускает windows-/backend-developer).
+
+## 2026-11-28 (новая сессия)
+- Windows CI на PR #10 (69a9767, включает W-TRAY/W-PROTO/BE-1) — всё зелёное.
+- Владелец: _shared/db.ts вне списка BE-1 ПРИНЯТ; два теста-пробела (approve‖insert, approve чужого ПК при 20) — в BE-2; E6-DS запущен.
+- E6-DS выполнен ios-developer; отклонения: Theme.Palette вместо Theme.Color, DS.StatusPill/DS.PowerTile (конфликт имён со старыми в экранах), ключи в ios/NexusPC/Siri/Localizable.xcstrings (Resources/ не существует), 4 доп. ключа (common.inProgress/unavailable/seeAll, status.a11y %@). Ждёт QA + CI ios.yml.
