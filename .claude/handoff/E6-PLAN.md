@@ -217,3 +217,79 @@ E6-NAV-2 (после E6-NAV-1 и E5-3 iOS): первый запуск из 4 ш�
 ```
 
 E6-SCREENS-2 (Free/Pro в разделах, состояния внутри Rgb и Files, unavailableCodes/reasonCode, SectionHeader вместо SectionTitle, ключи в Home/Monitoring/Rgb/Files/Profiles/PCHome/ControlHome; ScreenView → JPEG при plan.required) и E6-SCREENS-3 (More: Настройки, Помощь, Диагностика с журналом и экспортом; ключи в остальных экранах и PCController) — полные блоки в отчёте code-architect 2026-11-28; перед запуском запросить повторно. Открыто: переключатель языка (рек.: системная настройка), тексты monitor.reason.* (рек.: сначала ui-ux-designer).
+
+## E6-SCREENS-2 — полный блок (code-architect, 2026-11-28)
+
+```
+ЗАДАНИЕ E6-SCREENS-2: Free/Pro в разделах, состояния внутри Rgb и Files, коды причин, SectionHeader
+Исполнитель: ios-developer
+Файлы:
+- изменить: ios/NexusPC/Views/HomeView.swift; ProfilesView.swift; PCHomeView.swift; ControlHomeView.swift; MonitoringView.swift; RgbView.swift; FilesView.swift; ScreenView.swift (только переход на JPEG при plan.required и выбор видео во Free); AutomationsView.swift (только ProCard, режим «только чтение» во Free, AutomationsPausedBanner); RootTabView.swift (только аргументы requiredFeature и needsTray у SectionGate, вызов ProCard); ios/NexusPC/Models/Metrics.swift; ios/NexusPC/Views/DesignSystem/StateViews.swift (только ProCard: onLearnMore сделать необязательным; при nil кнопка «Подробнее» не рисуется); ios/NexusPC/Views/DesignSystem/DesignSystemPreviews.swift (только вызовы ProCard); ios/NexusKit/Sources/NexusKit/RgbStatus.swift (поле reasonCode); ios/NexusKit/Sources/NexusKit/ErrorPresentation.swift (таблицы кодов причин); ios/NexusKit/Tests/NexusKitTests/RgbStatusTests.swift; ios/NexusKit/Tests/NexusKitTests/ErrorPresentationTests.swift; ios/NexusPC/Siri/Localizable.xcstrings
+- новые: ios/NexusPC/Views/DesignSystem/ProSegment.swift, ios/NexusPC/Views/DesignSystem/AutomationsPausedBanner.swift (по docs/design/ios-screens.md, раздел 9)
+- читать: docs/design/ios-screens.md разделы 3–7, 9–11 (ключи — раздел 10, строки 244–270); docs/design/error-texts.md разделы 3.5, 3.8, 3.9, 3.10; docs/API.md:121, :316-320, :348-350; windows/Nexus.Core/Entitlements/PlanPolicy.cs:14-60; shared/protocol/fixtures/responses.v1.json; уже есть из E6-SCREENS-1: AgentHello, ServerErrorDetails, ErrorPresentation, SectionAccess, PCController.hello / lastError / diagnostics
+Сделать:
+1. Pro определять только через SectionAccess и controller.hello. Без маркера entitlements.v1 в capabilities нигде нет ни ProCard, ни ProBadge, и всё работает как сейчас. Соответствие «команда → feature» — как в PlanPolicy.cs: profiles.* → profiles; rgb.apply и rgb.profiles.* → rgb.sync; automations.upsert/delete/run/stop → automations; metrics.history с диапазоном 1h или 24h → monitoring.extended; screen.video → screen.video; файлы — только plan.limit. Free по решению владельца: clipboard.*, history.list, delaySeconds, screen.frame, automations.list, rgb.status.
+2. ProCard: onLearnMore: (() -> Void)? = nil; при nil кнопка «Подробнее» не показывается. Решение владельца: пока нет экрана Pro, кнопку скрыть везде. Никаких кнопок-заглушек и TODO. Все вызовы ProCard — без onLearnMore.
+3. Ключи EN и RU, тексты — из docs/design/ios-screens.md:262-266. Имена ключей должны совпадать с тем, что строит код ("pro.feature.<featureId>.body"):
+   - pro.feature.profiles.body — «Open several apps with one tap.» / «Запуск нескольких программ одним касанием.»
+   - pro.feature.rgb.sync.body — «Control lighting from iPhone.» / «Управление подсветкой с iPhone.»
+   - pro.feature.automations.body — «Let the PC do things on schedule.» / «ПК сам выполняет действия по расписанию.»
+   - pro.feature.monitoring.extended.body — «See up to 24 hours of history.» / «История показателей за сутки.»
+   - pro.feature.screen.video.body — «Smooth video of the PC screen.» / «Плавное видео экрана ПК.»
+   - pro.feature.files.body — «Transfer files without limits.» / «Передача файлов без ограничений.»
+   Плюс ключи из раздела 10: automations.paused.title, automations.paused.body, monitor.historyReset, rgb.empty.body. Если нужного текста нет в документах, придумывать его не надо: в отчёте укажите ключ для ui-ux-designer.
+4. Profiles: на Home и в ProfilesView во Free — компактный ProCard (pro.feature.profiles.body) вместо ряда профилей.
+5. MonitoringView: сегменты «10 мин / 1 ч / 24 ч». «1 ч» и «24 ч» — ProSegment: во Free выбор не переключает диапазон, а открывает лист с ProCard (pro.feature.monitoring.extended.body). Подпись monitor.historyReset под пустым графиком.
+6. RgbView:
+   - во Free список устройств из rgb.status виден, элементы цвета, эффекта и профилей видны, но выключены; над ними ProCard (pro.feature.rgb.sync.body). В PCHomeView у строки RGB — NavRowBadge.pro, только когда SectionAccess даёт Pro;
+   - available: false → ErrorCard по reasonCode через ErrorPresentation (error-texts.md 3.9): openrgbNotResponding → error.rgb.unavailable, conflict (или state == "conflict") → rgb.busy. Неизвестный или отсутствующий reasonCode → текст reason с ПК (запасной путь), если его нет — error.rgb.unavailable;
+   - OpenRGB доступен, устройств нет → rgb.empty.body.
+7. AutomationsView: во Free список виден только для чтения; переключатели, свайп-действия и «+» выключены, но не скрыты; сверху ProCard (pro.feature.automations.body). При entitlementState expired или revoked вместо ProCard — AutomationsPausedBanner (automations.paused.title и automations.paused.body), список виден. История (History) остаётся Free.
+8. FilesView:
+   - plan.limit (lastError с кодом plan.limit) → LimitNotice над списком. Число только из details.limit (limit.files.bodyWithLimit), иначе limit.files.body. Уже начатые передачи интерфейс не прерывает;
+   - решение владельца: внутри раздела отдельные компактные PermissionCard для files и для clipboard. Нет files.* → вместо блоков «Отправить на ПК» и «Папка Nexus PC» PermissionCard(.files). Нет clipboard.* → вместо блока «Буфер обмена» PermissionCard(.clipboard). Остальное раздела работает. Проверки FilesView.swift:34, 41, 45, 134 убрать в пользу этих карточек или выключенных кнопок с подписью. FilesView.swift:330 (guard загрузки списка) оставить.
+9. RgbView.swift:111 и :157 (rgb.profiles.upsert и rgb.profiles.delete): элемент не скрывать. Если нет разрешения rgb — компактный PermissionCard(.rgb). Если команда — Pro во Free, элемент выключен под ProCard (п.6).
+10. ScreenView: plan.required на screen.video молча переводит экран на кадры JPEG, так же как screen.videoUnavailable (ScreenView.swift:388), и пишет событие в controller.diagnostics. Во Free, когда SectionAccess даёт Pro для screen.video, вариант видео — ProSegment, касание открывает ProCard (pro.feature.screen.video.body). Без entitlements.v1 поведение экрана не меняется.
+11. Коды причин метрик:
+   - Metrics.swift: разбирать unavailableCodes как [String: String] рядом с unavailable;
+   - ErrorPresentation: таблица из error-texts.md 3.8 — 11 кодов (sensorDriverMissing, sensorReadFailed, sensorMissing, warmingUp, osQueryFailed, gpuDriverMissing, gpuLibraryRejected, gpuLibraryLoadFailed, gpuInitFailed, gpuListFailed, platformUnsupported) → monitor.reason.<code>; неизвестный код → monitor.reason.unknown;
+   - MonitoringView: значение nil показывать как «—», причина — по коду; кода нет → текст ПК из unavailable; нет и текста → monitor.reason.unknown. Причина в accessibilityHint и по касанию. Для VoiceOver — monitor.unavailable.a11y;
+   - ключи 3.8 в EN и RU дословно из error-texts.md.
+12. RgbStatus (NexusKit): необязательное поле reasonCode: String?, разбирается из result["reasonCode"]. Существующий init сохранить: новый параметр со значением по умолчанию nil.
+13. Тексты pc.forget.confirm.title, pc.forget.confirm.message, pc.forget.confirm.action в Localizable.xcstrings заменить финальными из error-texts.md 3.10 (EN и RU, дословно). ThisPCView не менять.
+14. MonitoringView, RgbView, FilesView перевести с SectionTitle на SectionHeader с ключами, затем удалить struct SectionTitle (HomeView.swift:197).
+15. Русские строковые литералы в HomeView, ProfilesView, PCHomeView, ControlHomeView, MonitoringView, RgbView, FilesView заменить ключами EN и RU. Текст с ПК (имена устройств, reason, message) выводить через Text(verbatim:).
+Не трогать: протокол v1, shared/**, windows/**; NexusConnection, AgentHello, SectionAccess, PCController (кроме чтения hello, lastError и записи в diagnostics); логику питания и ввода; внутреннюю логику потока экрана, кроме п.10; DesignSystem/*, кроме ProCard в StateViews.swift и превью; MoreView, SettingsView, HelpView, DiagnosticsView, переключатель языка (E6-SCREENS-3); литералы в AutomationsView вне п.7, ScreenView вне п.10, TouchpadView, KeyboardView, AppsView, ThisPCView и PCController (E6-SCREENS-3).
+Критерии приёмки:
+1. Hello без entitlements.v1: ни ProCard, ни ProBadge, ни NavRowBadge.pro не показываются; разделы работают как до задания.
+2. Hello с entitlements.v1, но features без нужного id: раздел или элемент виден с ProCard, строка не скрыта. При expired или revoked — pro.expired.body или pro.revoked.body; в Automations — AutomationsPausedBanner.
+3. На ProCard нет кнопки «Подробнее».
+4. plan.required на screen.video ведёт к кадрам JPEG без ошибки на экране, событие есть в журнале диагностики.
+5. plan.limit показывает LimitNotice; число только из details.limit.
+6. В FilesView отдельные PermissionCard для files и clipboard; в RgbView и FilesView нет скрытия UI по controller.can, кроме FilesView.swift:330.
+7. rgb.status с reasonCode conflict показывает rgb.busy, с openrgbNotResponding — error.rgb.unavailable; неизвестный код — текст reason ПК.
+8. Каждый из 11 кодов причин метрик показывается своим ключом monitor.reason.<code>; неизвестный — monitor.reason.unknown; кода нет — текст ПК.
+9. Ключи pro.feature.{profiles, rgb.sync, automations, monitoring.extended, screen.video, files}.body есть в EN и RU и совпадают с ключами, которые строит код.
+10. pc.forget.confirm.* совпадают с error-texts.md 3.10.
+11. Поиск "SectionTitle" по ios/** ничего не находит.
+12. В строковых литералах файлов из п.15 нет кириллицы (комментарии допустимы).
+13. Все новые ключи есть в EN и RU.
+14. swift test --package-path ios/NexusKit зелёный; сборки iOS Debug и Release в CI зелёные.
+Тесты:
+- RgbStatusTests: reasonCode из фикстур «rgb.status unavailable» и «rgb.status conflict», поле отсутствует → nil;
+- тест разбора unavailableCodes из фикстуры «metrics.snapshot with unavailable and unavailableCodes» (если разбор метрик в приложении, вынести чистую функцию разбора в NexusKit или проверить через ErrorPresentation на значениях фикстуры);
+- ErrorPresentationTests: 11 кодов метрик, неизвестный → monitor.reason.unknown; rgb openrgbNotResponding и conflict, неизвестный → nil;
+- тест: для каждого feature id из PlanPolicy (profiles, rgb.sync, automations, monitoring.extended, screen.video) ErrorPresentation для plan.required даёт ключ pro.feature.<id>.body;
+- swift test --package-path ios/NexusKit; сборка Debug и Release в CI;
+- ручная проверка на устройстве у владельца: без маркера, Free, Pro, expired; Files без clipboard; RGB conflict; AX5 на iPhone SE.
+Зависит от: E6-SCREENS-1 (принят, be65338), UX-TEXTS (внесён, 944be40)
+```
+
+```
+ПЕРЕДАЧА В QA E6-SCREENS-2
+Изменённые файлы: <пути>
+Что проверить: критерии приёмки 1–14 задания E6-SCREENS-2
+Запущено: swift test --package-path ios/NexusKit — <результат>; сборка iOS Debug и Release — <в CI: ссылка на прогон / не запускалось локально: нет Xcode>
+Не запускалось: ручная проверка на устройстве (без маркера, Free, Pro, expired; Files без clipboard; RGB conflict; AX5 на iPhone SE) — у владельца
+```
+Примечание: имена ключей pro.feature.* в docs/design/ios-screens.md:262-267 отличаются от кода — привести документ к коду (ui-ux-designer, мелкая правка).
