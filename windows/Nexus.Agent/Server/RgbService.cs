@@ -22,10 +22,20 @@ internal sealed class RgbService(string dataDirectory, int openRgbPort, OpenRgbC
     /// <summary>Shown on the phone when another program holds the OpenRGB port (T2, rgb.status state "conflict").</summary>
     public const string ConflictMessage = "Подсветка недоступна: её перехватила другая программа на ПК.";
 
-    public class RgbUnavailableException(string message) : Exception(message);
+    /// <summary>rgb.status "reasonCode" values (docs/API.md); the list may grow, clients fall back to "reason".</summary>
+    public const string ReasonOpenRgbNotResponding = "openrgbNotResponding";
+    public const string ReasonConflict = "conflict";
+
+    public const string NotRespondingMessage = "OpenRGB не отвечает. Он запускается вместе с Nexus PC через несколько секунд после включения ПК; если не помогло — перезагрузите ПК.";
+
+    /// <summary>Lighting is unavailable: <see cref="ReasonCode"/> is the stable code, the message the text for the phone.</summary>
+    public class RgbUnavailableException(string reasonCode, string message) : Exception(message)
+    {
+        public string ReasonCode { get; } = reasonCode;
+    }
 
     /// <summary>The process that accepted the connection is not our OpenRGB; nothing was sent to it.</summary>
-    public sealed class RgbConflictException() : RgbUnavailableException(ConflictMessage);
+    public sealed class RgbConflictException() : RgbUnavailableException(ReasonConflict, ConflictMessage);
 
     public async Task<JsonObject> StatusAsync(CancellationToken cancellationToken)
     {
@@ -48,6 +58,7 @@ internal sealed class RgbService(string dataDirectory, int openRgbPort, OpenRgbC
         {
             result["available"] = false;
             result["reason"] = ex.Message;
+            result["reasonCode"] = ex.ReasonCode;
             if (ex is RgbConflictException)
             {
                 result["state"] = "conflict";
@@ -168,7 +179,7 @@ internal sealed class RgbService(string dataDirectory, int openRgbPort, OpenRgbC
         }
         catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
-            throw new RgbUnavailableException("OpenRGB не отвечает. Он запускается вместе с Nexus PC через несколько секунд после включения ПК; если не помогло — перезагрузите ПК.");
+            throw new RgbUnavailableException(ReasonOpenRgbNotResponding, NotRespondingMessage);
         }
     }
 

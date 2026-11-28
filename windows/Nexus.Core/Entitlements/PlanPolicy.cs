@@ -22,8 +22,10 @@ public static partial class PlanPolicy
     public const string FilesUnlimited = "files.unlimited";
     /// <summary>Feature named in plan.limit for the Free file transfer limit.</summary>
     public const string Files = "files";
+    /// <summary>H.264 screen video (screen.video). JPEG frames (screen.start/frame/stop) stay Free.</summary>
+    public const string ScreenVideo = "screen.video";
 
-    public static readonly IReadOnlyList<string> ProFeatures = [Profiles, RgbSync, Automations, MonitoringExtended, FilesUnlimited];
+    public static readonly IReadOnlyList<string> ProFeatures = [Profiles, RgbSync, Automations, MonitoringExtended, FilesUnlimited, ScreenVideo];
 
     /// <summary>
     /// Free file transfer limit in bytes per UTC day; null = no limit. The owner has not set it yet (OPEN in
@@ -39,8 +41,10 @@ public static partial class PlanPolicy
     /// <summary>
     /// Feature the command needs, or null for always/Free commands. <paramref name="metricsRange"/> is the
     /// validated range of metrics.history. Unlisted commands (system.hello, pair.*, auth.*, account.refresh,
-    /// power.*, pc.status, apps.*, input.*, screen.*, metrics.snapshot, rgb.status, automations.list, files.*,
-    /// clipboard.*, history.list) are Free.
+    /// power.* including delaySeconds, pc.status, apps.*, input.*, screen.start/frame/stop, metrics.snapshot,
+    /// rgb.status, automations.list, files.*, clipboard.*, history.list) are Free (clipboard.*, history.list and
+    /// delayed power.*: owner's decision 2026-11-25). screen.video needs <see cref="ScreenVideo"/>; a client
+    /// refused with plan.required falls back to screen.frame.
     /// </summary>
     public static string? RequiredFeature(string type, string? metricsRange = null) => type switch
     {
@@ -48,6 +52,7 @@ public static partial class PlanPolicy
         "rgb.apply" or "rgb.profiles.upsert" or "rgb.profiles.delete" or "rgb.profiles.apply" => RgbSync,
         "automations.upsert" or "automations.delete" or "automations.run" or "automations.stop" => Automations,
         "metrics.history" when metricsRange is not "10m" => MonitoringExtended,
+        "screen.video" => ScreenVideo,
         _ => null,
     };
 

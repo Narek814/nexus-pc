@@ -118,7 +118,7 @@
 | `screen.stop` | screen | normal | `{}` |
 | `screen.video` | screen | read | `{ after?: -1.., keyframe?, maxWidth?: 320..1920, bitrateKbps?: 300..20000 }` → `{ width, height, encoder, frames: [{ seq, key, data }] }` (H.264 Annex-B, ждёт до 250 мс) |
 | `input.moveTo` | input | normal | `{ x, y }` — 0..65535 по основному монитору (картинка экрана) |
-| `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, state?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
+| `rgb.status` | rgb | read | `{}` → `{ adapter, available, reason?, reasonCode?, state?, devices[{ index, name, type, leds, modes[] }], profiles[] }` |
 | `rgb.apply` | rgb | normal | `{ color: "#RRGGBB", brightness: 0..100, effect: 1..64 символа, devices?: int[] }` |
 | `rgb.profiles.upsert` | rgb | normal | `{ profile: { id: slug, name, color, brightness, effect } }` (≤ 32 профилей) |
 | `rgb.profiles.delete` | rgb | normal | `{ profileId: slug }` |
@@ -209,7 +209,7 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 ## Планы (Free/Pro, ENT-1)
 
-Решения — `docs/COMMERCIAL_PLAN.md`, раздел 0; безопасность — `SECURITY.md`, «Аккаунты и права». ENT-2: агент проверяет план, только если в сборке закреплены ключи сервера; до выпуска ключей поведение прежнее (нет маркера, нет полей плана, нет `plan.*`). `features[]` — функции из действующего токена (`active`/`grace`); для Free без токена список пуст. Идентификаторы: `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`; `plan.limit` — `feature: "files"`. Действия правил `profile` и `rgb` требуют `profiles` и `rgb.sync`, в том числе при `automations.run` (иначе `plan.required`).
+Решения — `docs/COMMERCIAL_PLAN.md`, раздел 0; безопасность — `SECURITY.md`, «Аккаунты и права». ENT-2: агент проверяет план, только если в сборке закреплены ключи сервера; до выпуска ключей поведение прежнее (нет маркера, нет полей плана, нет `plan.*`). `features[]` — функции из действующего токена (`active`/`grace`); для Free без токена список пуст. Идентификаторы: `profiles`, `rgb.sync`, `automations`, `monitoring.extended`, `files.unlimited`, `screen.video`; `plan.limit` — `feature: "files"`. Действия правил `profile` и `rgb` требуют `profiles` и `rgb.sync`, в том числе при `automations.run` (иначе `plan.required`). `screen.video` требует функцию `screen.video`; `screen.start`/`screen.frame`/`screen.stop` (JPEG) — Free. Клиент при `plan.required` на `screen.video` переходит на `screen.frame` так же, как при `screen.videoUnavailable`. `clipboard.*`, `history.list` и `power.*` с `delaySeconds` — Free (решение владельца 2026-11-25).
 
 - Расширение аддитивное: `v: 1`; существующие команды, коды, порядок проверок 1–8, `auth.*` и сопряжение не меняются. Ни одна схема `auth.*` / `pair.*` не содержит полей аккаунта.
 - Маркер `entitlements.v1` в `capabilities` значит, что агент понимает поля плана, `account.refresh` и `plan.*`. Может отдаваться и до входа: сообщает только о версии агента.
@@ -312,9 +312,28 @@ Wake-on-LAN — не команда агента (ПК выключен); его
               "coreClockMhz": 2475, "memoryClockMhz": 10501 } ],
   "disks": [ { "name": "C:\\", "totalBytes": 1000202039296, "freeBytes": 250050510848, "usage": 75 } ],
   "network": { "receiveBytesPerSecond": 1200.5, "sendBytesPerSecond": 300 },
-  "unavailable": { "cpu.temperature": "Windows не отдаёт температуру процессора без драйвера датчиков…" }
+  "unavailable": { "cpu.temperature": "Windows не отдаёт температуру процессора без драйвера датчиков…" },
+  "unavailableCodes": { "cpu.temperature": "sensorDriverMissing" }
 }
 ```
+
+`unavailableCodes` — те же ключи, что в `unavailable` (`cpu.temperature`, `cpu.clock`, `cpu.usage`, `memory`, `gpu`), значение — код причины. Текст в `unavailable` остаётся для старых клиентов.
+
+| Код | Причина |
+|---|---|
+| `sensorDriverMissing` | нет драйвера датчиков процессора (PawnIO) |
+| `sensorReadFailed` | ошибка открытия или чтения датчиков процессора |
+| `sensorMissing` | у процессора нет такого датчика или данных о частоте |
+| `warmingUp` | первое измерение, значение появится через пару секунд |
+| `osQueryFailed` | Windows не ответила на запрос (память) |
+| `gpuDriverMissing` | нет NVIDIA NVML: видеокарта не NVIDIA или нет драйвера |
+| `gpuLibraryRejected` | nvml.dll не на своём месте или подменена; не загружена |
+| `gpuLibraryLoadFailed` | nvml.dll есть, но не загрузилась |
+| `gpuInitFailed` | NVML не запустилась |
+| `gpuListFailed` | NVML не вернула список видеокарт |
+| `platformUnsupported` | доступно только на Windows |
+
+Набор кодов может расширяться: неизвестный код клиент заменяет текстом из `unavailable`.
 
 Источники (без дополнительных пакетов): `GetSystemTimes` (загрузка CPU), `GlobalMemoryStatusEx` (память), NVML из драйвера NVIDIA (`nvml.dll`: загрузка, температура, видеопамять, частоты GPU), `DriveInfo` (диски), счётчики сетевых интерфейсов (скорость сети). Температура и частота процессора — через LibreHardwareMonitorLib (пакет процессора, у AMD — Tctl; частота — среднее по ядрам); без драйвера PawnIO значений нет — отдаются как недоступные с причиной. Видеокарты AMD/Intel — позже.
 
@@ -326,9 +345,9 @@ Wake-on-LAN — не команда агента (ПК выключен); его
 
 ## Подсветка (P10)
 
-Агент управляет подсветкой через **OpenRGB** (отдельная бесплатная программа на ПК) по его SDK-протоколу на `127.0.0.1:6742` — только локально, наружу ничего не открывается. Короткое соединение на каждую команду. Если OpenRGB не запущен или SDK Server выключен: `rgb.status` → `available: false` с `reason`, остальные `rgb.*` → `rgb.unavailable`.
+Агент управляет подсветкой через **OpenRGB** (отдельная бесплатная программа на ПК) по его SDK-протоколу на `127.0.0.1:6742` — только локально, наружу ничего не открывается. Короткое соединение на каждую команду. Если OpenRGB не запущен или SDK Server выключен: `rgb.status` → `available: false` с `reason` и `reasonCode: "openrgbNotResponding"`, остальные `rgb.*` → `rgb.unavailable`.
 
-**Только подтверждённый OpenRGB (T2).** Агент подключается только к своей копии OpenRGB (служба запустила её сама после проверки SHA-256 и держит файл заблокированным от записи и удаления) или к окну настройки OpenRGB, открытому администратором. Для каждого соединения, до отправки первого байта, проверяется процесс — владелец серверной стороны этого соединения по таблице TCP (на практике процесс, создавший слушающий сокет; для OpenRGB это тот же процесс, что принимает соединение). Если порт 6742 занят другой программой: `rgb.status` → `available: false`, `state: "conflict"`, `reason: "Подсветка недоступна: её перехватила другая программа на ПК."`; остальные `rgb.*` → `rgb.unavailable` с тем же текстом. Поле `state` присутствует только со значением `"conflict"`; старые клиенты видят текст в `reason`.
+**Только подтверждённый OpenRGB (T2).** Агент подключается только к своей копии OpenRGB (служба запустила её сама после проверки SHA-256 и держит файл заблокированным от записи и удаления) или к окну настройки OpenRGB, открытому администратором. Для каждого соединения, до отправки первого байта, проверяется процесс — владелец серверной стороны этого соединения по таблице TCP (на практике процесс, создавший слушающий сокет; для OpenRGB это тот же процесс, что принимает соединение). Если порт 6742 занят другой программой: `rgb.status` → `available: false`, `state: "conflict"`, `reasonCode: "conflict"`, `reason: "Подсветка недоступна: её перехватила другая программа на ПК."`; остальные `rgb.*` → `rgb.unavailable` с тем же текстом. Поле `state` присутствует только со значением `"conflict"`; старые клиенты видят текст в `reason`. `reasonCode` при `available: false` есть всегда; набор может расширяться, неизвестный код клиент заменяет текстом `reason`.
 
 `effect`: `"static"` — ровный цвет на всех светодиодах (яркость умножается на цвет), `"off"` — чёрный, иначе — **имя режима устройства** из `modes[]` (без учёта регистра; цвет передаётся режиму, если он принимает цвета). Если у устройства такого режима нет — для него `ok: false` с объяснением, остальные применяются.
 

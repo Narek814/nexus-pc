@@ -73,6 +73,7 @@ internal static class MetricsJson
             ["sendBytesPerSecond"] = Round(s.Network.SendBytesPerSecond),
         },
         ["unavailable"] = new JsonObject(s.Unavailable.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
+        ["unavailableCodes"] = new JsonObject(s.UnavailableCodes.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
     };
 
     public static JsonObject History(string range, TimeSpan resolution, IReadOnlyList<MetricsPoint> points) => new()

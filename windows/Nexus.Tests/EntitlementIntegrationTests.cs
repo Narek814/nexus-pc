@@ -136,6 +136,46 @@ public sealed class EntitlementIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Screen_video_needs_its_feature_but_jpeg_frames_stay_free()
+    {
+        var (client, deviceId, key) = await _host.PairedClientAsync();
+        await using var _ = client;
+        using var __ = key;
+        _host.Services.Devices.SetPermissions(deviceId, Nexus.Core.Security.Permissions.DefaultAfterPairing | Nexus.Core.Security.Permission.Screen);
+
+        var refused = await client.RequestAsync("screen.video", new JsonObject { ["maxWidth"] = 960 });
+        Assert.Equal(ErrorCodes.PlanRequired, refused.ErrorCode());
+        Assert.Equal("screen.video", refused["error"]!["details"]!["feature"]!.GetValue<string>());
+        foreach (var free in new[] { "screen.start", "screen.frame", "screen.stop" })
+        {
+            Assert.NotEqual(ErrorCodes.PlanRequired, (await client.RequestAsync(free)).ErrorCode());
+        }
+
+        Assert.True(_host.Services.Entitlements.Accept(EntitlementVerifierTests.Sign(_doc, EntitlementVerifierTests.Payload(
+            _host.PcId, _clock.Wall, _clock.Wall + 3600, _clock.Wall + 3600, features: "\"screen.video\""))).Ok);
+        Assert.NotEqual(ErrorCodes.PlanRequired, (await client.RequestAsync("screen.video", new JsonObject { ["maxWidth"] = 960 })).ErrorCode());
+    }
+
+    [Fact]
+    public async Task Without_pinned_keys_screen_video_is_never_refused_by_plan()
+    {
+        await using var host = await AgentTestHost.StartAsync();
+        try
+        {
+            var (client, deviceId, key) = await host.PairedClientAsync();
+            await using var _ = client;
+            using var __ = key;
+            host.Services.Devices.SetPermissions(deviceId, Nexus.Core.Security.Permissions.DefaultAfterPairing | Nexus.Core.Security.Permission.Screen);
+            Assert.False(host.Services.Entitlements.Enforced);
+            Assert.NotEqual(ErrorCodes.PlanRequired, (await client.RequestAsync("screen.video", new JsonObject { ["maxWidth"] = 960 })).ErrorCode());
+        }
+        finally
+        {
+            AgentTestHost.DeleteDirectory(host.DataDirectory);
+        }
+    }
+
+    [Fact]
     public async Task Free_commands_work_without_a_token()
     {
         var (client, _, key) = await _host.PairedClientAsync();
