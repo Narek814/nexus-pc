@@ -6,11 +6,15 @@ public struct RgbStatus: Decodable, Equatable, Sendable {
     public let available: Bool
     public let reason: String?
     public let state: String?
+    /// Stable reason code (`openrgbNotResponding`, `conflict`, …); old agents never send it.
+    /// The app picks its text by this code (`ErrorPresentation.rgbUnavailable`), `reason` is the fallback.
+    public let reasonCode: String?
 
-    public init(available: Bool, reason: String? = nil, state: String? = nil) {
+    public init(available: Bool, reason: String? = nil, state: String? = nil, reasonCode: String? = nil) {
         self.available = available
         self.reason = reason
         self.state = state
+        self.reasonCode = reasonCode
     }
 
     /// Reads the fields from a decoded JSON result; missing or mistyped fields fall back to the old defaults.
@@ -18,6 +22,7 @@ public struct RgbStatus: Decodable, Equatable, Sendable {
         available = result["available"] as? Bool ?? false
         reason = result["reason"] as? String
         state = result["state"] as? String
+        reasonCode = result["reasonCode"] as? String
     }
 
     /// Lighting is held by another program on the PC; controls must not be shown.

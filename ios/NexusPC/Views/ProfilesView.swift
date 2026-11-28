@@ -1,6 +1,8 @@
+import NexusKit
 import SwiftUI
 
 /// All profiles of the PC (Home → Profiles → See All). Tapping a profile runs it.
+/// Free (agent with plans, no `profiles` feature): `ProCard` instead of the list.
 struct ProfilesView: View {
     let controller: PCController
 
@@ -12,7 +14,10 @@ struct ProfilesView: View {
         ZStack {
             Theme.background.ignoresSafeArea()
             ScrollView {
-                if controller.profiles.isEmpty {
+                if let lock = ProLock.check(controller.hello, feature: ProFeature.profiles) {
+                    ProCard(feature: lock.text)
+                        .padding(Theme.Space.xl)
+                } else if controller.profiles.isEmpty {
                     EmptyState(systemImage: "square.stack.3d.up", title: "profiles.empty.title", message: "profiles.empty.body")
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Theme.Space.m)], spacing: Theme.Space.m) {

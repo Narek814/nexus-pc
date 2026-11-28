@@ -78,9 +78,11 @@ private struct StatesGallery: View {
             PermissionCard(permission: .input) {}
             PermissionCard(permission: .files, isChecking: true) {}
             TrayMissingCard()
-            ProCard(feature: "permission.name.rgb") {}
-            ProCard(feature: "permission.name.rgb", isStoreReachable: false) {}
-            LimitNotice {}
+            ProCard(feature: "pro.feature.rgb.sync.body")
+            ProCard(feature: "pro.expired.body", isStoreReachable: false)
+            LimitNotice(detail: "The free plan allows 100 MB. Pro removes the limit.")
+            AutomationsPausedBanner()
+            ProSegment(Text("monitor.range.1h")) {}
         }
     }
 }

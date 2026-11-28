@@ -114,4 +114,71 @@ final class ErrorPresentationTests: XCTestCase {
         XCTAssertNil(ErrorPresentation.fallbackMessage(String(repeating: "x", count: 201)))
         XCTAssertNotNil(ErrorPresentation.fallbackMessage(String(repeating: "x", count: 200)))
     }
+
+    // MARK: - Plan features (PlanPolicy.cs)
+
+    func testPlanRequiredKeyForEveryFeature() {
+        for feature in ["profiles", "rgb.sync", "automations", "monitoring.extended", "screen.video"] {
+            XCTAssertEqual(ErrorPresentation.for(code: "plan.required", details: .init(feature: feature), section: nil),
+                           ErrorPresentation(key: "pro.feature.\(feature).body", style: .pro), feature)
+        }
+    }
+
+    // MARK: - Metric reasons (error-texts.md, 3.8)
+
+    func testEveryMetricReasonCode() {
+        let codes = ["sensorDriverMissing", "sensorReadFailed", "sensorMissing", "warmingUp", "osQueryFailed",
+                     "gpuDriverMissing", "gpuLibraryRejected", "gpuLibraryLoadFailed", "gpuInitFailed", "gpuListFailed",
+                     "platformUnsupported"]
+        XCTAssertEqual(codes.count, 11)
+        for code in codes {
+            XCTAssertEqual(ErrorPresentation.metricReasonKey(code), "monitor.reason.\(code)", code)
+            XCTAssertEqual(ErrorPresentation.metricReason(code: code, pcText: "PC text"), .key("monitor.reason.\(code)"), code)
+        }
+    }
+
+    func testUnknownMetricReason() {
+        XCTAssertEqual(ErrorPresentation.metricReasonKey("futureCode"), "monitor.reason.unknown")
+        XCTAssertEqual(ErrorPresentation.metricReason(code: "futureCode", pcText: "PC text"), .key("monitor.reason.unknown"))
+    }
+
+    func testMetricReasonWithoutCode() {
+        XCTAssertEqual(ErrorPresentation.metricReason(code: nil, pcText: "PC text"), .pcText("PC text"))
+        XCTAssertEqual(ErrorPresentation.metricReason(code: nil, pcText: "  "), .key("monitor.reason.unknown"))
+        XCTAssertEqual(ErrorPresentation.metricReason(code: nil, pcText: nil), .key("monitor.reason.unknown"))
+    }
+
+    func testUnavailableCodesFromFixture() throws {
+        let c = try XCTUnwrap(try AgentHelloTests.cases().first { $0.name == "metrics.snapshot with unavailable and unavailableCodes" })
+        let payload = try XCTUnwrap(c.message["payload"] as? [String: Any])
+        let codes = ErrorPresentation.reasonMap(payload["unavailableCodes"])
+        let texts = ErrorPresentation.reasonMap(payload["unavailable"])
+        XCTAssertFalse(codes.isEmpty)
+        for (metric, code) in codes {
+            XCTAssertNotNil(texts[metric], metric)
+            XCTAssertEqual(ErrorPresentation.metricReason(code: code, pcText: texts[metric]), .key("monitor.reason.\(code)"), metric)
+        }
+        XCTAssertEqual(codes["cpu.temperature"], "sensorDriverMissing")
+        XCTAssertEqual(codes["gpu"], "gpuDriverMissing")
+        XCTAssertTrue(ErrorPresentation.reasonMap(nil).isEmpty)
+        XCTAssertEqual(ErrorPresentation.reasonMap(["a": "x", "b": 1] as [String: Any]), ["a": "x"])
+    }
+
+    // MARK: - Lighting reasons (error-texts.md, 3.9)
+
+    func testRgbReasonKeys() {
+        XCTAssertEqual(ErrorPresentation.rgbReasonKey("openrgbNotResponding"), "error.rgb.unavailable")
+        XCTAssertEqual(ErrorPresentation.rgbReasonKey("conflict"), "rgb.busy")
+        XCTAssertNil(ErrorPresentation.rgbReasonKey("futureCode"))
+        XCTAssertNil(ErrorPresentation.rgbReasonKey(nil))
+    }
+
+    func testRgbUnavailableText() {
+        XCTAssertEqual(ErrorPresentation.rgbUnavailable(RgbStatus(available: false, reason: "PC", reasonCode: "conflict")), .key("rgb.busy"))
+        XCTAssertEqual(ErrorPresentation.rgbUnavailable(RgbStatus(available: false, reason: "PC", reasonCode: "openrgbNotResponding")),
+                       .key("error.rgb.unavailable"))
+        XCTAssertEqual(ErrorPresentation.rgbUnavailable(RgbStatus(available: false, reason: "PC", state: "conflict")), .key("rgb.busy"))
+        XCTAssertEqual(ErrorPresentation.rgbUnavailable(RgbStatus(available: false, reason: "PC", reasonCode: "futureCode")), .pcText("PC"))
+        XCTAssertEqual(ErrorPresentation.rgbUnavailable(RgbStatus(available: false)), .key("error.rgb.unavailable"))
+    }
 }

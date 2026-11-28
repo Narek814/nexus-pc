@@ -116,6 +116,70 @@ public struct ErrorPresentation: Equatable, Sendable {
         }
     }
 
+    // MARK: - Reason codes (error-texts.md, 3.8 and 3.9)
+
+    /// What to show as a reason: a String Catalog key, or the PC's own text (fallback only).
+    public enum ReasonText: Equatable, Sendable {
+        case key(String)
+        case pcText(String)
+    }
+
+    /// `metrics.snapshot.unavailableCodes` codes with their own text (error-texts.md, 3.8).
+    public static let metricReasonCodes: [String] = [
+        "sensorDriverMissing", "sensorReadFailed", "sensorMissing", "warmingUp", "osQueryFailed",
+        "gpuDriverMissing", "gpuLibraryRejected", "gpuLibraryLoadFailed", "gpuInitFailed", "gpuListFailed",
+        "platformUnsupported",
+    ]
+
+    /// `monitor.reason.<code>`; an unknown code → `monitor.reason.unknown`.
+    public static func metricReasonKey(_ code: String) -> String {
+        metricReasonCodes.contains(code) ? "monitor.reason.\(code)" : "monitor.reason.unknown"
+    }
+
+    /// Reason for a metric shown as "—": by code; no code → the PC's text from `unavailable`;
+    /// neither → `monitor.reason.unknown`.
+    public static func metricReason(code: String?, pcText: String?) -> ReasonText {
+        if let code, !code.isEmpty {
+            return .key(metricReasonKey(code))
+        }
+        if let text = pcText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return .pcText(text)
+        }
+        return .key("monitor.reason.unknown")
+    }
+
+    /// `unavailable` / `unavailableCodes` of `metrics.snapshot`: string values only, anything else is dropped.
+    public static func reasonMap(_ value: Any?) -> [String: String] {
+        guard let dict = value as? [String: Any] else {
+            return [:]
+        }
+        return dict.compactMapValues { $0 as? String }
+    }
+
+    /// `rgb.status.reasonCode` with its own text (error-texts.md, 3.9); unknown or missing → `nil`.
+    public static func rgbReasonKey(_ code: String?) -> String? {
+        switch code ?? "" {
+        case "openrgbNotResponding": return "error.rgb.unavailable"
+        case "conflict": return "rgb.busy"
+        default: return nil
+        }
+    }
+
+    /// Text for `rgb.status` with `available: false`: by `reasonCode`, then `state == "conflict"`,
+    /// then the PC's `reason`, then `error.rgb.unavailable`.
+    public static func rgbUnavailable(_ status: RgbStatus) -> ReasonText {
+        if let key = rgbReasonKey(status.reasonCode) {
+            return .key(key)
+        }
+        if status.isConflict {
+            return .key("rgb.busy")
+        }
+        if let text = status.reason?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return .pcText(text)
+        }
+        return .key("error.rgb.unavailable")
+    }
+
     /// For an unknown code: the PC's `message` if it is not empty and at most 200 characters,
     /// otherwise `nil` (show `error.generic.body`).
     public static func fallbackMessage(_ message: String?) -> String? {

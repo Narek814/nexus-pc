@@ -323,13 +323,14 @@ struct TrayMissingCard: View {
 // MARK: - ProCard
 
 /// "Needs Pro". No prices. `isStoreReachable == false` disables the button with an explanation.
-/// Also shown when the PC answers `plan.required`.
+/// Also shown when the PC answers `plan.required`. Without `onLearnMore` there is no button
+/// (owner's decision: hidden until the Pro screen exists).
 struct ProCard: View {
     let feature: LocalizedStringResource
     var isStoreReachable = true
-    let onLearnMore: () -> Void
+    let onLearnMore: (() -> Void)?
 
-    init(feature: LocalizedStringResource, isStoreReachable: Bool = true, onLearnMore: @escaping () -> Void) {
+    init(feature: LocalizedStringResource, isStoreReachable: Bool = true, onLearnMore: (() -> Void)? = nil) {
         self.feature = feature
         self.isStoreReachable = isStoreReachable
         self.onLearnMore = onLearnMore
@@ -347,10 +348,12 @@ struct ProCard: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 CardBody(text: Text(feature))
-                NeonButton(title: "pro.card.more", systemImage: "sparkles", action: onLearnMore)
-                    .disabled(!isStoreReachable)
-                if !isStoreReachable {
-                    CardBody(text: Text("pro.card.offline"))
+                if let onLearnMore {
+                    NeonButton(title: "pro.card.more", systemImage: "sparkles", action: onLearnMore)
+                        .disabled(!isStoreReachable)
+                    if !isStoreReachable {
+                        CardBody(text: Text("pro.card.offline"))
+                    }
                 }
             }
         }
@@ -359,12 +362,13 @@ struct ProCard: View {
 
 // MARK: - LimitNotice
 
-/// `plan.limit`. No numbers unless `detail` comes from the server.
+/// `plan.limit`. No numbers unless `detail` comes from the server. Without `onLearnMore` there is
+/// no button (same rule as `ProCard`).
 struct LimitNotice: View {
     var detail: String?
-    let onLearnMore: () -> Void
+    let onLearnMore: (() -> Void)?
 
-    init(detail: String? = nil, onLearnMore: @escaping () -> Void) {
+    init(detail: String? = nil, onLearnMore: (() -> Void)? = nil) {
         self.detail = detail
         self.onLearnMore = onLearnMore
     }
@@ -376,7 +380,9 @@ struct LimitNotice: View {
                 if let detail {
                     CardBody(text: Text(detail))
                 }
-                SecondaryButton(title: "pro.card.more", systemImage: "sparkles", action: onLearnMore)
+                if let onLearnMore {
+                    SecondaryButton(title: "pro.card.more", systemImage: "sparkles", action: onLearnMore)
+                }
             }
         }
     }

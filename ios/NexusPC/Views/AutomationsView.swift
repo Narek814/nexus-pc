@@ -41,6 +41,14 @@ struct AutomationsView: View {
             Theme.background.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if let lock {
+                        // Free: read-only list under ProCard; Pro ended: the rules are paused, not deleted.
+                        if lock.isEnded {
+                            AutomationsPausedBanner()
+                        } else {
+                            ProCard(feature: lock.text)
+                        }
+                    }
                     if let status {
                         Text(status).font(.footnote).foregroundStyle(.orange).textSelection(.enabled)
                     }
@@ -77,6 +85,7 @@ struct AutomationsView: View {
                     Image(systemName: "plus")
                 }
                 .tint(Theme.cyan)
+                .disabled(lock != nil)
             }
         }
         .task { await load() }
@@ -114,6 +123,7 @@ struct AutomationsView: View {
                     }))
                         .labelsHidden()
                         .tint(Theme.violet)
+                        .disabled(lock != nil)
                 }
                 Text(rule.actionsSummary)
                     .font(.caption)
@@ -149,9 +159,15 @@ struct AutomationsView: View {
                 }
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.plain)
+                .disabled(lock != nil)
             }
             .foregroundStyle(Theme.textPrimary)
         }
+    }
+
+    /// `automations` is Pro on agents with plans: the list stays visible, every change is disabled.
+    private var lock: ProLock? {
+        ProLock.check(controller.hello, feature: ProFeature.automations)
     }
 
     private func load() async {

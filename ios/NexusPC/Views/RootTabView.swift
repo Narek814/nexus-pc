@@ -196,8 +196,8 @@ struct SectionGate<Content: View>: View {
             placeholder { TrayMissingCard() }
         case let .pro(entitlement):
             placeholder {
-                // TODO(E6-SCREENS-2 / E6-ACC): open the Pro screen (A10) once it exists.
-                ProCard(feature: proText(entitlement)) {}
+                // Owner's decision: no "Learn About Pro" button until the Pro screen exists.
+                ProCard(feature: proText(entitlement))
             }
         case .offline:
             placeholder {

@@ -99,7 +99,7 @@ struct HomeView: View {
                         TrayMissingCard()
                     }
                 } else if case let .offline(reason) = controller.state {
-                    Text(reason).font(.footnote).foregroundStyle(Theme.textMuted)
+                    Text(verbatim: reason).font(.footnote).foregroundStyle(Theme.textMuted)
                     if controller.canWake {
                         NeonButton(title: "offline.wake", systemImage: "power.circle") {
                             Task { await controller.wake() }
@@ -130,7 +130,10 @@ struct HomeView: View {
     private var profilesSection: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             SectionHeader("section.profiles", onSeeAll: { showingAllProfiles = true })
-            if !controller.profiles.isEmpty {
+            if let lock = ProLock.check(controller.hello, feature: ProFeature.profiles) {
+                // Free: the card instead of the profile row (profiles.list is Pro too).
+                ProCard(feature: lock.text)
+            } else if !controller.profiles.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Theme.Space.m) {
                         ForEach(controller.profiles.prefix(Self.previewCount)) { profile in
@@ -189,23 +192,5 @@ struct HomeView: View {
         formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute]
         formatter.unitsStyle = .short
         return formatter.string(from: TimeInterval(seconds)) ?? ""
-    }
-}
-
-/// Old screen-local section title; still used by MonitoringView, RgbView and FilesView
-/// until E6-SCREENS moves them to `SectionHeader`.
-struct SectionTitle: View {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.caption.weight(.bold))
-            .tracking(1.5)
-            .foregroundStyle(Theme.textMuted)
-            .padding(.top, 4)
     }
 }

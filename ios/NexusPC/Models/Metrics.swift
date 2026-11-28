@@ -1,4 +1,5 @@
 import Foundation
+import NexusKit
 
 /// metrics.snapshot (docs/API.md «Мониторинг»). nil = the PC could not read it; `unavailable` says why.
 struct MetricsReading: Equatable {
@@ -31,7 +32,10 @@ struct MetricsReading: Equatable {
     let disks: [Disk]
     let receivePerSecond: Double?
     let sendPerSecond: Double?
+    /// PC text per metric: fallback only.
     let unavailable: [String: String]
+    /// Stable reason code per metric (error-texts.md, 3.8); older agents send none.
+    let unavailableCodes: [String: String]
 
     init(_ p: [String: Any]) {
         let cpu = p["cpu"] as? [String: Any] ?? [:]
@@ -55,7 +59,21 @@ struct MetricsReading: Equatable {
         }
         receivePerSecond = Self.number(network["receiveBytesPerSecond"])
         sendPerSecond = Self.number(network["sendBytesPerSecond"])
-        unavailable = p["unavailable"] as? [String: String] ?? [:]
+        unavailable = ErrorPresentation.reasonMap(p["unavailable"])
+        unavailableCodes = ErrorPresentation.reasonMap(p["unavailableCodes"])
+    }
+
+    /// Why `metric` (a key of `unavailable`, e.g. `cpu.temperature`) has no value: by code, then PC text.
+    func reason(for metric: String) -> ErrorPresentation.ReasonText? {
+        guard unavailable[metric] != nil || unavailableCodes[metric] != nil else {
+            return nil
+        }
+        return ErrorPresentation.metricReason(code: unavailableCodes[metric], pcText: unavailable[metric])
+    }
+
+    /// Every metric with a reason, sorted.
+    var unavailableMetrics: [String] {
+        Set(unavailable.keys).union(unavailableCodes.keys).sorted()
     }
 
     static func number(_ value: Any?) -> Double? {
@@ -115,6 +133,6 @@ enum Format {
 
     static func rate(_ value: Double?) -> String {
         guard let value else { return "—" }
-        return ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .decimal) + "/с"
+        return String(localized: "monitor.rate \(ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .decimal))")
     }
 }

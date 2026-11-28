@@ -26,32 +26,41 @@ struct FilesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let status {
-                        Text(status)
+                        Text(verbatim: status)
                             .font(.footnote)
                             .foregroundStyle(.orange)
                             .textSelection(.enabled)
                     }
-                    if controller.can("files.upload.begin") {
-                        SectionTitle("Отправить на ПК")
+                    if let limitText {
+                        // plan.limit: a notice only; transfers already running are not interrupted here.
+                        LimitNotice(detail: limitText)
+                    }
+                    if hasFiles {
+                        SectionHeader("files.send")
                         sendCard
                     }
                     if let current = transfers.current {
                         progressCard(current)
                     }
-                    if controller.can("clipboard.get") {
-                        SectionTitle("Буфер обмена")
+                    SectionHeader("files.section.clipboard")
+                    if hasClipboard {
                         clipboardCard
+                    } else {
+                        permissionCard(.clipboard)
                     }
-                    if controller.can("files.list") {
-                        SectionTitle("Папка Nexus PC на ПК")
+                    SectionHeader("files.section.folder")
+                    if hasFiles {
                         folderCard
+                    } else {
+                        // Instead of both "Send to PC" and the folder.
+                        permissionCard(.files)
                     }
                 }
                 .padding(20)
             }
             .refreshable { await transfers.refresh() }
         }
-        .navigationTitle("Файлы")
+        .navigationTitle(Text("section.files"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await transfers.refresh() }
         .onChange(of: transfers.message) { _, message in
@@ -75,6 +84,33 @@ struct FilesView: View {
         }
     }
 
+    // MARK: - Access
+
+    private var hasFiles: Bool {
+        controller.capabilities.contains { $0.hasPrefix("files.") }
+    }
+
+    private var hasClipboard: Bool {
+        controller.capabilities.contains { $0.hasPrefix("clipboard.") }
+    }
+
+    /// `plan.limit` from the PC: the number only from `details.limit` (`limit.files.bodyWithLimit`).
+    private var limitText: String? {
+        guard let error = controller.lastError, error.code == "plan.limit" else {
+            return nil
+        }
+        return PCController.bannerText(code: error.code, details: error.details, message: error.message, section: "files")
+    }
+
+    private func permissionCard(_ permission: PermissionName) -> some View {
+        PermissionCard(permission: permission, isChecking: controller.state == .connecting) {
+            Task {
+                await controller.refresh()
+                await transfers.refresh()
+            }
+        }
+    }
+
     // MARK: - Cards
 
     private var sendCard: some View {
@@ -82,7 +118,7 @@ struct FilesView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
                     PhotosPicker(selection: $photoItems, maxSelectionCount: 20, matching: .any(of: [.images, .videos]), preferredItemEncoding: .compatible) {
-                        Label("Фото и видео", systemImage: "photo.on.rectangle")
+                        Label("files.pick.photos", systemImage: "photo.on.rectangle")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -90,7 +126,7 @@ struct FilesView: View {
                     Button {
                         importing = true
                     } label: {
-                        Label("Файлы", systemImage: "folder")
+                        Label("files.pick.files", systemImage: "folder")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -98,10 +134,11 @@ struct FilesView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.cyan)
-                .disabled(transfers.current != nil)
-                Text("Файлы попадут в «Загрузки\\Nexus PC» на ПК. Фото iPhone отправляются как JPEG, видео — как MP4. Если связь оборвётся, повторная отправка того же файла продолжится с места обрыва. Держите приложение открытым до конца передачи.")
+                .disabled(transfers.current != nil || !controller.can("files.upload.begin"))
+                Text("files.send.hint")
                     .font(.caption2)
                     .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -112,14 +149,14 @@ struct FilesView: View {
                 HStack {
                     Image(systemName: transfer.upload ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                         .foregroundStyle(Theme.violet)
-                    Text(transfer.name).font(.subheadline.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: transfer.name).font(.subheadline.weight(.semibold)).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("Отмена") { transfers.cancel() }
+                    Button { transfers.cancel() } label: { Text("common.cancel") }
                         .foregroundStyle(.red)
                         .font(.footnote)
                 }
                 ProgressView(value: transfer.fraction).tint(Theme.cyan)
-                Text(transfer.caption)
+                Text(verbatim: transfer.caption)
                     .font(.caption)
                     .foregroundStyle(Theme.textMuted)
                     .monospacedDigit()
@@ -131,34 +168,36 @@ struct FilesView: View {
     private var clipboardCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
-                if controller.can("clipboard.set") {
-                    // PasteButton reads the iPhone clipboard only when tapped (no "Allow Paste" prompt).
-                    PasteButton(payloadType: String.self) { strings in
-                        guard let text = strings.first, !text.isEmpty else { return }
-                        Task { await sendClipboard(text) }
-                    }
-                    .buttonBorderShape(.capsule)
-                    .tint(Theme.violet)
-                    Text("Вставляет текст из буфера iPhone в буфер ПК — дальше Ctrl+V на ПК.")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textMuted)
+                // PasteButton reads the iPhone clipboard only when tapped (no "Allow Paste" prompt).
+                PasteButton(payloadType: String.self) { strings in
+                    guard let text = strings.first, !text.isEmpty else { return }
+                    Task { await sendClipboard(text) }
                 }
-                NeonButton(title: "Взять текст из буфера ПК", systemImage: "doc.on.clipboard") {
+                .buttonBorderShape(.capsule)
+                .tint(Theme.violet)
+                .disabled(!controller.can("clipboard.set"))
+                Text("clipboard.send.hint")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                NeonButton(title: "clipboard.get", systemImage: "doc.on.clipboard") {
                     Task { await getClipboard() }
                 }
+                .disabled(!controller.can("clipboard.get"))
                 if let pcClipboard {
-                    Text(pcClipboard)
+                    Text(verbatim: pcClipboard)
                         .font(.footnote)
                         .lineLimit(6)
                         .textSelection(.enabled)
                         .foregroundStyle(Theme.textPrimary)
-                    Text("Скопировано в буфер iPhone.")
+                    Text("clipboard.copied")
                         .font(.caption2)
                         .foregroundStyle(Theme.cyan)
                 }
-                Text("Только по нажатию: автоматической синхронизации нет. ПК показывает уведомление, когда телефон читает или меняет его буфер.")
+                Text("clipboard.note")
                     .font(.caption2)
                     .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -167,9 +206,10 @@ struct FilesView: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 if transfers.files.isEmpty {
-                    Text("Папка пуста. Положите файлы в «Загрузки\\Nexus PC» на ПК (меню значка Nexus PC → «Открыть папку файлов с телефона») и потяните экран вниз.")
+                    Text("files.empty.body")
                         .font(.caption)
                         .foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(transfers.files) { file in
                     Button {
@@ -178,18 +218,19 @@ struct FilesView: View {
                         HStack(spacing: 12) {
                             Image(systemName: file.symbol).foregroundStyle(Theme.violet).frame(width: 24)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(file.name).font(.subheadline).lineLimit(1).truncationMode(.middle)
-                                Text(file.caption).font(.caption2).foregroundStyle(Theme.textMuted)
+                                Text(verbatim: file.name).font(.subheadline).lineLimit(1).truncationMode(.middle)
+                                Text(verbatim: file.caption).font(.caption2).foregroundStyle(Theme.textMuted)
                             }
                             Spacer()
                             Image(systemName: "arrow.down.circle").foregroundStyle(Theme.cyan)
                         }
                     }
                     .buttonStyle(.plain)
-                    .disabled(transfers.current != nil)
+                    .disabled(transfers.current != nil || !controller.can("files.read"))
+                    .accessibilityHint(Text("files.download"))
                 }
                 if let free = transfers.freeBytes {
-                    Text("Свободно на диске ПК: \(ByteCountFormatter.string(fromByteCount: free, countStyle: .file))")
+                    Text("files.freeSpace \(ByteCountFormatter.string(fromByteCount: free, countStyle: .file))")
                         .font(.caption2)
                         .foregroundStyle(Theme.textMuted)
                 }
@@ -205,11 +246,11 @@ struct FilesView: View {
         for (index, item) in items.enumerated() {
             do {
                 guard let picked = try await item.loadTransferable(type: PickedFile.self) else { continue }
-                let ok = await transfers.upload(picked.url, name: picked.name, label: "\(index + 1) из \(items.count)")
+                let ok = await transfers.upload(picked.url, name: picked.name, label: String(localized: "files.counter \(index + 1) \(items.count)"))
                 try? FileManager.default.removeItem(at: picked.url.deletingLastPathComponent())
                 if !ok { break }
             } catch {
-                status = "Не удалось прочитать фото: \(error.localizedDescription)"
+                status = String(localized: "files.error.photo \(error.localizedDescription)")
                 break
             }
         }
@@ -224,10 +265,10 @@ struct FilesView: View {
             let copy = try? PickedFile.copyToTemp(url)
             if access { url.stopAccessingSecurityScopedResource() }
             guard let copy else {
-                status = "Не удалось открыть «\(url.lastPathComponent)»."
+                status = String(localized: "files.error.open \(url.lastPathComponent)")
                 break
             }
-            let ok = await transfers.upload(copy, name: url.lastPathComponent, label: "\(index + 1) из \(urls.count)")
+            let ok = await transfers.upload(copy, name: url.lastPathComponent, label: String(localized: "files.counter \(index + 1) \(urls.count)"))
             try? FileManager.default.removeItem(at: copy.deletingLastPathComponent())
             if !ok { break }
         }
@@ -238,7 +279,7 @@ struct FilesView: View {
         let limited = String(text.prefix(100_000))
         do {
             _ = try await controller.fetch("clipboard.set", payload: ["text": limited])
-            status = limited.count < text.count ? "Отправлено на ПК (первые 100 000 символов)." : "Текст в буфере ПК — нажмите Ctrl+V."
+            status = limited.count < text.count ? String(localized: "clipboard.sent.truncated") : String(localized: "clipboard.sent")
         } catch {
             status = FileTransfers.describe(error, controller: controller)
         }
@@ -253,7 +294,7 @@ struct FilesView: View {
                 status = nil
             } else {
                 pcClipboard = nil
-                status = "В буфере ПК нет текста (может быть картинка или файлы)."
+                status = String(localized: "clipboard.empty")
             }
         } catch {
             status = FileTransfers.describe(error, controller: controller)
@@ -281,7 +322,7 @@ final class FileTransfers {
             let doneText = ByteCountFormatter.string(fromByteCount: done, countStyle: .file)
             let totalText = ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
             let speedText = ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file)
-            return "\(label) · \(doneText) из \(totalText) · \(speedText)/с"
+            return String(localized: "files.progress \(label) \(doneText) \(totalText) \(speedText)")
         }
     }
 
@@ -354,32 +395,33 @@ final class FileTransfers {
         defer { UIApplication.shared.endBackgroundTask(background) }
         do {
             let size = Int64((try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0)
-            current = Progress(name: name, upload: true, done: 0, total: size, started: Date(), label: "\(label) · проверка")
+            current = Progress(name: name, upload: true, done: 0, total: size, started: Date(), label: Self.stage(label, "files.stage.hashing"))
             let sha = try await Task.detached { try FileDigest.sha256Hex(of: url) }.value
             let begin = try await controller.fetch("files.upload.begin", payload: ["name": name, "size": size, "sha256": sha])
             guard let uploadId = begin["uploadId"] as? String else { throw NexusError.protocolViolation("uploadId") }
             var offset = Self.int64(begin["offset"])
-            current = Progress(name: name, upload: true, done: offset, total: size, started: Date(), label: offset > 0 ? "\(label) · продолжение" : label)
+            current = Progress(name: name, upload: true, done: offset, total: size, started: Date(), label: offset > 0 ? Self.stage(label, "files.stage.resuming") : label)
             while offset < size {
                 if cancelled {
                     _ = try? await controller.fetch("files.upload.cancel", payload: ["uploadId": uploadId])
                     current = nil
-                    message = "Отправка отменена."
+                    message = String(localized: "files.upload.cancelled")
                     return false
                 }
                 let at = offset
                 let chunk = try await Task.detached { try FileDigest.chunk(of: url, at: at) }.value
-                if chunk.isEmpty { throw NexusError.protocolViolation("файл стал короче") }
+                if chunk.isEmpty { throw NexusError.protocolViolation("file got shorter") }
                 let result = try await controller.fetch("files.upload.chunk", payload: [
                     "uploadId": uploadId, "offset": offset, "data": chunk.base64EncodedString(),
                 ], timeout: 60)
                 offset = Self.int64(result["received"])
                 current?.done = offset
             }
-            current?.label = "\(label) · проверка на ПК"
+            current?.label = Self.stage(label, "files.stage.verifying")
             let finish = try await controller.fetch("files.upload.finish", payload: ["uploadId": uploadId], timeout: 300)
             current = nil
-            message = "Отправлено: \(finish["name"] as? String ?? name)"
+            let sentName = finish["name"] as? String ?? name
+            message = String(localized: "files.upload.done \(sentName)")
             return true
         } catch {
             current = nil
@@ -400,14 +442,14 @@ final class FileTransfers {
             FileManager.default.createFile(atPath: target.path, contents: nil)
             let handle = try FileHandle(forWritingTo: target)
             defer { try? handle.close() }
-            current = Progress(name: file.name, upload: false, done: 0, total: file.size, started: Date(), label: "Загрузка")
+            current = Progress(name: file.name, upload: false, done: 0, total: file.size, started: Date(), label: String(localized: "files.stage.downloading"))
             var offset: Int64 = 0
             var eof = file.size == 0
             while !eof {
                 if cancelled {
                     current = nil
                     try? FileManager.default.removeItem(at: folder)
-                    message = "Загрузка отменена."
+                    message = String(localized: "files.download.cancelled")
                     return
                 }
                 let result = try await controller.fetch("files.read", payload: [
@@ -419,16 +461,16 @@ final class FileTransfers {
                 try handle.write(contentsOf: data)
                 offset += Int64(data.count)
                 eof = result["eof"] as? Bool ?? true
-                current = Progress(name: file.name, upload: false, done: offset, total: max(Self.int64(result["size"]), offset), started: current?.started ?? Date(), label: "Загрузка")
+                current = Progress(name: file.name, upload: false, done: offset, total: max(Self.int64(result["size"]), offset), started: current?.started ?? Date(), label: String(localized: "files.stage.downloading"))
             }
             try handle.close()
-            current?.label = "Проверка"
+            current?.label = String(localized: "files.stage.checking")
             let remote = try await controller.fetch("files.hash", payload: ["name": file.name], timeout: 300)
             let local = try await Task.detached { try FileDigest.sha256Hex(of: target) }.value
             guard remote["sha256"] as? String == local else {
                 current = nil
                 try? FileManager.default.removeItem(at: folder)
-                message = "Файл изменился на ПК во время загрузки или повредился. Попробуйте ещё раз."
+                message = String(localized: "files.download.changed")
                 return
             }
             current = nil
@@ -438,6 +480,11 @@ final class FileTransfers {
             try? FileManager.default.removeItem(at: folder)
             message = Self.describe(error, controller: controller)
         }
+    }
+
+    /// "1 of 3 · checking": the counter label plus a stage from the String Catalog.
+    private static func stage(_ label: String, _ key: String) -> String {
+        "\(label) · \(Bundle.main.localizedString(forKey: key, value: nil, table: nil))"
     }
 
     static func int64(_ value: Any?) -> Int64 {
@@ -451,19 +498,11 @@ final class FileTransfers {
     }
 
     static func describe(_ error: Error, controller: PCController) -> String {
-        let nexus = error as? NexusError
-        switch nexus?.code {
-        case "auth.permissionDenied":
-            let id = controller.pc?.deviceId.uuidString.lowercased() ?? "<deviceId>"
-            return "Файлы и буфер обмена не разрешены для этого iPhone. На ПК в PowerShell от имени администратора:\n& \"C:\\Program Files\\NexusPC\\Agent\\Nexus.Agent.exe\" devices permissions \(id) power,apps,monitoring,rgb,input,files,clipboard"
-        case "session.unavailable":
-            return "На ПК не запущен Nexus PC в трее — файлы и буфер обмена работают через него."
-        default:
-            if case let .server(_, text, _)? = nexus {
-                return text
-            }
-            return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        // Text by the stable code (error-texts.md); the PC's own text only as fallback.
+        if case let .server(code, text, details)? = error as? NexusError {
+            return PCController.bannerText(code: code, details: details, message: text, section: "files") ?? ""
         }
+        return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
 }
 
